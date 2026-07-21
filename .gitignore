@@ -1,0 +1,11 @@
+# Build output
+/build/
+build*/
+cmake-build-*/
+
+# CMake user files
+CMakeUserPresets.json
+
+# Qt / editor
+*.user
+.DS_Store
