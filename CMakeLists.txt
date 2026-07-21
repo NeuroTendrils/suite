@@ -26,6 +26,14 @@ qt_add_executable(neurotendrils
     src/main.cpp
     src/mainwindow.cpp
     include/mainwindow.hpp
+    src/modules/neuroflow/neuroflowpage.cpp
+    include/modules/neuroflow/neuroflowpage.hpp
+    src/modules/neurostudio/neurostudiopage.cpp
+    include/modules/neurostudio/neurostudiopage.hpp
+    src/modules/neurolearn/neurolearnpage.cpp
+    include/modules/neurolearn/neurolearnpage.hpp
+    src/modules/hub/hubpage.cpp
+    include/modules/hub/hubpage.hpp
 )
 
 target_include_directories(neurotendrils PRIVATE include)

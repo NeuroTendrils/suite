@@ -2,6 +2,9 @@
 
 #include <QMainWindow>
 
+class QListWidget;
+class QStackedWidget;
+
 class MainWindow : public QMainWindow
 {
     Q_OBJECT
@@ -9,4 +12,8 @@ class MainWindow : public QMainWindow
 public:
     explicit MainWindow(QWidget *parent = nullptr);
     ~MainWindow() override;
+
+private:
+    QListWidget *navigation_;
+    QStackedWidget *pages_;
 };
