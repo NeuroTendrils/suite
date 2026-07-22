@@ -1,6 +1,7 @@
 #include "settingsdialog.hpp"
 
 #include "core/projectdir.hpp"
+#include "core/pythonruntime.hpp"
 #include "core/theme.hpp"
 #include "widgets/themepreviewcard.hpp"
 
@@ -157,6 +158,24 @@ QWidget *SettingsDialog::createInfoPane()
     projectPath->setWordWrap(true);
     projectPath->setTextInteractionFlags(Qt::TextSelectableByMouse);
 
+    auto *pythonTitle = new QLabel(tr("Python runtime"), pane);
+    pythonTitle->setObjectName(QStringLiteral("settingTitle"));
+
+    const PythonRuntime &python = PythonRuntime::instance();
+    QString pythonText;
+    if (python.isAvailable()) {
+        pythonText = QDir::toNativeSeparators(python.interpreterPath());
+        if (!python.sourceDescription().isEmpty()) {
+            pythonText += QStringLiteral(" (%1)").arg(python.sourceDescription());
+        }
+    } else {
+        pythonText = tr("Not found. Run python/setup_venv.sh (or .ps1) to create .venv.");
+    }
+    auto *pythonPath = new QLabel(pythonText, pane);
+    pythonPath->setObjectName(QStringLiteral("settingDescription"));
+    pythonPath->setWordWrap(true);
+    pythonPath->setTextInteractionFlags(Qt::TextSelectableByMouse);
+
     layout->addWidget(title);
     layout->addSpacing(20);
     layout->addWidget(name);
@@ -168,6 +187,10 @@ QWidget *SettingsDialog::createInfoPane()
     layout->addWidget(projectTitle);
     layout->addSpacing(4);
     layout->addWidget(projectPath);
+    layout->addSpacing(18);
+    layout->addWidget(pythonTitle);
+    layout->addSpacing(4);
+    layout->addWidget(pythonPath);
     layout->addStretch();
 
     return pane;

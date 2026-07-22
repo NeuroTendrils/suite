@@ -1,6 +1,7 @@
 #include <QApplication>
 
 #include "core/projectdir.hpp"
+#include "core/pythonruntime.hpp"
 #include "core/theme.hpp"
 #include "mainwindow.hpp"
 
@@ -14,6 +15,7 @@ int main(int argc, char *argv[])
 
     Theme::instance().initialize(app);
     ProjectDir::instance().initialize();
+    PythonRuntime::instance().initialize();
 
     MainWindow window;
     window.show();

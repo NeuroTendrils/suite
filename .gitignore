@@ -16,3 +16,4 @@ __pycache__/
 .Python
 .venv/
 venv/
+python/.venv/

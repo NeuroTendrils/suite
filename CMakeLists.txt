@@ -30,6 +30,8 @@ qt_add_executable(neurotendrils
     include/core/theme.hpp
     src/core/projectdir.cpp
     include/core/projectdir.hpp
+    src/core/pythonruntime.cpp
+    include/core/pythonruntime.hpp
     src/settingsdialog.cpp
     include/settingsdialog.hpp
     src/widgets/icons.cpp
