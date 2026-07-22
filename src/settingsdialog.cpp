@@ -1,7 +1,10 @@
 #include "settingsdialog.hpp"
 
+#include "core/projectdir.hpp"
 #include "core/theme.hpp"
 #include "widgets/themepreviewcard.hpp"
+
+#include <QDir>
 
 #include <QApplication>
 #include <QHBoxLayout>
@@ -145,6 +148,15 @@ QWidget *SettingsDialog::createInfoPane()
     description->setObjectName(QStringLiteral("settingDescription"));
     description->setWordWrap(true);
 
+    auto *projectTitle = new QLabel(tr("Project folder"), pane);
+    projectTitle->setObjectName(QStringLiteral("settingTitle"));
+
+    auto *projectPath =
+        new QLabel(QDir::toNativeSeparators(ProjectDir::instance().root()), pane);
+    projectPath->setObjectName(QStringLiteral("settingDescription"));
+    projectPath->setWordWrap(true);
+    projectPath->setTextInteractionFlags(Qt::TextSelectableByMouse);
+
     layout->addWidget(title);
     layout->addSpacing(20);
     layout->addWidget(name);
@@ -152,6 +164,10 @@ QWidget *SettingsDialog::createInfoPane()
     layout->addWidget(version);
     layout->addSpacing(2);
     layout->addWidget(description);
+    layout->addSpacing(18);
+    layout->addWidget(projectTitle);
+    layout->addSpacing(4);
+    layout->addWidget(projectPath);
     layout->addStretch();
 
     return pane;

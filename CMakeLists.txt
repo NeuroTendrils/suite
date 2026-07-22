@@ -28,6 +28,8 @@ qt_add_executable(neurotendrils
     include/mainwindow.hpp
     src/core/theme.cpp
     include/core/theme.hpp
+    src/core/projectdir.cpp
+    include/core/projectdir.hpp
     src/settingsdialog.cpp
     include/settingsdialog.hpp
     src/widgets/icons.cpp
