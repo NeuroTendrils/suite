@@ -26,6 +26,16 @@ qt_add_executable(neurotendrils
     src/main.cpp
     src/mainwindow.cpp
     include/mainwindow.hpp
+    src/core/theme.cpp
+    include/core/theme.hpp
+    src/settingsdialog.cpp
+    include/settingsdialog.hpp
+    src/widgets/icons.cpp
+    include/widgets/icons.hpp
+    src/widgets/pageheader.cpp
+    include/widgets/pageheader.hpp
+    src/widgets/themepreviewcard.cpp
+    include/widgets/themepreviewcard.hpp
     src/modules/neuroflow/neuroflowpage.cpp
     include/modules/neuroflow/neuroflowpage.hpp
     src/modules/neurostudio/neurostudiopage.cpp
@@ -34,6 +44,16 @@ qt_add_executable(neurotendrils
     include/modules/neurolearn/neurolearnpage.hpp
     src/modules/hub/hubpage.cpp
     include/modules/hub/hubpage.hpp
+)
+
+qt_add_resources(neurotendrils "fonts"
+    PREFIX "/fonts"
+    BASE resources/fonts
+    FILES
+        resources/fonts/Inter-Regular.ttf
+        resources/fonts/Inter-Medium.ttf
+        resources/fonts/Inter-SemiBold.ttf
+        resources/fonts/Inter-Bold.ttf
 )
 
 target_include_directories(neurotendrils PRIVATE include)

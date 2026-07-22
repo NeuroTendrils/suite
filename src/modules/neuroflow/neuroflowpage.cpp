@@ -1,26 +1,18 @@
 #include "modules/neuroflow/neuroflowpage.hpp"
 
-#include <QFont>
-#include <QLabel>
+#include "widgets/pageheader.hpp"
+
 #include <QVBoxLayout>
 
 NeuroflowPage::NeuroflowPage(QWidget *parent)
     : QWidget(parent)
 {
     auto *layout = new QVBoxLayout(this);
-    layout->setContentsMargins(32, 32, 32, 32);
+    layout->setContentsMargins(28, 24, 28, 24);
 
-    auto *title = new QLabel(tr("Neuroflow"), this);
-    QFont titleFont = title->font();
-    titleFont.setPointSize(24);
-    titleFont.setBold(true);
-    title->setFont(titleFont);
+    auto *header = new PageHeader(
+        tr("Neuroflow"), tr("Build and run reproducible EEG preprocessing plans."), this);
 
-    auto *description =
-        new QLabel(tr("Build and run reproducible EEG preprocessing plans."), this);
-    description->setWordWrap(true);
-
-    layout->addWidget(title);
-    layout->addWidget(description);
+    layout->addWidget(header);
     layout->addStretch();
 }

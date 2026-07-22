@@ -2,8 +2,11 @@
 
 #include <QMainWindow>
 
+class QLabel;
 class QListWidget;
 class QStackedWidget;
+class QToolButton;
+class SettingsDialog;
 
 class MainWindow : public QMainWindow
 {
@@ -14,6 +17,11 @@ public:
     ~MainWindow() override;
 
 private:
+    void applyIcons();
+
     QListWidget *navigation_;
+    QLabel *avatarLabel_;
+    QToolButton *settingsButton_;
     QStackedWidget *pages_;
+    SettingsDialog *settingsDialog_ = nullptr;
 };

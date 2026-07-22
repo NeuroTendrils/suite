@@ -1,26 +1,18 @@
 #include "modules/neurostudio/neurostudiopage.hpp"
 
-#include <QFont>
-#include <QLabel>
+#include "widgets/pageheader.hpp"
+
 #include <QVBoxLayout>
 
 NeurostudioPage::NeurostudioPage(QWidget *parent)
     : QWidget(parent)
 {
     auto *layout = new QVBoxLayout(this);
-    layout->setContentsMargins(32, 32, 32, 32);
+    layout->setContentsMargins(28, 24, 28, 24);
 
-    auto *title = new QLabel(tr("Neurostudio"), this);
-    QFont titleFont = title->font();
-    titleFont.setPointSize(24);
-    titleFont.setBold(true);
-    title->setFont(titleFont);
+    auto *header = new PageHeader(
+        tr("Neurostudio"), tr("Configure templates, train models, and inspect metrics."), this);
 
-    auto *description =
-        new QLabel(tr("Configure templates, train models, and inspect metrics."), this);
-    description->setWordWrap(true);
-
-    layout->addWidget(title);
-    layout->addWidget(description);
+    layout->addWidget(header);
     layout->addStretch();
 }
