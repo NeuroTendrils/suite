@@ -2,10 +2,10 @@
 
 #include <QWidget>
 
-class NeuroflowPage : public QWidget
+class NeuroFlowPage : public QWidget
 {
     Q_OBJECT
 
 public:
-    explicit NeuroflowPage(QWidget *parent = nullptr);
+    explicit NeuroFlowPage(QWidget *parent = nullptr);
 };

@@ -58,9 +58,9 @@ MainWindow::MainWindow(QWidget *parent)
     navigation_->setObjectName(QStringLiteral("moduleNavigation"));
     navigation_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     navigation_->setIconSize(QSize(18, 18));
-    navigation_->addItem(tr("Neuroflow"));
-    navigation_->addItem(tr("Neurostudio"));
-    navigation_->addItem(tr("Neurolearn"));
+    navigation_->addItem(tr("NeuroFlow"));
+    navigation_->addItem(tr("NeuroStudio"));
+    navigation_->addItem(tr("NeuroLearn"));
     navigation_->addItem(tr("Hub"));
 
     // User placeholder card: avatar, name, cloud storage, settings gear.
@@ -113,9 +113,9 @@ MainWindow::MainWindow(QWidget *parent)
     sidebarLayout->addWidget(navigation_, 1);
     sidebarLayout->addWidget(userCard);
 
-    pages_->addWidget(new NeuroflowPage(pages_));
-    pages_->addWidget(new NeurostudioPage(pages_));
-    pages_->addWidget(new NeurolearnPage(pages_));
+    pages_->addWidget(new NeuroFlowPage(pages_));
+    pages_->addWidget(new NeuroStudioPage(pages_));
+    pages_->addWidget(new NeuroLearnPage(pages_));
     pages_->addWidget(new HubPage(pages_));
 
     layout->addWidget(sidebar);

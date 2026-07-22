@@ -5,14 +5,14 @@
 
 #include <QVBoxLayout>
 
-NeurolearnPage::NeurolearnPage(QWidget *parent)
+NeuroLearnPage::NeuroLearnPage(QWidget *parent)
     : QWidget(parent)
 {
     auto *layout = new QVBoxLayout(this);
     layout->setContentsMargins(28, 24, 28, 24);
 
     auto *header = new PageHeader(
-        tr("Neurolearn"), tr("Learn EEG and BCI concepts through guided demonstrations."), this);
+        tr("NeuroLearn"), tr("Learn EEG and BCI concepts through guided demonstrations."), this);
 
     // Placeholder until lessons and the demo visualization land (Phase 8).
     auto *skeleton = new SkeletonLoader(this);

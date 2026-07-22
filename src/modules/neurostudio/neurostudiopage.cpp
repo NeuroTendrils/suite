@@ -6,14 +6,14 @@
 #include <QHBoxLayout>
 #include <QVBoxLayout>
 
-NeurostudioPage::NeurostudioPage(QWidget *parent)
+NeuroStudioPage::NeuroStudioPage(QWidget *parent)
     : QWidget(parent)
 {
     auto *layout = new QVBoxLayout(this);
     layout->setContentsMargins(28, 24, 28, 24);
 
     auto *header = new PageHeader(
-        tr("Neurostudio"), tr("Configure templates, train models, and inspect metrics."), this);
+        tr("NeuroStudio"), tr("Configure templates, train models, and inspect metrics."), this);
 
     // Placeholder until templates and the run view land (Phases 5-7).
     auto *cards = new QWidget(this);

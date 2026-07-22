@@ -2,10 +2,10 @@
 
 #include <QWidget>
 
-class NeurolearnPage : public QWidget
+class NeuroLearnPage : public QWidget
 {
     Q_OBJECT
 
 public:
-    explicit NeurolearnPage(QWidget *parent = nullptr);
+    explicit NeuroLearnPage(QWidget *parent = nullptr);
 };
