@@ -14,3 +14,12 @@ source under AGPL-3.0. See [`LICENSE`](LICENSE).
 
 The NeuroTendrils desktop suite GUI remains proprietary and talks to
 this worker as a separate process.
+
+## IPC helpers
+
+Wire-format helpers live in [`../_shared`](../_shared) (`nt_ipc`,
+Apache-2.0). When running NeuroFlow locally:
+
+```bash
+PYTHONPATH=workers/_shared:workers/neuroflow python -m neuroflow ping
+```
