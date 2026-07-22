@@ -9,3 +9,10 @@ CMakeUserPresets.json
 # Qt / editor
 *.user
 .DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+.Python
+.venv/
+venv/
