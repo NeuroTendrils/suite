@@ -38,6 +38,8 @@ qt_add_executable(neurotendrils
     include/widgets/pageheader.hpp
     src/widgets/themepreviewcard.cpp
     include/widgets/themepreviewcard.hpp
+    src/widgets/skeletonloader.cpp
+    include/widgets/skeletonloader.hpp
     src/modules/neuroflow/neuroflowpage.cpp
     include/modules/neuroflow/neuroflowpage.hpp
     src/modules/neurostudio/neurostudiopage.cpp
