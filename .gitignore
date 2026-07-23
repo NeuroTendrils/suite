@@ -17,3 +17,6 @@ __pycache__/
 .venv/
 venv/
 python/.venv/
+
+# Temporarily remove old neuroflow
+workers/neuroflow-old
