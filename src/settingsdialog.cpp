@@ -3,14 +3,17 @@
 #include "core/projectdir.hpp"
 #include "core/pythonruntime.hpp"
 #include "core/theme.hpp"
+#include "core/workerclient.hpp"
 #include "widgets/themepreviewcard.hpp"
 
-#include <QDir>
-
 #include <QApplication>
+#include <QDir>
 #include <QHBoxLayout>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QLabel>
 #include <QListWidget>
+#include <QPlainTextEdit>
 #include <QPushButton>
 #include <QStackedWidget>
 #include <QVBoxLayout>
@@ -19,12 +22,13 @@ SettingsDialog::SettingsDialog(QWidget *parent)
     : QDialog(parent)
     , nav_(new QListWidget(this))
     , panes_(new QStackedWidget(this))
+    , workerClient_(new WorkerClient(this))
 {
     setWindowTitle(tr("Settings"));
     // Window-modal so it presents as a native sheet on macOS instead of
     // a detached popup window.
     setWindowModality(Qt::WindowModal);
-    resize(680, 440);
+    resize(720, 480);
 
     auto *layout = new QHBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
@@ -45,12 +49,14 @@ SettingsDialog::SettingsDialog(QWidget *parent)
     nav_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     nav_->addItem(tr("Appearance"));
     nav_->addItem(tr("Info"));
+    nav_->addItem(tr("Diagnostics"));
 
     sidebarLayout->addWidget(navTitle);
     sidebarLayout->addWidget(nav_, 1);
 
     panes_->addWidget(createAppearancePane());
     panes_->addWidget(createInfoPane());
+    panes_->addWidget(createDiagnosticsPane());
 
     auto *content = new QWidget(this);
     auto *contentLayout = new QVBoxLayout(content);
@@ -78,6 +84,53 @@ SettingsDialog::SettingsDialog(QWidget *parent)
 
     connect(&Theme::instance(), &Theme::modeChanged, this, [this](ThemeMode) { syncCards(); });
     syncCards();
+
+    connect(workerClient_, &WorkerClient::logMessage, this, &SettingsDialog::appendDiagnosticLog);
+    connect(workerClient_,
+            &WorkerClient::finished,
+            this,
+            [this](bool ok, const QJsonObject &result, const QString &errorCode,
+                   const QString &errorMessage) {
+                if (selfTestStep_ == SelfTestStep::Ping) {
+                    if (!ok) {
+                        ipcStatusLabel_->setText(
+                            tr("Self-test failed on ping: %1 (%2)").arg(errorMessage, errorCode));
+                        selfTestStep_ = SelfTestStep::Idle;
+                        setDiagnosticsBusy(false);
+                        return;
+                    }
+                    appendDiagnosticLog(tr("ping ok: %1").arg(QString::fromUtf8(
+                        QJsonDocument(result).toJson(QJsonDocument::Compact))));
+                    selfTestStep_ = SelfTestStep::Echo;
+                    workerClient_->startRequest(
+                        QStringLiteral("neuroflow"),
+                        QStringLiteral("echo"),
+                        QJsonObject{{QStringLiteral("hello"), QStringLiteral("neurotendrils")}},
+                        15000);
+                    return;
+                }
+
+                if (selfTestStep_ == SelfTestStep::Echo) {
+                    if (!ok) {
+                        ipcStatusLabel_->setText(
+                            tr("Self-test failed on echo: %1 (%2)").arg(errorMessage, errorCode));
+                    } else {
+                        const QJsonObject echo = result.value(QStringLiteral("echo")).toObject();
+                        const bool matched =
+                            echo.value(QStringLiteral("hello")).toString()
+                            == QStringLiteral("neurotendrils");
+                        if (matched) {
+                            ipcStatusLabel_->setText(tr("Self-test passed."));
+                        } else {
+                            ipcStatusLabel_->setText(tr("Self-test failed: unexpected echo payload."));
+                        }
+                        appendDiagnosticLog(tr("echo ok: %1").arg(QString::fromUtf8(
+                            QJsonDocument(result).toJson(QJsonDocument::Compact))));
+                    }
+                    selfTestStep_ = SelfTestStep::Idle;
+                    setDiagnosticsBusy(false);
+                }
+            });
 }
 
 QWidget *SettingsDialog::createAppearancePane()
@@ -196,10 +249,81 @@ QWidget *SettingsDialog::createInfoPane()
     return pane;
 }
 
+QWidget *SettingsDialog::createDiagnosticsPane()
+{
+    auto *pane = new QWidget(this);
+    auto *layout = new QVBoxLayout(pane);
+    layout->setContentsMargins(32, 28, 32, 24);
+    layout->setSpacing(0);
+
+    auto *title = new QLabel(tr("Diagnostics"), pane);
+    title->setObjectName(QStringLiteral("pageTitle"));
+
+    auto *blurb = new QLabel(
+        tr("Verify that the suite can launch NeuroFlow over argv-only JSON-lines IPC."),
+        pane);
+    blurb->setObjectName(QStringLiteral("settingDescription"));
+    blurb->setWordWrap(true);
+
+    ipcTestButton_ = new QPushButton(tr("Run IPC self-test"), pane);
+    ipcTestButton_->setAutoDefault(false);
+    connect(ipcTestButton_, &QPushButton::clicked, this, &SettingsDialog::runIpcSelfTest);
+
+    ipcStatusLabel_ = new QLabel(tr("Not run yet."), pane);
+    ipcStatusLabel_->setObjectName(QStringLiteral("settingDescription"));
+    ipcStatusLabel_->setWordWrap(true);
+
+    ipcLog_ = new QPlainTextEdit(pane);
+    ipcLog_->setObjectName(QStringLiteral("diagnosticsLog"));
+    ipcLog_->setReadOnly(true);
+    ipcLog_->setPlaceholderText(tr("Worker log (redacted)…"));
+    ipcLog_->setMinimumHeight(160);
+
+    layout->addWidget(title);
+    layout->addSpacing(12);
+    layout->addWidget(blurb);
+    layout->addSpacing(16);
+    layout->addWidget(ipcTestButton_, 0, Qt::AlignLeft);
+    layout->addSpacing(8);
+    layout->addWidget(ipcStatusLabel_);
+    layout->addSpacing(12);
+    layout->addWidget(ipcLog_, 1);
+
+    return pane;
+}
+
 void SettingsDialog::syncCards()
 {
     const ThemeMode mode = Theme::instance().mode();
     lightCard_->setChecked(mode == ThemeMode::Light);
     darkCard_->setChecked(mode == ThemeMode::Dark);
     autoCard_->setChecked(mode == ThemeMode::System);
+}
+
+void SettingsDialog::runIpcSelfTest()
+{
+    if (workerClient_->isBusy() || selfTestStep_ != SelfTestStep::Idle) {
+        return;
+    }
+
+    ipcLog_->clear();
+    ipcStatusLabel_->setText(tr("Running ping…"));
+    setDiagnosticsBusy(true);
+    selfTestStep_ = SelfTestStep::Ping;
+    workerClient_->startRequest(QStringLiteral("neuroflow"), QStringLiteral("ping"), {}, 15000);
+}
+
+void SettingsDialog::appendDiagnosticLog(const QString &line)
+{
+    if (ipcLog_ == nullptr || line.trimmed().isEmpty()) {
+        return;
+    }
+    ipcLog_->appendPlainText(line);
+}
+
+void SettingsDialog::setDiagnosticsBusy(bool busy)
+{
+    if (ipcTestButton_ != nullptr) {
+        ipcTestButton_->setEnabled(!busy);
+    }
 }

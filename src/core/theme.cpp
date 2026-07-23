@@ -232,6 +232,16 @@ QString buildStyleSheet(const ThemeColors &colors)
             font-size: 12px;
         }
 
+        QPlainTextEdit#diagnosticsLog {
+            background-color: @sidebar;
+            color: @text;
+            border: 1px solid @border;
+            border-radius: 6px;
+            font-family: Menlo, Monaco, Consolas, monospace;
+            font-size: 11px;
+            padding: 8px;
+        }
+
         QToolTip {
             background-color: @sidebar;
             color: @text;
