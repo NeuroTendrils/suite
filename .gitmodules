@@ -1,0 +1,3 @@
+[submodule "workers/neuroflow"]
+	path = workers/neuroflow
+	url = https://github.com/NeuroTendrils/neuroflow
