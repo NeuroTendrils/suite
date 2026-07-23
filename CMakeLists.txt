@@ -32,6 +32,10 @@ qt_add_executable(neurotendrils
     include/core/projectdir.hpp
     src/core/pythonruntime.cpp
     include/core/pythonruntime.hpp
+    src/core/ipcredact.cpp
+    include/core/ipcredact.hpp
+    src/core/workerclient.cpp
+    include/core/workerclient.hpp
     src/settingsdialog.cpp
     include/settingsdialog.hpp
     src/widgets/icons.cpp
