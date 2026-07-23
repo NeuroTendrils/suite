@@ -12,6 +12,7 @@
 #include <QLabel>
 #include <QListWidget>
 #include <QProgressBar>
+#include <QSizePolicy>
 #include <QStackedWidget>
 #include <QToolButton>
 #include <QVBoxLayout>
@@ -26,7 +27,7 @@ MainWindow::MainWindow(QWidget *parent)
 {
     setWindowTitle(tr("NeuroTendrils"));
     resize(1024, 720);
-    setMinimumSize(900, 600);
+    setMinimumSize(720, 480);
 
     auto *centralWidget = new QWidget(this);
     centralWidget->setObjectName(QStringLiteral("appRoot"));
@@ -36,7 +37,7 @@ MainWindow::MainWindow(QWidget *parent)
 
     auto *sidebar = new QWidget(centralWidget);
     sidebar->setObjectName(QStringLiteral("sidebar"));
-    sidebar->setFixedWidth(252);
+    sidebar->setFixedWidth(220);
     auto *sidebarLayout = new QVBoxLayout(sidebar);
     sidebarLayout->setContentsMargins(16, 22, 16, 0);
     sidebarLayout->setSpacing(6);
@@ -113,12 +114,14 @@ MainWindow::MainWindow(QWidget *parent)
     sidebarLayout->addWidget(navigation_, 1);
     sidebarLayout->addWidget(userCard);
 
+    pages_->setMinimumWidth(0);
+    pages_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     pages_->addWidget(new NeuroFlowPage(pages_));
     pages_->addWidget(new NeuroStudioPage(pages_));
     pages_->addWidget(new NeuroLearnPage(pages_));
     pages_->addWidget(new HubPage(pages_));
 
-    layout->addWidget(sidebar);
+    layout->addWidget(sidebar, 0);
     layout->addWidget(pages_, 1);
     setCentralWidget(centralWidget);
 

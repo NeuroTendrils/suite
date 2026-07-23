@@ -79,6 +79,27 @@ void paintGlyph(QPainter &painter, icons::Glyph glyph, const QColor &color)
         painter.drawEllipse(QPointF(7.5, 17.0), 2.3, 2.3);
         break;
     }
+    case icons::Glyph::File: {
+        painter.setPen(stroke);
+        painter.setBrush(Qt::NoBrush);
+        QPainterPath page;
+        page.moveTo(8.0, 3.5);
+        page.lineTo(14.0, 3.5);
+        page.lineTo(19.0, 8.5);
+        page.lineTo(19.0, 20.5);
+        page.cubicTo(19.0, 21.3, 18.3, 22.0, 17.5, 22.0);
+        page.lineTo(6.5, 22.0);
+        page.cubicTo(5.7, 22.0, 5.0, 21.3, 5.0, 20.5);
+        page.lineTo(5.0, 5.0);
+        page.cubicTo(5.0, 4.2, 5.7, 3.5, 6.5, 3.5);
+        page.closeSubpath();
+        painter.drawPath(page);
+        painter.drawLine(QPointF(14.0, 3.5), QPointF(14.0, 8.5));
+        painter.drawLine(QPointF(14.0, 8.5), QPointF(19.0, 8.5));
+        painter.drawLine(QPointF(8.5, 13.0), QPointF(15.5, 13.0));
+        painter.drawLine(QPointF(8.5, 16.5), QPointF(15.5, 16.5));
+        break;
+    }
     }
 }
 

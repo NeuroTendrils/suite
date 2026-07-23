@@ -10,6 +10,7 @@ SkeletonLoader::SkeletonLoader(QWidget *parent)
     : QWidget(parent)
 {
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    setMinimumWidth(0);
 
     animation_.setStartValue(0.0);
     animation_.setEndValue(1.0);
@@ -39,7 +40,13 @@ QSize SkeletonLoader::sizeHint() const
     if (!blocks_.isEmpty()) {
         height += blockSpacing * (static_cast<int>(blocks_.size()) - 1);
     }
-    return {400, height};
+    // Width must stay flexible so parent layouts can shrink on small windows.
+    return {0, height};
+}
+
+QSize SkeletonLoader::minimumSizeHint() const
+{
+    return sizeHint();
 }
 
 void SkeletonLoader::paintEvent(QPaintEvent *event)

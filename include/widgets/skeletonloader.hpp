@@ -17,6 +17,7 @@ public:
     void addBlock(qreal widthFactor, int height, int radius = 6);
 
     [[nodiscard]] QSize sizeHint() const override;
+    [[nodiscard]] QSize minimumSizeHint() const override;
 
 protected:
     void paintEvent(QPaintEvent *event) override;

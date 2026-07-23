@@ -13,7 +13,8 @@ enum class Glyph
     Studio,
     Learn,
     Hub,
-    Settings
+    Settings,
+    File
 };
 
 // Renders a crisp, theme-tinted glyph. The selected color is used for

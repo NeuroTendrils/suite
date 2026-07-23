@@ -22,6 +22,7 @@ struct ThemeColors
     QColor mutedText;
     QColor border;
     QColor accent;
+    QColor accentHover;
     QColor accentText;
     QColor error;
 };
@@ -37,6 +38,7 @@ ThemeColors colorsFor(bool dark)
             QColor(QStringLiteral("#9ca3b5")),
             QColor(QStringLiteral("#252a36")),
             QColor(QStringLiteral("#7795f8")),
+            QColor(QStringLiteral("#8ca6ff")),
             QColor(QStringLiteral("#0b0d13")),
             QColor(QStringLiteral("#f06a78")),
         };
@@ -50,6 +52,7 @@ ThemeColors colorsFor(bool dark)
         QColor(QStringLiteral("#687086")),
         QColor(QStringLiteral("#e2e5eb")),
         QColor(QStringLiteral("#3758bc")),
+        QColor(QStringLiteral("#2f4fac")),
         QColor(QStringLiteral("#ffffff")),
         QColor(QStringLiteral("#c83f52")),
     };
@@ -242,6 +245,107 @@ QString buildStyleSheet(const ThemeColors &colors)
             padding: 8px;
         }
 
+        QScrollArea#pageScroll {
+            background: transparent;
+            border: none;
+        }
+
+        QWidget#pageContent {
+            background: transparent;
+        }
+
+        QFrame#emptyPanel {
+            background-color: @sidebar;
+            border: 1px dashed @border;
+            border-radius: 10px;
+        }
+
+        QFrame#filePanel, QFrame#upcomingPanel {
+            background-color: @sidebar;
+            border: 1px solid @border;
+            border-radius: 10px;
+        }
+
+        QLabel#emptyPanelTitle {
+            color: @text;
+            font-size: 15px;
+            font-weight: 600;
+        }
+
+        QLabel#emptyPanelHint {
+            color: @mutedText;
+            font-size: 12px;
+        }
+
+        QLabel#fileNameLabel {
+            color: @text;
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        QLabel#fileMetaLabel {
+            color: @mutedText;
+            font-size: 12px;
+        }
+
+        QLabel#filePathLabel {
+            color: @mutedText;
+            font-size: 11px;
+            font-family: Menlo, Monaco, Consolas, monospace;
+        }
+
+        QLabel#upcomingCaption {
+            color: @mutedText;
+            font-size: 12px;
+        }
+
+        QPushButton#primaryButton {
+            background-color: @accent;
+            color: @accentText;
+            border: none;
+            border-radius: 7px;
+            padding: 8px 14px;
+            font-size: 13px;
+            font-weight: 600;
+            min-width: 110px;
+        }
+
+        QPushButton#primaryButton:hover {
+            background-color: @accentHover;
+        }
+
+        QPushButton#primaryButton:pressed {
+            padding-top: 10px;
+            padding-bottom: 8px;
+        }
+
+        QPushButton#secondaryButton {
+            background: transparent;
+            color: @text;
+            border: 1px solid @border;
+            border-radius: 7px;
+            padding: 6px 12px;
+            font-size: 12px;
+        }
+
+        QPushButton#secondaryButton:hover {
+            background-color: @selection;
+        }
+
+        QPushButton#secondaryButton:disabled {
+            color: @mutedText;
+            border-color: @border;
+        }
+
+        QLabel#fileBadge {
+            color: @accent;
+            background-color: @selection;
+            border-radius: 4px;
+            padding: 2px 7px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+
         QToolTip {
             background-color: @sidebar;
             color: @text;
@@ -257,6 +361,7 @@ QString buildStyleSheet(const ThemeColors &colors)
     styleSheet.replace(QStringLiteral("@mutedText"), colors.mutedText.name());
     styleSheet.replace(QStringLiteral("@border"), colors.border.name());
     styleSheet.replace(QStringLiteral("@accentText"), colors.accentText.name());
+    styleSheet.replace(QStringLiteral("@accentHover"), colors.accentHover.name());
     styleSheet.replace(QStringLiteral("@accent"), colors.accent.name());
     return styleSheet;
 }

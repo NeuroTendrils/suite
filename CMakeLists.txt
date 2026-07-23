@@ -36,6 +36,8 @@ qt_add_executable(neurotendrils
     include/core/ipcredact.hpp
     src/core/workerclient.cpp
     include/core/workerclient.hpp
+    src/core/datasetimport.cpp
+    include/core/datasetimport.hpp
     src/settingsdialog.cpp
     include/settingsdialog.hpp
     src/widgets/icons.cpp
