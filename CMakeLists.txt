@@ -74,3 +74,21 @@ set_target_properties(neurotendrils PROPERTIES
     WIN32_EXECUTABLE ON
     MACOSX_BUNDLE ON
 )
+
+# Local IPC round-trip tool (no CI wiring yet). Run from the suite repo root:
+#   cmake --build build --target neurotendrils_ipc_roundtrip
+#   ./build/neurotendrils_ipc_roundtrip
+qt_add_executable(neurotendrils_ipc_roundtrip
+    tests/worker_ipc_roundtrip.cpp
+    src/core/projectdir.cpp
+    include/core/projectdir.hpp
+    src/core/pythonruntime.cpp
+    include/core/pythonruntime.hpp
+    src/core/ipcredact.cpp
+    include/core/ipcredact.hpp
+    src/core/workerclient.cpp
+    include/core/workerclient.hpp
+)
+
+target_include_directories(neurotendrils_ipc_roundtrip PRIVATE include)
+target_link_libraries(neurotendrils_ipc_roundtrip PRIVATE Qt6::Widgets)
