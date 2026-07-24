@@ -6,6 +6,7 @@
 class QLabel;
 class QPushButton;
 class QStackedWidget;
+class QWidget;
 class SkeletonLoader;
 class WorkerClient;
 
@@ -36,9 +37,13 @@ private:
     void setFingerprintLoading();
     void setFingerprintReady(const QJsonObject &result);
     void setFingerprintError(const QString &message);
+    void populateFingerprintCard(const QJsonObject &result);
     void refreshIcons();
     void updateElidedTexts();
     [[nodiscard]] static QString formatFileSize(qint64 bytes);
+    [[nodiscard]] static QString formatDuration(double seconds);
+    [[nodiscard]] static QString formatHz(double hz);
+    [[nodiscard]] static QString formatOptionalHz(const QJsonValue &value);
 
     WorkerClient *workerClient_ = nullptr;
     QStackedWidget *recordingStack_ = nullptr;
@@ -53,6 +58,13 @@ private:
     QPushButton *clearButton_ = nullptr;
     QLabel *fingerprintStatus_ = nullptr;
     SkeletonLoader *fingerprintSkeleton_ = nullptr;
+    QWidget *fingerprintCard_ = nullptr;
+    QLabel *fpChannelsValue_ = nullptr;
+    QLabel *fpSfreqValue_ = nullptr;
+    QLabel *fpDurationValue_ = nullptr;
+    QLabel *fpMontageValue_ = nullptr;
+    QLabel *fpFiltersValue_ = nullptr;
+    QLabel *fpChannelNames_ = nullptr;
     QString datasetPath_;
     QString fullFileName_;
     QString fullFilePath_;

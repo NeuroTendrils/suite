@@ -260,7 +260,7 @@ QString buildStyleSheet(const ThemeColors &colors)
             border-radius: 10px;
         }
 
-        QFrame#filePanel, QFrame#upcomingPanel {
+        QFrame#filePanel, QFrame#fingerprintPanel, QFrame#upcomingPanel {
             background-color: @sidebar;
             border: 1px solid @border;
             border-radius: 10px;
@@ -295,6 +295,22 @@ QString buildStyleSheet(const ThemeColors &colors)
         }
 
         QLabel#upcomingCaption {
+            color: @mutedText;
+            font-size: 12px;
+        }
+
+        QLabel#fingerprintKey {
+            color: @mutedText;
+            font-size: 11px;
+        }
+
+        QLabel#fingerprintValue {
+            color: @text;
+            font-size: 13px;
+            font-weight: 600;
+        }
+
+        QLabel#fingerprintChannels {
             color: @mutedText;
             font-size: 12px;
         }

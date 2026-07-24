@@ -13,8 +13,11 @@
 #include <QFileInfo>
 #include <QFontMetrics>
 #include <QFrame>
+#include <QGridLayout>
 #include <QHBoxLayout>
+#include <QJsonArray>
 #include <QJsonObject>
+#include <QJsonValue>
 #include <QLabel>
 #include <QMessageBox>
 #include <QPushButton>
@@ -225,7 +228,7 @@ NeuroFlowPage::NeuroFlowPage(QWidget *parent)
     fingerprintLabel->setObjectName(QStringLiteral("groupLabel"));
     makeFlexible(fingerprintLabel);
 
-    auto *fingerprintPanel = makePanel(QStringLiteral("upcomingPanel"), content);
+    auto *fingerprintPanel = makePanel(QStringLiteral("fingerprintPanel"), content);
     auto *fingerprintLayout = new QVBoxLayout(fingerprintPanel);
     fingerprintLayout->setContentsMargins(12, 12, 12, 12);
     fingerprintLayout->setSpacing(8);
@@ -241,8 +244,60 @@ NeuroFlowPage::NeuroFlowPage(QWidget *parent)
     fingerprintSkeleton_->addBlock(0.9, 10, 4);
     fingerprintSkeleton_->addBlock(0.62, 10, 4);
 
+    fingerprintCard_ = new QWidget(fingerprintPanel);
+    makeFlexible(fingerprintCard_);
+    fingerprintCard_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Minimum);
+    auto *cardLayout = new QGridLayout(fingerprintCard_);
+    cardLayout->setContentsMargins(0, 0, 0, 0);
+    cardLayout->setHorizontalSpacing(16);
+    cardLayout->setVerticalSpacing(8);
+
+    auto makeKey = [](const QString &text, QWidget *parent) {
+        auto *label = new QLabel(text, parent);
+        label->setObjectName(QStringLiteral("fingerprintKey"));
+        makeFlexible(label);
+        return label;
+    };
+    auto makeValue = [](QWidget *parent) {
+        auto *label = new QLabel(parent);
+        label->setObjectName(QStringLiteral("fingerprintValue"));
+        label->setWordWrap(true);
+        makeFlexible(label);
+        return label;
+    };
+
+    fpChannelsValue_ = makeValue(fingerprintCard_);
+    fpSfreqValue_ = makeValue(fingerprintCard_);
+    fpDurationValue_ = makeValue(fingerprintCard_);
+    fpMontageValue_ = makeValue(fingerprintCard_);
+    fpFiltersValue_ = makeValue(fingerprintCard_);
+
+    cardLayout->addWidget(makeKey(tr("Channels"), fingerprintCard_), 0, 0);
+    cardLayout->addWidget(fpChannelsValue_, 1, 0);
+    cardLayout->addWidget(makeKey(tr("Sampling rate"), fingerprintCard_), 0, 1);
+    cardLayout->addWidget(fpSfreqValue_, 1, 1);
+    cardLayout->addWidget(makeKey(tr("Duration"), fingerprintCard_), 0, 2);
+    cardLayout->addWidget(fpDurationValue_, 1, 2);
+    cardLayout->addWidget(makeKey(tr("Montage"), fingerprintCard_), 2, 0);
+    cardLayout->addWidget(fpMontageValue_, 3, 0);
+    cardLayout->addWidget(makeKey(tr("Filters"), fingerprintCard_), 2, 1, 1, 2);
+    cardLayout->addWidget(fpFiltersValue_, 3, 1, 1, 2);
+
+    auto *channelNamesKey = makeKey(tr("Channel names"), fingerprintCard_);
+    fpChannelNames_ = new QLabel(fingerprintCard_);
+    fpChannelNames_->setObjectName(QStringLiteral("fingerprintChannels"));
+    fpChannelNames_->setWordWrap(true);
+    makeFlexible(fpChannelNames_);
+
+    cardLayout->addWidget(channelNamesKey, 4, 0, 1, 3);
+    cardLayout->addWidget(fpChannelNames_, 5, 0, 1, 3);
+    cardLayout->setColumnStretch(0, 1);
+    cardLayout->setColumnStretch(1, 1);
+    cardLayout->setColumnStretch(2, 1);
+
     fingerprintLayout->addWidget(fingerprintStatus_);
     fingerprintLayout->addWidget(fingerprintSkeleton_);
+    fingerprintLayout->addWidget(fingerprintCard_);
 
     layout->addWidget(header);
     layout->addSpacing(16);
@@ -418,28 +473,79 @@ void NeuroFlowPage::setFingerprintIdle()
     fingerprint_ = {};
     fingerprintStatus_->setText(
         tr("Import a recording to see channels, sampling rate, and duration."));
+    fingerprintStatus_->setVisible(true);
     fingerprintSkeleton_->setVisible(false);
+    fingerprintCard_->setVisible(false);
 }
 
 void NeuroFlowPage::setFingerprintLoading()
 {
     fingerprint_ = {};
     fingerprintStatus_->setText(tr("Reading recording…"));
+    fingerprintStatus_->setVisible(true);
     fingerprintSkeleton_->setVisible(true);
+    fingerprintCard_->setVisible(false);
 }
 
 void NeuroFlowPage::setFingerprintReady(const QJsonObject &result)
 {
     fingerprint_ = result;
-    fingerprintStatus_->setText(tr("Fingerprint ready."));
+    populateFingerprintCard(result);
+    fingerprintStatus_->setVisible(false);
     fingerprintSkeleton_->setVisible(false);
+    fingerprintCard_->setVisible(true);
 }
 
 void NeuroFlowPage::setFingerprintError(const QString &message)
 {
     fingerprint_ = {};
     fingerprintStatus_->setText(message);
+    fingerprintStatus_->setVisible(true);
     fingerprintSkeleton_->setVisible(false);
+    fingerprintCard_->setVisible(false);
+}
+
+void NeuroFlowPage::populateFingerprintCard(const QJsonObject &result)
+{
+    const int nChannels = result.value(QStringLiteral("n_channels")).toInt();
+    const double sfreq = result.value(QStringLiteral("sfreq")).toDouble();
+    const double duration = result.value(QStringLiteral("duration_sec")).toDouble();
+    const QString montage = result.value(QStringLiteral("montage_hint")).toString();
+
+    fpChannelsValue_->setText(tr("%n channel(s)", nullptr, nChannels));
+    fpSfreqValue_->setText(formatHz(sfreq));
+    fpDurationValue_->setText(formatDuration(duration));
+    fpMontageValue_->setText(montage.isEmpty() ? tr("Unknown") : montage);
+
+    const QString highpass = formatOptionalHz(result.value(QStringLiteral("highpass")));
+    const QString lowpass = formatOptionalHz(result.value(QStringLiteral("lowpass")));
+    if (highpass == QLatin1String("—") && lowpass == QLatin1String("—")) {
+        fpFiltersValue_->setText(tr("Not reported"));
+    } else {
+        fpFiltersValue_->setText(tr("%1 – %2").arg(highpass, lowpass));
+    }
+
+    const QJsonArray names = result.value(QStringLiteral("ch_names")).toArray();
+    QStringList preview;
+    constexpr int kPreviewLimit = 12;
+    for (int i = 0; i < names.size() && i < kPreviewLimit; ++i) {
+        preview << names.at(i).toString();
+    }
+    QString channelText = preview.join(QStringLiteral(", "));
+    if (names.size() > kPreviewLimit) {
+        channelText += tr(", +%1 more").arg(names.size() - kPreviewLimit);
+    }
+    if (channelText.isEmpty()) {
+        channelText = tr("None");
+    }
+    fpChannelNames_->setText(channelText);
+
+    QStringList allNames;
+    allNames.reserve(names.size());
+    for (const QJsonValue &value : names) {
+        allNames << value.toString();
+    }
+    fpChannelNames_->setToolTip(allNames.join(QStringLiteral(", ")));
 }
 
 void NeuroFlowPage::refreshIcons()
@@ -490,4 +596,44 @@ QString NeuroFlowPage::formatFileSize(qint64 bytes)
         return tr("%1 MB").arg(bytes / (1024.0 * 1024.0), 0, 'f', 1);
     }
     return tr("%1 GB").arg(bytes / (1024.0 * 1024.0 * 1024.0), 0, 'f', 2);
+}
+
+QString NeuroFlowPage::formatDuration(double seconds)
+{
+    if (seconds < 0 || seconds != seconds) {
+        return tr("—");
+    }
+    if (seconds < 60.0) {
+        return tr("%1 s").arg(seconds, 0, 'f', seconds < 10.0 ? 2 : 1);
+    }
+    const int totalSec = static_cast<int>(seconds + 0.5);
+    const int hours = totalSec / 3600;
+    const int minutes = (totalSec % 3600) / 60;
+    const int secs = totalSec % 60;
+    if (hours > 0) {
+        return tr("%1 h %2 m").arg(hours).arg(minutes);
+    }
+    if (secs == 0) {
+        return tr("%1 min").arg(minutes);
+    }
+    return tr("%1 min %2 s").arg(minutes).arg(secs);
+}
+
+QString NeuroFlowPage::formatHz(double hz)
+{
+    if (hz <= 0.0 || hz != hz) {
+        return tr("—");
+    }
+    if (qAbs(hz - qRound(hz)) < 1e-6) {
+        return tr("%1 Hz").arg(qRound(hz));
+    }
+    return tr("%1 Hz").arg(hz, 0, 'f', 2);
+}
+
+QString NeuroFlowPage::formatOptionalHz(const QJsonValue &value)
+{
+    if (value.isNull() || !value.isDouble()) {
+        return QStringLiteral("—");
+    }
+    return formatHz(value.toDouble());
 }
