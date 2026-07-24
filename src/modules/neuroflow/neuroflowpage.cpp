@@ -3,6 +3,7 @@
 #include "core/datasetimport.hpp"
 #include "core/projectdir.hpp"
 #include "core/theme.hpp"
+#include "core/workerclient.hpp"
 #include "widgets/icons.hpp"
 #include "widgets/pageheader.hpp"
 #include "widgets/skeletonloader.hpp"
@@ -13,6 +14,7 @@
 #include <QFontMetrics>
 #include <QFrame>
 #include <QHBoxLayout>
+#include <QJsonObject>
 #include <QLabel>
 #include <QMessageBox>
 #include <QPushButton>
@@ -45,6 +47,7 @@ QFrame *makePanel(const QString &objectName, QWidget *parent)
 
 NeuroFlowPage::NeuroFlowPage(QWidget *parent)
     : QWidget(parent)
+    , workerClient_(new WorkerClient(this))
 {
     makeFlexible(this);
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
@@ -222,25 +225,24 @@ NeuroFlowPage::NeuroFlowPage(QWidget *parent)
     fingerprintLabel->setObjectName(QStringLiteral("groupLabel"));
     makeFlexible(fingerprintLabel);
 
-    auto *upcoming = makePanel(QStringLiteral("upcomingPanel"), content);
-    auto *upcomingLayout = new QVBoxLayout(upcoming);
-    upcomingLayout->setContentsMargins(12, 12, 12, 12);
-    upcomingLayout->setSpacing(8);
+    auto *fingerprintPanel = makePanel(QStringLiteral("upcomingPanel"), content);
+    auto *fingerprintLayout = new QVBoxLayout(fingerprintPanel);
+    fingerprintLayout->setContentsMargins(12, 12, 12, 12);
+    fingerprintLayout->setSpacing(8);
 
-    auto *upcomingCaption =
-        new QLabel(tr("Channels, sampling rate, and duration show up here next."), upcoming);
-    upcomingCaption->setObjectName(QStringLiteral("upcomingCaption"));
-    upcomingCaption->setWordWrap(true);
-    makeFlexible(upcomingCaption);
+    fingerprintStatus_ = new QLabel(fingerprintPanel);
+    fingerprintStatus_->setObjectName(QStringLiteral("upcomingCaption"));
+    fingerprintStatus_->setWordWrap(true);
+    makeFlexible(fingerprintStatus_);
 
-    fingerprintSkeleton_ = new SkeletonLoader(upcoming);
+    fingerprintSkeleton_ = new SkeletonLoader(fingerprintPanel);
     makeFlexible(fingerprintSkeleton_);
     fingerprintSkeleton_->addBlock(0.28, 10, 4);
     fingerprintSkeleton_->addBlock(0.9, 10, 4);
     fingerprintSkeleton_->addBlock(0.62, 10, 4);
 
-    upcomingLayout->addWidget(upcomingCaption);
-    upcomingLayout->addWidget(fingerprintSkeleton_);
+    fingerprintLayout->addWidget(fingerprintStatus_);
+    fingerprintLayout->addWidget(fingerprintSkeleton_);
 
     layout->addWidget(header);
     layout->addSpacing(16);
@@ -250,19 +252,29 @@ NeuroFlowPage::NeuroFlowPage(QWidget *parent)
     layout->addSpacing(16);
     layout->addWidget(fingerprintLabel);
     layout->addSpacing(6);
-    layout->addWidget(upcoming);
+    layout->addWidget(fingerprintPanel);
     layout->addStretch(1);
 
     scroll->setWidget(content);
     rootLayout->addWidget(scroll);
 
     connect(&Theme::instance(), &Theme::changed, this, &NeuroFlowPage::refreshIcons);
+    connect(workerClient_,
+            &WorkerClient::finished,
+            this,
+            &NeuroFlowPage::onFingerprintFinished);
     refreshIcons();
+    setFingerprintIdle();
 }
 
 QString NeuroFlowPage::currentDatasetPath() const
 {
     return datasetPath_;
+}
+
+QJsonObject NeuroFlowPage::currentFingerprint() const
+{
+    return fingerprint_;
 }
 
 void NeuroFlowPage::resizeEvent(QResizeEvent *event)
@@ -299,9 +311,11 @@ void NeuroFlowPage::importRecording()
 
 void NeuroFlowPage::clearRecording()
 {
+    cancelFingerprint();
     datasetPath_.clear();
     fullFileName_.clear();
     fullFilePath_.clear();
+    fingerprint_ = {};
     fileNameLabel_->clear();
     fileMetaLabel_->clear();
     filePathLabel_->clear();
@@ -310,11 +324,15 @@ void NeuroFlowPage::clearRecording()
     fileBadge_->clear();
     fileBadge_->setVisible(false);
     recordingStack_->setCurrentIndex(0);
+    setFingerprintIdle();
 }
 
 void NeuroFlowPage::setDatasetPath(const QString &path, bool copied)
 {
+    cancelFingerprint();
+
     datasetPath_ = path;
+    fingerprint_ = {};
     const QFileInfo info(path);
 
     fullFileName_ = info.fileName();
@@ -337,6 +355,91 @@ void NeuroFlowPage::setDatasetPath(const QString &path, bool copied)
     recordingStack_->setCurrentIndex(1);
     refreshIcons();
     updateElidedTexts();
+    requestFingerprint();
+}
+
+void NeuroFlowPage::requestFingerprint()
+{
+    if (datasetPath_.isEmpty()) {
+        setFingerprintIdle();
+        return;
+    }
+
+    if (!ProjectDir::instance().contains(datasetPath_)) {
+        setFingerprintError(tr("Recording is outside the project folder."));
+        return;
+    }
+
+    if (WorkerClient::workersRoot().isEmpty()) {
+        setFingerprintError(tr("NeuroFlow worker not found."));
+        return;
+    }
+
+    setFingerprintLoading();
+    workerClient_->startRequest(
+        QStringLiteral("neuroflow"),
+        QStringLiteral("fingerprint"),
+        QJsonObject{{QStringLiteral("path"), datasetPath_}},
+        60000);
+}
+
+void NeuroFlowPage::cancelFingerprint()
+{
+    if (workerClient_ != nullptr && workerClient_->isBusy()) {
+        workerClient_->cancel();
+    }
+}
+
+void NeuroFlowPage::onFingerprintFinished(bool ok,
+                                          const QJsonObject &result,
+                                          const QString &errorCode,
+                                          const QString &errorMessage)
+{
+    if (errorCode == QLatin1String("cancelled")) {
+        return;
+    }
+
+    if (datasetPath_.isEmpty()) {
+        setFingerprintIdle();
+        return;
+    }
+
+    if (!ok) {
+        const QString detail = errorMessage.isEmpty() ? errorCode : errorMessage;
+        setFingerprintError(tr("Could not fingerprint recording: %1").arg(detail));
+        return;
+    }
+
+    setFingerprintReady(result);
+}
+
+void NeuroFlowPage::setFingerprintIdle()
+{
+    fingerprint_ = {};
+    fingerprintStatus_->setText(
+        tr("Import a recording to see channels, sampling rate, and duration."));
+    fingerprintSkeleton_->setVisible(false);
+}
+
+void NeuroFlowPage::setFingerprintLoading()
+{
+    fingerprint_ = {};
+    fingerprintStatus_->setText(tr("Reading recording…"));
+    fingerprintSkeleton_->setVisible(true);
+}
+
+void NeuroFlowPage::setFingerprintReady(const QJsonObject &result)
+{
+    fingerprint_ = result;
+    fingerprintStatus_->setText(tr("Fingerprint ready."));
+    fingerprintSkeleton_->setVisible(false);
+}
+
+void NeuroFlowPage::setFingerprintError(const QString &message)
+{
+    fingerprint_ = {};
+    fingerprintStatus_->setText(message);
+    fingerprintSkeleton_->setVisible(false);
 }
 
 void NeuroFlowPage::refreshIcons()
