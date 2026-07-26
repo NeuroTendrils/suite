@@ -314,7 +314,16 @@ NeuroFlowPage::NeuroFlowPage(QWidget *parent)
     planStatus_->setObjectName(QStringLiteral("upcomingCaption"));
     planStatus_->setWordWrap(true);
     makeFlexible(planStatus_);
+
+    planListHost_ = new QWidget(planPanel);
+    makeFlexible(planListHost_);
+    planListHost_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Minimum);
+    planListLayout_ = new QVBoxLayout(planListHost_);
+    planListLayout_->setContentsMargins(0, 0, 0, 0);
+    planListLayout_->setSpacing(8);
+
     planLayout->addWidget(planStatus_);
+    planLayout->addWidget(planListHost_);
 
     layout->addWidget(header);
     layout->addSpacing(16);
@@ -558,23 +567,126 @@ void NeuroFlowPage::clearPlan()
 
 void NeuroFlowPage::setPlanIdle()
 {
+    clearPlanList();
     planStatus_->setText(
         tr("A default step plan appears here after the recording is fingerprinted."));
+    planStatus_->setToolTip(QString());
+    planListHost_->setVisible(false);
 }
 
 void NeuroFlowPage::setPlanReady(const PlanGenerator::Plan &plan)
 {
-    QStringList titles;
-    titles.reserve(plan.steps.size());
-    for (const PlanGenerator::Step &step : plan.steps) {
-        titles << step.title;
-    }
-
     planStatus_->setText(
-        tr("Generated %n step(s): %1", nullptr, plan.steps.size())
-            .arg(titles.join(QStringLiteral(" → "))));
+        tr("Default plan (%n step(s), read-only for now). Heuristic starter, not optimized science.",
+           nullptr,
+           plan.steps.size()));
     planStatus_->setToolTip(QString::fromUtf8(
         QJsonDocument(PlanGenerator::toJson(plan)).toJson(QJsonDocument::Indented)));
+    rebuildPlanList(plan);
+    planListHost_->setVisible(true);
+}
+
+void NeuroFlowPage::clearPlanList()
+{
+    if (planListLayout_ == nullptr) {
+        return;
+    }
+    while (QLayoutItem *item = planListLayout_->takeAt(0)) {
+        if (QWidget *widget = item->widget()) {
+            widget->deleteLater();
+        }
+        delete item;
+    }
+}
+
+void NeuroFlowPage::rebuildPlanList(const PlanGenerator::Plan &plan)
+{
+    clearPlanList();
+
+    for (int i = 0; i < plan.steps.size(); ++i) {
+        const PlanGenerator::Step &step = plan.steps.at(i);
+
+        auto *row = new QFrame(planListHost_);
+        row->setObjectName(QStringLiteral("planStepRow"));
+        row->setFrameShape(QFrame::NoFrame);
+        makeFlexible(row);
+        row->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Minimum);
+
+        auto *rowLayout = new QHBoxLayout(row);
+        rowLayout->setContentsMargins(10, 8, 10, 8);
+        rowLayout->setSpacing(10);
+
+        auto *indexLabel = new QLabel(QString::number(i + 1), row);
+        indexLabel->setObjectName(QStringLiteral("planStepIndex"));
+        indexLabel->setAlignment(Qt::AlignCenter);
+        indexLabel->setFixedSize(24, 24);
+
+        auto *text = new QWidget(row);
+        makeFlexible(text);
+        auto *textLayout = new QVBoxLayout(text);
+        textLayout->setContentsMargins(0, 0, 0, 0);
+        textLayout->setSpacing(2);
+
+        auto *title = new QLabel(step.title, text);
+        title->setObjectName(QStringLiteral("planStepTitle"));
+        makeFlexible(title);
+
+        const QString params = formatStepParams(step.params);
+        auto *meta = new QLabel(params.isEmpty() ? step.stepId : params, text);
+        meta->setObjectName(QStringLiteral("planStepMeta"));
+        meta->setWordWrap(true);
+        makeFlexible(meta);
+
+        auto *why = new QLabel(step.rationale, text);
+        why->setObjectName(QStringLiteral("planStepRationale"));
+        why->setWordWrap(true);
+        makeFlexible(why);
+
+        textLayout->addWidget(title);
+        textLayout->addWidget(meta);
+        if (!step.rationale.isEmpty()) {
+            textLayout->addWidget(why);
+        } else {
+            why->deleteLater();
+        }
+
+        rowLayout->addWidget(indexLabel, 0, Qt::AlignTop);
+        rowLayout->addWidget(text, 1);
+        planListLayout_->addWidget(row);
+    }
+}
+
+QString NeuroFlowPage::formatStepParams(const QJsonObject &params)
+{
+    if (params.isEmpty()) {
+        return {};
+    }
+
+    QStringList parts;
+    const QStringList keys = params.keys();
+    for (const QString &key : keys) {
+        const QJsonValue value = params.value(key);
+        QString rendered;
+        if (value.isBool()) {
+            rendered = value.toBool() ? QStringLiteral("true") : QStringLiteral("false");
+        } else if (value.isDouble()) {
+            const double number = value.toDouble();
+            if (qAbs(number - qRound(number)) < 1e-9) {
+                rendered = QString::number(qRound(number));
+            } else {
+                rendered = QString::number(number, 'g', 4);
+            }
+        } else if (value.isString()) {
+            rendered = value.toString();
+            if (rendered.isEmpty()) {
+                continue;
+            }
+        } else {
+            continue;
+        }
+        parts << QStringLiteral("%1=%2").arg(key, rendered);
+    }
+    return parts.join(QStringLiteral(" · "));
 }
 
 void NeuroFlowPage::populateFingerprintCard(const QJsonObject &result)

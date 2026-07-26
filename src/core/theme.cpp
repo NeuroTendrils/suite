@@ -315,6 +315,37 @@ QString buildStyleSheet(const ThemeColors &colors)
             font-size: 12px;
         }
 
+        QFrame#planStepRow {
+            background-color: @background;
+            border: 1px solid @border;
+            border-radius: 8px;
+        }
+
+        QLabel#planStepIndex {
+            color: @accent;
+            background-color: @selection;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 700;
+        }
+
+        QLabel#planStepTitle {
+            color: @text;
+            font-size: 13px;
+            font-weight: 600;
+        }
+
+        QLabel#planStepMeta {
+            color: @mutedText;
+            font-size: 11px;
+            font-family: Menlo, Monaco, Consolas, monospace;
+        }
+
+        QLabel#planStepRationale {
+            color: @mutedText;
+            font-size: 11px;
+        }
+
         QPushButton#primaryButton {
             background-color: @accent;
             color: @accentText;

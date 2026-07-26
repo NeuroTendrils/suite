@@ -8,6 +8,7 @@
 class QLabel;
 class QPushButton;
 class QStackedWidget;
+class QVBoxLayout;
 class QWidget;
 class SkeletonLoader;
 class WorkerClient;
@@ -45,12 +46,15 @@ private:
     void clearPlan();
     void setPlanIdle();
     void setPlanReady(const PlanGenerator::Plan &plan);
+    void rebuildPlanList(const PlanGenerator::Plan &plan);
+    void clearPlanList();
     void refreshIcons();
     void updateElidedTexts();
     [[nodiscard]] static QString formatFileSize(qint64 bytes);
     [[nodiscard]] static QString formatDuration(double seconds);
     [[nodiscard]] static QString formatHz(double hz);
     [[nodiscard]] static QString formatOptionalHz(const QJsonValue &value);
+    [[nodiscard]] static QString formatStepParams(const QJsonObject &params);
 
     WorkerClient *workerClient_ = nullptr;
     QStackedWidget *recordingStack_ = nullptr;
@@ -73,6 +77,8 @@ private:
     QLabel *fpFiltersValue_ = nullptr;
     QLabel *fpChannelNames_ = nullptr;
     QLabel *planStatus_ = nullptr;
+    QWidget *planListHost_ = nullptr;
+    QVBoxLayout *planListLayout_ = nullptr;
     QString datasetPath_;
     QString fullFileName_;
     QString fullFilePath_;
