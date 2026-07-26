@@ -3,8 +3,10 @@
 #include "core/datasetimport.hpp"
 #include "core/plangenerator.hpp"
 #include "core/projectdir.hpp"
+#include "core/stepcatalog.hpp"
 #include "core/theme.hpp"
 #include "core/workerclient.hpp"
+#include "modules/neuroflow/stepeditdialog.hpp"
 #include "widgets/icons.hpp"
 #include "widgets/pageheader.hpp"
 #include "widgets/skeletonloader.hpp"
@@ -577,7 +579,8 @@ void NeuroFlowPage::setPlanIdle()
 void NeuroFlowPage::setPlanReady(const PlanGenerator::Plan &plan)
 {
     planStatus_->setText(
-        tr("Default plan (%n step(s), read-only for now). Heuristic starter, not optimized science.",
+        tr("Default plan (%n step(s)). Edit a step to change its parameters. Heuristic starter, "
+           "not optimized science.",
            nullptr,
            plan.steps.size()));
     planStatus_->setToolTip(QString::fromUtf8(
@@ -650,10 +653,40 @@ void NeuroFlowPage::rebuildPlanList(const PlanGenerator::Plan &plan)
             why->deleteLater();
         }
 
+        auto *editButton = new QPushButton(tr("Edit"), row);
+        editButton->setObjectName(QStringLiteral("secondaryButton"));
+        editButton->setCursor(Qt::PointingHandCursor);
+        editButton->setAutoDefault(false);
+        connect(editButton, &QPushButton::clicked, this, [this, i]() { editPlanStep(i); });
+
         rowLayout->addWidget(indexLabel, 0, Qt::AlignTop);
         rowLayout->addWidget(text, 1);
+        rowLayout->addWidget(editButton, 0, Qt::AlignTop);
         planListLayout_->addWidget(row);
     }
+}
+
+void NeuroFlowPage::editPlanStep(int index)
+{
+    if (index < 0 || index >= plan_.steps.size()) {
+        return;
+    }
+
+    PlanGenerator::Step &step = plan_.steps[index];
+    StepEditDialog dialog(step.stepId, step.title, step.params, this);
+    if (dialog.exec() != QDialog::Accepted) {
+        return;
+    }
+
+    const QJsonObject next = dialog.params();
+    const QString error = StepCatalog::validateParams(step.stepId, next);
+    if (!error.isEmpty()) {
+        QMessageBox::warning(this, tr("Invalid parameters"), error);
+        return;
+    }
+
+    step.params = next;
+    setPlanReady(plan_);
 }
 
 QString NeuroFlowPage::formatStepParams(const QJsonObject &params)

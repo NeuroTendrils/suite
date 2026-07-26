@@ -48,6 +48,7 @@ private:
     void setPlanReady(const PlanGenerator::Plan &plan);
     void rebuildPlanList(const PlanGenerator::Plan &plan);
     void clearPlanList();
+    void editPlanStep(int index);
     void refreshIcons();
     void updateElidedTexts();
     [[nodiscard]] static QString formatFileSize(qint64 bytes);

@@ -54,6 +54,8 @@ qt_add_executable(neurotendrils
     include/widgets/skeletonloader.hpp
     src/modules/neuroflow/neuroflowpage.cpp
     include/modules/neuroflow/neuroflowpage.hpp
+    src/modules/neuroflow/stepeditdialog.cpp
+    include/modules/neuroflow/stepeditdialog.hpp
     src/modules/neurostudio/neurostudiopage.cpp
     include/modules/neurostudio/neurostudiopage.hpp
     src/modules/neurolearn/neurolearnpage.cpp

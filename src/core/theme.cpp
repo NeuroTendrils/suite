@@ -346,6 +346,11 @@ QString buildStyleSheet(const ThemeColors &colors)
             font-size: 11px;
         }
 
+        QLabel#stepEditError {
+            color: #c45c5c;
+            font-size: 12px;
+        }
+
         QPushButton#primaryButton {
             background-color: @accent;
             color: @accentText;
