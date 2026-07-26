@@ -1,5 +1,7 @@
 #pragma once
 
+#include "core/plangenerator.hpp"
+
 #include <QJsonObject>
 #include <QWidget>
 
@@ -19,6 +21,7 @@ public:
 
     [[nodiscard]] QString currentDatasetPath() const;
     [[nodiscard]] QJsonObject currentFingerprint() const;
+    [[nodiscard]] PlanGenerator::Plan currentPlan() const;
 
 protected:
     void resizeEvent(QResizeEvent *event) override;
@@ -38,6 +41,10 @@ private:
     void setFingerprintReady(const QJsonObject &result);
     void setFingerprintError(const QString &message);
     void populateFingerprintCard(const QJsonObject &result);
+    void regeneratePlan();
+    void clearPlan();
+    void setPlanIdle();
+    void setPlanReady(const PlanGenerator::Plan &plan);
     void refreshIcons();
     void updateElidedTexts();
     [[nodiscard]] static QString formatFileSize(qint64 bytes);
@@ -65,8 +72,10 @@ private:
     QLabel *fpMontageValue_ = nullptr;
     QLabel *fpFiltersValue_ = nullptr;
     QLabel *fpChannelNames_ = nullptr;
+    QLabel *planStatus_ = nullptr;
     QString datasetPath_;
     QString fullFileName_;
     QString fullFilePath_;
     QJsonObject fingerprint_;
+    PlanGenerator::Plan plan_;
 };

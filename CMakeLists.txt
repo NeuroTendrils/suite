@@ -40,6 +40,8 @@ qt_add_executable(neurotendrils
     include/core/datasetimport.hpp
     src/core/stepcatalog.cpp
     include/core/stepcatalog.hpp
+    src/core/plangenerator.cpp
+    include/core/plangenerator.hpp
     src/settingsdialog.cpp
     include/settingsdialog.hpp
     src/widgets/icons.cpp

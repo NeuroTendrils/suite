@@ -1,6 +1,7 @@
 #include "modules/neuroflow/neuroflowpage.hpp"
 
 #include "core/datasetimport.hpp"
+#include "core/plangenerator.hpp"
 #include "core/projectdir.hpp"
 #include "core/theme.hpp"
 #include "core/workerclient.hpp"
@@ -16,6 +17,7 @@
 #include <QGridLayout>
 #include <QHBoxLayout>
 #include <QJsonArray>
+#include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonValue>
 #include <QLabel>
@@ -299,6 +301,21 @@ NeuroFlowPage::NeuroFlowPage(QWidget *parent)
     fingerprintLayout->addWidget(fingerprintSkeleton_);
     fingerprintLayout->addWidget(fingerprintCard_);
 
+    auto *planLabel = new QLabel(tr("Plan"), content);
+    planLabel->setObjectName(QStringLiteral("groupLabel"));
+    makeFlexible(planLabel);
+
+    auto *planPanel = makePanel(QStringLiteral("fingerprintPanel"), content);
+    auto *planLayout = new QVBoxLayout(planPanel);
+    planLayout->setContentsMargins(12, 12, 12, 12);
+    planLayout->setSpacing(8);
+
+    planStatus_ = new QLabel(planPanel);
+    planStatus_->setObjectName(QStringLiteral("upcomingCaption"));
+    planStatus_->setWordWrap(true);
+    makeFlexible(planStatus_);
+    planLayout->addWidget(planStatus_);
+
     layout->addWidget(header);
     layout->addSpacing(16);
     layout->addWidget(recordingLabel);
@@ -308,6 +325,10 @@ NeuroFlowPage::NeuroFlowPage(QWidget *parent)
     layout->addWidget(fingerprintLabel);
     layout->addSpacing(6);
     layout->addWidget(fingerprintPanel);
+    layout->addSpacing(16);
+    layout->addWidget(planLabel);
+    layout->addSpacing(6);
+    layout->addWidget(planPanel);
     layout->addStretch(1);
 
     scroll->setWidget(content);
@@ -320,6 +341,7 @@ NeuroFlowPage::NeuroFlowPage(QWidget *parent)
             &NeuroFlowPage::onFingerprintFinished);
     refreshIcons();
     setFingerprintIdle();
+    setPlanIdle();
 }
 
 QString NeuroFlowPage::currentDatasetPath() const
@@ -330,6 +352,11 @@ QString NeuroFlowPage::currentDatasetPath() const
 QJsonObject NeuroFlowPage::currentFingerprint() const
 {
     return fingerprint_;
+}
+
+PlanGenerator::Plan NeuroFlowPage::currentPlan() const
+{
+    return plan_;
 }
 
 void NeuroFlowPage::resizeEvent(QResizeEvent *event)
@@ -371,6 +398,7 @@ void NeuroFlowPage::clearRecording()
     fullFileName_.clear();
     fullFilePath_.clear();
     fingerprint_ = {};
+    clearPlan();
     fileNameLabel_->clear();
     fileMetaLabel_->clear();
     filePathLabel_->clear();
@@ -380,6 +408,7 @@ void NeuroFlowPage::clearRecording()
     fileBadge_->setVisible(false);
     recordingStack_->setCurrentIndex(0);
     setFingerprintIdle();
+    setPlanIdle();
 }
 
 void NeuroFlowPage::setDatasetPath(const QString &path, bool copied)
@@ -388,6 +417,8 @@ void NeuroFlowPage::setDatasetPath(const QString &path, bool copied)
 
     datasetPath_ = path;
     fingerprint_ = {};
+    clearPlan();
+    setPlanIdle();
     const QFileInfo info(path);
 
     fullFileName_ = info.fileName();
@@ -481,6 +512,8 @@ void NeuroFlowPage::setFingerprintIdle()
 void NeuroFlowPage::setFingerprintLoading()
 {
     fingerprint_ = {};
+    clearPlan();
+    setPlanIdle();
     fingerprintStatus_->setText(tr("Reading recording…"));
     fingerprintStatus_->setVisible(true);
     fingerprintSkeleton_->setVisible(true);
@@ -494,15 +527,54 @@ void NeuroFlowPage::setFingerprintReady(const QJsonObject &result)
     fingerprintStatus_->setVisible(false);
     fingerprintSkeleton_->setVisible(false);
     fingerprintCard_->setVisible(true);
+    regeneratePlan();
 }
 
 void NeuroFlowPage::setFingerprintError(const QString &message)
 {
     fingerprint_ = {};
+    clearPlan();
+    setPlanIdle();
     fingerprintStatus_->setText(message);
     fingerprintStatus_->setVisible(true);
     fingerprintSkeleton_->setVisible(false);
     fingerprintCard_->setVisible(false);
+}
+
+void NeuroFlowPage::regeneratePlan()
+{
+    plan_ = PlanGenerator::fromFingerprint(fingerprint_);
+    if (PlanGenerator::isEmpty(plan_)) {
+        setPlanIdle();
+        return;
+    }
+    setPlanReady(plan_);
+}
+
+void NeuroFlowPage::clearPlan()
+{
+    plan_ = {};
+}
+
+void NeuroFlowPage::setPlanIdle()
+{
+    planStatus_->setText(
+        tr("A default step plan appears here after the recording is fingerprinted."));
+}
+
+void NeuroFlowPage::setPlanReady(const PlanGenerator::Plan &plan)
+{
+    QStringList titles;
+    titles.reserve(plan.steps.size());
+    for (const PlanGenerator::Step &step : plan.steps) {
+        titles << step.title;
+    }
+
+    planStatus_->setText(
+        tr("Generated %n step(s): %1", nullptr, plan.steps.size())
+            .arg(titles.join(QStringLiteral(" → "))));
+    planStatus_->setToolTip(QString::fromUtf8(
+        QJsonDocument(PlanGenerator::toJson(plan)).toJson(QJsonDocument::Indented)));
 }
 
 void NeuroFlowPage::populateFingerprintCard(const QJsonObject &result)
