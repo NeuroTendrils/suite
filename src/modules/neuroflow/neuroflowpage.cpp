@@ -4,6 +4,7 @@
 #include "core/planio.hpp"
 #include "core/plangenerator.hpp"
 #include "core/projectdir.hpp"
+#include "core/runio.hpp"
 #include "core/stepcatalog.hpp"
 #include "core/theme.hpp"
 #include "core/workerclient.hpp"
@@ -359,6 +360,68 @@ NeuroFlowPage::NeuroFlowPage(QWidget *parent)
     planLayout->addWidget(planListHost_);
     planLayout->addWidget(planActions_);
 
+    auto *runLabel = new QLabel(tr("Run"), content);
+    runLabel->setObjectName(QStringLiteral("groupLabel"));
+    makeFlexible(runLabel);
+
+    auto *runPanel = makePanel(QStringLiteral("fingerprintPanel"), content);
+    auto *runLayout = new QVBoxLayout(runPanel);
+    runLayout->setContentsMargins(12, 12, 12, 12);
+    runLayout->setSpacing(8);
+
+    runStatus_ = new QLabel(runPanel);
+    runStatus_->setObjectName(QStringLiteral("upcomingCaption"));
+    runStatus_->setWordWrap(true);
+    makeFlexible(runStatus_);
+
+    runSkeleton_ = new SkeletonLoader(runPanel);
+    runSkeleton_->addBlock(0.9, 14, 6);
+    runSkeleton_->addBlock(0.7, 14, 6);
+    runSkeleton_->addBlock(0.5, 14, 6);
+    runSkeleton_->setVisible(false);
+
+    runResult_ = new QLabel(runPanel);
+    runResult_->setObjectName(QStringLiteral("upcomingCaption"));
+    runResult_->setWordWrap(true);
+    runResult_->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    runResult_->setVisible(false);
+    makeFlexible(runResult_);
+
+    runLog_ = new QLabel(runPanel);
+    runLog_->setObjectName(QStringLiteral("upcomingCaption"));
+    runLog_->setWordWrap(true);
+    runLog_->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    runLog_->setVisible(false);
+    makeFlexible(runLog_);
+
+    runPlanButton_ = new QPushButton(tr("Run plan"), runPanel);
+    runPlanButton_->setObjectName(QStringLiteral("primaryButton"));
+    runPlanButton_->setCursor(Qt::PointingHandCursor);
+    runPlanButton_->setAutoDefault(false);
+    connect(runPlanButton_, &QPushButton::clicked, this, &NeuroFlowPage::runPlan);
+
+    cancelRunButton_ = new QPushButton(tr("Cancel"), runPanel);
+    cancelRunButton_->setObjectName(QStringLiteral("secondaryButton"));
+    cancelRunButton_->setCursor(Qt::PointingHandCursor);
+    cancelRunButton_->setAutoDefault(false);
+    cancelRunButton_->setVisible(false);
+    connect(cancelRunButton_, &QPushButton::clicked, this, &NeuroFlowPage::cancelWorker);
+
+    auto *runActions = new QWidget(runPanel);
+    makeFlexible(runActions);
+    auto *runActionsLayout = new QHBoxLayout(runActions);
+    runActionsLayout->setContentsMargins(0, 0, 0, 0);
+    runActionsLayout->setSpacing(8);
+    runActionsLayout->addWidget(runPlanButton_, 0, Qt::AlignLeft);
+    runActionsLayout->addWidget(cancelRunButton_, 0, Qt::AlignLeft);
+    runActionsLayout->addStretch(1);
+
+    runLayout->addWidget(runStatus_);
+    runLayout->addWidget(runSkeleton_);
+    runLayout->addWidget(runResult_);
+    runLayout->addWidget(runLog_);
+    runLayout->addWidget(runActions);
+
     layout->addWidget(header);
     layout->addSpacing(16);
     layout->addWidget(recordingLabel);
@@ -372,19 +435,23 @@ NeuroFlowPage::NeuroFlowPage(QWidget *parent)
     layout->addWidget(planLabel);
     layout->addSpacing(6);
     layout->addWidget(planPanel);
+    layout->addSpacing(16);
+    layout->addWidget(runLabel);
+    layout->addSpacing(6);
+    layout->addWidget(runPanel);
     layout->addStretch(1);
 
     scroll->setWidget(content);
     rootLayout->addWidget(scroll);
 
     connect(&Theme::instance(), &Theme::changed, this, &NeuroFlowPage::refreshIcons);
-    connect(workerClient_,
-            &WorkerClient::finished,
-            this,
-            &NeuroFlowPage::onFingerprintFinished);
+    connect(workerClient_, &WorkerClient::finished, this, &NeuroFlowPage::onWorkerFinished);
+    connect(workerClient_, &WorkerClient::logMessage, this, &NeuroFlowPage::onWorkerLog);
+    connect(workerClient_, &WorkerClient::eventReceived, this, &NeuroFlowPage::onWorkerEvent);
     refreshIcons();
     setFingerprintIdle();
     setPlanIdle();
+    setRunIdle();
 }
 
 QString NeuroFlowPage::currentDatasetPath() const
@@ -436,12 +503,14 @@ void NeuroFlowPage::importRecording()
 
 void NeuroFlowPage::clearRecording()
 {
-    cancelFingerprint();
+    cancelWorker();
     datasetPath_.clear();
     fullFileName_.clear();
     fullFilePath_.clear();
     fingerprint_ = {};
     clearPlan();
+    runOutputPath_.clear();
+    runMetadataPath_.clear();
     fileNameLabel_->clear();
     fileMetaLabel_->clear();
     filePathLabel_->clear();
@@ -452,11 +521,12 @@ void NeuroFlowPage::clearRecording()
     recordingStack_->setCurrentIndex(0);
     setFingerprintIdle();
     setPlanIdle();
+    setRunIdle();
 }
 
 void NeuroFlowPage::setDatasetPath(const QString &path, bool copied)
 {
-    cancelFingerprint();
+    cancelWorker();
 
     datasetPath_ = path;
     fingerprint_ = {};
@@ -466,6 +536,9 @@ void NeuroFlowPage::setDatasetPath(const QString &path, bool copied)
         clearPlan();
         setPlanIdle();
     }
+    runOutputPath_.clear();
+    runMetadataPath_.clear();
+    setRunIdle();
     const QFileInfo info(path);
 
     fullFileName_ = info.fileName();
@@ -508,7 +581,13 @@ void NeuroFlowPage::requestFingerprint()
         return;
     }
 
+    if (workerClient_->isBusy()) {
+        setFingerprintError(tr("A worker is already running."));
+        return;
+    }
+
     setFingerprintLoading();
+    pendingOp_ = WorkerOp::Fingerprint;
     workerClient_->startRequest(
         QStringLiteral("neuroflow"),
         QStringLiteral("fingerprint"),
@@ -516,19 +595,64 @@ void NeuroFlowPage::requestFingerprint()
         60000);
 }
 
-void NeuroFlowPage::cancelFingerprint()
+void NeuroFlowPage::cancelWorker()
 {
     if (workerClient_ != nullptr && workerClient_->isBusy()) {
         workerClient_->cancel();
     }
 }
 
-void NeuroFlowPage::onFingerprintFinished(bool ok,
-                                          const QJsonObject &result,
-                                          const QString &errorCode,
-                                          const QString &errorMessage)
+void NeuroFlowPage::onWorkerFinished(bool ok,
+                                     const QJsonObject &result,
+                                     const QString &errorCode,
+                                     const QString &errorMessage)
 {
+    const WorkerOp op = pendingOp_;
+    pendingOp_ = WorkerOp::None;
+
     if (errorCode == QLatin1String("cancelled")) {
+        if (op == WorkerOp::Run) {
+            setRunError(tr("Run cancelled."));
+        }
+        updateRunActionsEnabled();
+        return;
+    }
+
+    if (op == WorkerOp::Run) {
+        if (!ok) {
+            const QString detail = errorMessage.isEmpty() ? errorCode : errorMessage;
+            setRunError(tr("Run failed: %1").arg(detail));
+            return;
+        }
+
+        QString outputPath = result.value(QStringLiteral("output_path")).toString();
+        if (outputPath.isEmpty()) {
+            outputPath = runOutputPath_;
+        }
+        if (!ProjectDir::instance().contains(outputPath)) {
+            setRunError(tr("Worker wrote outside the project folder."));
+            return;
+        }
+
+        const RunIo::Result meta = RunIo::writeMetadata(
+            runMetadataPath_,
+            datasetPath_,
+            outputPath,
+            plan_,
+            planPath_,
+            result);
+        if (!meta.ok) {
+            setRunError(tr("Run finished but metadata failed: %1").arg(meta.error));
+            return;
+        }
+
+        runOutputPath_ = outputPath;
+        runMetadataPath_ = meta.path;
+        setRunReady(result, outputPath, meta.path);
+        return;
+    }
+
+    if (op != WorkerOp::Fingerprint) {
         return;
     }
 
@@ -544,6 +668,40 @@ void NeuroFlowPage::onFingerprintFinished(bool ok,
     }
 
     setFingerprintReady(result);
+}
+
+void NeuroFlowPage::onWorkerLog(const QString &redactedLine)
+{
+    if (pendingOp_ != WorkerOp::Run || runLog_ == nullptr) {
+        return;
+    }
+    // Progress lines also arrive via stderr; keep the status label current.
+    if (redactedLine.startsWith(QLatin1String("Step "))
+        || redactedLine.startsWith(QLatin1String("Loading "))
+        || redactedLine.startsWith(QLatin1String("Writing "))) {
+        runStatus_->setText(redactedLine);
+    }
+    runLog_->setVisible(true);
+    const QString existing = runLog_->text();
+    if (existing.isEmpty()) {
+        runLog_->setText(redactedLine);
+    } else {
+        runLog_->setText(existing + QLatin1Char('\n') + redactedLine);
+    }
+}
+
+void NeuroFlowPage::onWorkerEvent(const QString &requestId,
+                                  const QString &name,
+                                  const QJsonObject &data)
+{
+    Q_UNUSED(requestId);
+    if (pendingOp_ != WorkerOp::Run || name != QLatin1String("progress")) {
+        return;
+    }
+    const QString message = data.value(QStringLiteral("message")).toString();
+    if (!message.isEmpty()) {
+        runStatus_->setText(message);
+    }
 }
 
 void NeuroFlowPage::setFingerprintIdle()
@@ -626,6 +784,7 @@ void NeuroFlowPage::setPlanIdle()
     savePlanButton_->setVisible(false);
     loadPlanButton_->setVisible(true);
     planActions_->setVisible(true);
+    updateRunActionsEnabled();
 }
 
 void NeuroFlowPage::setPlanReady(const PlanGenerator::Plan &plan)
@@ -653,6 +812,7 @@ void NeuroFlowPage::setPlanReady(const PlanGenerator::Plan &plan)
     savePlanButton_->setEnabled(!plan.steps.isEmpty());
     loadPlanButton_->setVisible(true);
     planActions_->setVisible(true);
+    updateRunActionsEnabled();
 }
 
 void NeuroFlowPage::refreshPlanUi()
@@ -933,6 +1093,142 @@ void NeuroFlowPage::loadPlan()
     planPath_ = result.path;
     planUserOwned_ = true;
     setPlanReady(plan_);
+}
+
+void NeuroFlowPage::runPlan()
+{
+    if (ProjectDir::instance().root().isEmpty()) {
+        QMessageBox::warning(this, tr("No project folder"),
+                             tr("Configure a project folder before running plans."));
+        return;
+    }
+    if (datasetPath_.isEmpty()) {
+        QMessageBox::warning(this, tr("No recording"),
+                             tr("Import a recording before running the plan."));
+        return;
+    }
+    if (!ProjectDir::instance().contains(datasetPath_)) {
+        QMessageBox::warning(this, tr("Invalid recording"),
+                             tr("Recording is outside the project folder."));
+        return;
+    }
+    if (PlanGenerator::isEmpty(plan_)) {
+        QMessageBox::warning(this, tr("Empty plan"),
+                             tr("Add at least one step before running."));
+        return;
+    }
+    if (WorkerClient::workersRoot().isEmpty()) {
+        QMessageBox::warning(this, tr("Worker missing"),
+                             tr("NeuroFlow worker not found."));
+        return;
+    }
+    if (workerClient_->isBusy()) {
+        QMessageBox::warning(this, tr("Busy"), tr("A worker is already running."));
+        return;
+    }
+
+    QString preferredBase = QFileInfo(fullFileName_).completeBaseName();
+    if (preferredBase.isEmpty()) {
+        preferredBase = QStringLiteral("run");
+    }
+
+    const RunIo::Paths paths = RunIo::suggestPaths(preferredBase);
+    if (paths.outputPath.isEmpty() || paths.metadataPath.isEmpty()) {
+        QMessageBox::warning(this, tr("Run failed"),
+                             tr("Could not create a runs/ folder."));
+        return;
+    }
+
+    runOutputPath_ = paths.outputPath;
+    runMetadataPath_ = paths.metadataPath;
+
+    setRunLoading();
+    pendingOp_ = WorkerOp::Run;
+    // ICA / long recordings can take a while; allow up to 30 minutes.
+    workerClient_->startRequest(
+        QStringLiteral("neuroflow"),
+        QStringLiteral("run"),
+        QJsonObject{
+            {QStringLiteral("input_path"), datasetPath_},
+            {QStringLiteral("output_path"), runOutputPath_},
+            {QStringLiteral("plan"), PlanGenerator::toJson(plan_)},
+        },
+        30 * 60 * 1000);
+}
+
+void NeuroFlowPage::setRunIdle()
+{
+    runStatus_->setText(
+        tr("Run the plan to write cleaned output under runs/. A run.json sidecar links "
+           "the result back to this plan."));
+    runSkeleton_->setVisible(false);
+    runResult_->clear();
+    runResult_->setVisible(false);
+    runLog_->clear();
+    runLog_->setVisible(false);
+    cancelRunButton_->setVisible(false);
+    updateRunActionsEnabled();
+}
+
+void NeuroFlowPage::setRunLoading()
+{
+    runStatus_->setText(tr("Starting run… ICA and long recordings can take a few minutes."));
+    runSkeleton_->setVisible(true);
+    runResult_->clear();
+    runResult_->setVisible(false);
+    runLog_->clear();
+    runLog_->setVisible(false);
+    runPlanButton_->setEnabled(false);
+    cancelRunButton_->setVisible(true);
+}
+
+void NeuroFlowPage::setRunReady(const QJsonObject &result,
+                                const QString &outputPath,
+                                const QString &metaPath)
+{
+    const QString kind = result.value(QStringLiteral("output_kind")).toString(QStringLiteral("raw"));
+    const int nSteps = result.value(QStringLiteral("n_steps")).toInt(plan_.steps.size());
+    QStringList lines;
+    lines << tr("Finished %n step(s).", nullptr, nSteps);
+    lines << tr("Output (%1): %2")
+                 .arg(kind, QDir::toNativeSeparators(outputPath));
+    lines << tr("Metadata: %1").arg(QDir::toNativeSeparators(metaPath));
+    if (result.contains(QStringLiteral("sfreq"))) {
+        lines << tr("Sampling rate: %1")
+                     .arg(formatHz(result.value(QStringLiteral("sfreq")).toDouble()));
+    }
+    if (result.contains(QStringLiteral("n_epochs"))) {
+        lines << tr("Epochs: %1").arg(result.value(QStringLiteral("n_epochs")).toInt());
+    } else if (result.contains(QStringLiteral("duration_sec"))) {
+        lines << tr("Duration: %1")
+                     .arg(formatDuration(result.value(QStringLiteral("duration_sec")).toDouble()));
+    }
+
+    runStatus_->setText(tr("Run complete."));
+    runSkeleton_->setVisible(false);
+    runResult_->setText(lines.join(QLatin1Char('\n')));
+    runResult_->setVisible(true);
+    cancelRunButton_->setVisible(false);
+    updateRunActionsEnabled();
+}
+
+void NeuroFlowPage::setRunError(const QString &message)
+{
+    runStatus_->setText(message);
+    runSkeleton_->setVisible(false);
+    runResult_->clear();
+    runResult_->setVisible(false);
+    cancelRunButton_->setVisible(false);
+    updateRunActionsEnabled();
+}
+
+void NeuroFlowPage::updateRunActionsEnabled()
+{
+    if (runPlanButton_ == nullptr) {
+        return;
+    }
+    runPlanButton_->setEnabled(!datasetPath_.isEmpty() && !PlanGenerator::isEmpty(plan_)
+                               && (workerClient_ == nullptr || !workerClient_->isBusy()));
 }
 
 PlanGenerator::Step NeuroFlowPage::makeCatalogStep(const QString &stepId, const QString &rationale)

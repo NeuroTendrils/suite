@@ -28,15 +28,23 @@ protected:
     void resizeEvent(QResizeEvent *event) override;
 
 private:
+    enum class WorkerOp {
+        None,
+        Fingerprint,
+        Run,
+    };
+
     void importRecording();
     void clearRecording();
     void setDatasetPath(const QString &path, bool copied);
     void requestFingerprint();
-    void cancelFingerprint();
-    void onFingerprintFinished(bool ok,
-                               const QJsonObject &result,
-                               const QString &errorCode,
-                               const QString &errorMessage);
+    void cancelWorker();
+    void onWorkerFinished(bool ok,
+                          const QJsonObject &result,
+                          const QString &errorCode,
+                          const QString &errorMessage);
+    void onWorkerLog(const QString &redactedLine);
+    void onWorkerEvent(const QString &requestId, const QString &name, const QJsonObject &data);
     void setFingerprintIdle();
     void setFingerprintLoading();
     void setFingerprintReady(const QJsonObject &result);
@@ -54,9 +62,15 @@ private:
     void addPlanStep();
     void savePlan();
     void loadPlan();
+    void runPlan();
+    void setRunIdle();
+    void setRunLoading();
+    void setRunReady(const QJsonObject &result, const QString &outputPath, const QString &metaPath);
+    void setRunError(const QString &message);
     void refreshPlanUi();
     void refreshIcons();
     void updateElidedTexts();
+    void updateRunActionsEnabled();
     [[nodiscard]] static QString formatFileSize(qint64 bytes);
     [[nodiscard]] static QString formatDuration(double seconds);
     [[nodiscard]] static QString formatHz(double hz);
@@ -66,6 +80,7 @@ private:
                                                             const QString &rationale = {});
 
     WorkerClient *workerClient_ = nullptr;
+    WorkerOp pendingOp_ = WorkerOp::None;
     QStackedWidget *recordingStack_ = nullptr;
     QLabel *emptyIconLabel_ = nullptr;
     QLabel *emptyHint_ = nullptr;
@@ -92,10 +107,18 @@ private:
     QPushButton *addStepButton_ = nullptr;
     QPushButton *savePlanButton_ = nullptr;
     QPushButton *loadPlanButton_ = nullptr;
+    QPushButton *runPlanButton_ = nullptr;
+    QPushButton *cancelRunButton_ = nullptr;
+    QLabel *runStatus_ = nullptr;
+    SkeletonLoader *runSkeleton_ = nullptr;
+    QLabel *runResult_ = nullptr;
+    QLabel *runLog_ = nullptr;
     QString datasetPath_;
     QString fullFileName_;
     QString fullFilePath_;
     QString planPath_;
+    QString runOutputPath_;
+    QString runMetadataPath_;
     bool planUserOwned_ = false;
     QJsonObject fingerprint_;
     PlanGenerator::Plan plan_;

@@ -44,6 +44,8 @@ qt_add_executable(neurotendrils
     include/core/plangenerator.hpp
     src/core/planio.cpp
     include/core/planio.hpp
+    src/core/runio.cpp
+    include/core/runio.hpp
     src/settingsdialog.cpp
     include/settingsdialog.hpp
     src/widgets/icons.cpp
