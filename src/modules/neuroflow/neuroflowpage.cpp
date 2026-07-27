@@ -1203,6 +1203,20 @@ void NeuroFlowPage::setRunReady(const QJsonObject &result,
         lines << tr("Duration: %1")
                      .arg(formatDuration(result.value(QStringLiteral("duration_sec")).toDouble()));
     }
+    const QJsonObject repro = result.value(QStringLiteral("reproducibility")).toObject();
+    if (!repro.isEmpty()) {
+        const int seed = repro.value(QStringLiteral("ica_random_state"))
+                             .toInt(repro.value(QStringLiteral("seed")).toInt());
+        const QJsonObject env = repro.value(QStringLiteral("environment")).toObject();
+        const QString mne = env.value(QStringLiteral("mne")).toString(
+            result.value(QStringLiteral("mne_version")).toString());
+        if (seed > 0) {
+            lines << tr("Repro seed (ICA): %1").arg(seed);
+        }
+        if (!mne.isEmpty()) {
+            lines << tr("MNE: %1").arg(mne);
+        }
+    }
 
     runStatus_->setText(tr("Run complete."));
     runSkeleton_->setVisible(false);

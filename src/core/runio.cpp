@@ -2,6 +2,7 @@
 
 #include "core/plangenerator.hpp"
 #include "core/projectdir.hpp"
+#include "core/reprometa.hpp"
 
 #include <QDateTime>
 #include <QDir>
@@ -129,6 +130,14 @@ Result writeMetadata(const QString &metadataPath,
     };
     if (!planPath.isEmpty()) {
         document.insert(QStringLiteral("plan_path"), planPath);
+    }
+
+    // Prefer the worker's full reproducibility block; fall back to plan stamp.
+    if (workerResult.contains(QStringLiteral("reproducibility"))) {
+        document.insert(QStringLiteral("reproducibility"),
+                        workerResult.value(QStringLiteral("reproducibility")));
+    } else {
+        document.insert(QStringLiteral("reproducibility"), ReproMeta::planStamp());
     }
 
     QDir().mkpath(QFileInfo(metadataPath).absolutePath());

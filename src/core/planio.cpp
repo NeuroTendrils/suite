@@ -1,6 +1,7 @@
 #include "core/planio.hpp"
 
 #include "core/projectdir.hpp"
+#include "core/reprometa.hpp"
 #include "core/stepcatalog.hpp"
 
 #include <QDateTime>
@@ -136,6 +137,11 @@ QJsonObject documentFromPlan(const PlanGenerator::Plan &plan, const QJsonObject 
     if (!document.contains(QStringLiteral("saved_at"))) {
         document.insert(QStringLiteral("saved_at"),
                         QDateTime::currentDateTimeUtc().toString(Qt::ISODate));
+    }
+    // Always stamp seed / reproducibility policy so re-runs keep the same steps
+    // and stochastic params unless the caller overrides reproducibility.
+    if (!document.contains(QStringLiteral("reproducibility"))) {
+        document.insert(QStringLiteral("reproducibility"), ReproMeta::planStamp());
     }
     return document;
 }
