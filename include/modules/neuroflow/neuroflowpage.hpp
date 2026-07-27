@@ -49,6 +49,10 @@ private:
     void rebuildPlanList(const PlanGenerator::Plan &plan);
     void clearPlanList();
     void editPlanStep(int index);
+    void movePlanStep(int index, int delta);
+    void removePlanStep(int index);
+    void addPlanStep();
+    void refreshPlanUi();
     void refreshIcons();
     void updateElidedTexts();
     [[nodiscard]] static QString formatFileSize(qint64 bytes);
@@ -56,6 +60,8 @@ private:
     [[nodiscard]] static QString formatHz(double hz);
     [[nodiscard]] static QString formatOptionalHz(const QJsonValue &value);
     [[nodiscard]] static QString formatStepParams(const QJsonObject &params);
+    [[nodiscard]] static PlanGenerator::Step makeCatalogStep(const QString &stepId,
+                                                            const QString &rationale = {});
 
     WorkerClient *workerClient_ = nullptr;
     QStackedWidget *recordingStack_ = nullptr;
@@ -80,6 +86,7 @@ private:
     QLabel *planStatus_ = nullptr;
     QWidget *planListHost_ = nullptr;
     QVBoxLayout *planListLayout_ = nullptr;
+    QPushButton *addStepButton_ = nullptr;
     QString datasetPath_;
     QString fullFileName_;
     QString fullFilePath_;

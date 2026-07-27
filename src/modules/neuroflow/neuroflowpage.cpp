@@ -18,6 +18,7 @@
 #include <QFrame>
 #include <QGridLayout>
 #include <QHBoxLayout>
+#include <QInputDialog>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -324,8 +325,16 @@ NeuroFlowPage::NeuroFlowPage(QWidget *parent)
     planListLayout_->setContentsMargins(0, 0, 0, 0);
     planListLayout_->setSpacing(8);
 
+    addStepButton_ = new QPushButton(tr("Add step…"), planPanel);
+    addStepButton_->setObjectName(QStringLiteral("secondaryButton"));
+    addStepButton_->setCursor(Qt::PointingHandCursor);
+    addStepButton_->setAutoDefault(false);
+    addStepButton_->setVisible(false);
+    connect(addStepButton_, &QPushButton::clicked, this, &NeuroFlowPage::addPlanStep);
+
     planLayout->addWidget(planStatus_);
     planLayout->addWidget(planListHost_);
+    planLayout->addWidget(addStepButton_, 0, Qt::AlignLeft);
 
     layout->addWidget(header);
     layout->addSpacing(16);
@@ -555,10 +564,8 @@ void NeuroFlowPage::setFingerprintError(const QString &message)
 void NeuroFlowPage::regeneratePlan()
 {
     plan_ = PlanGenerator::fromFingerprint(fingerprint_);
-    if (PlanGenerator::isEmpty(plan_)) {
-        setPlanIdle();
-        return;
-    }
+    // Always show the plan panel after a fingerprint so users can add steps
+    // even if heuristics produced an empty starter plan.
     setPlanReady(plan_);
 }
 
@@ -574,19 +581,29 @@ void NeuroFlowPage::setPlanIdle()
         tr("A default step plan appears here after the recording is fingerprinted."));
     planStatus_->setToolTip(QString());
     planListHost_->setVisible(false);
+    addStepButton_->setVisible(false);
 }
 
 void NeuroFlowPage::setPlanReady(const PlanGenerator::Plan &plan)
 {
-    planStatus_->setText(
-        tr("Default plan (%n step(s)). Edit a step to change its parameters. Heuristic starter, "
-           "not optimized science.",
-           nullptr,
-           plan.steps.size()));
+    if (plan.steps.isEmpty()) {
+        planStatus_->setText(tr("No steps yet. Add a step to build a plan."));
+    } else {
+        planStatus_->setText(
+            tr("%n step(s). Edit parameters, reorder with Up/Down, or add/remove steps.",
+               nullptr,
+               plan.steps.size()));
+    }
     planStatus_->setToolTip(QString::fromUtf8(
         QJsonDocument(PlanGenerator::toJson(plan)).toJson(QJsonDocument::Indented)));
     rebuildPlanList(plan);
     planListHost_->setVisible(true);
+    addStepButton_->setVisible(true);
+}
+
+void NeuroFlowPage::refreshPlanUi()
+{
+    setPlanReady(plan_);
 }
 
 void NeuroFlowPage::clearPlanList()
@@ -615,53 +632,73 @@ void NeuroFlowPage::rebuildPlanList(const PlanGenerator::Plan &plan)
         makeFlexible(row);
         row->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Minimum);
 
-        auto *rowLayout = new QHBoxLayout(row);
-        rowLayout->setContentsMargins(10, 8, 10, 8);
-        rowLayout->setSpacing(10);
+        auto *rowLayout = new QVBoxLayout(row);
+        rowLayout->setContentsMargins(12, 10, 12, 10);
+        rowLayout->setSpacing(6);
 
-        auto *indexLabel = new QLabel(QString::number(i + 1), row);
+        auto *header = new QWidget(row);
+        makeFlexible(header);
+        auto *headerLayout = new QHBoxLayout(header);
+        headerLayout->setContentsMargins(0, 0, 0, 0);
+        headerLayout->setSpacing(8);
+
+        auto *indexLabel = new QLabel(QString::number(i + 1), header);
         indexLabel->setObjectName(QStringLiteral("planStepIndex"));
         indexLabel->setAlignment(Qt::AlignCenter);
         indexLabel->setFixedSize(24, 24);
 
-        auto *text = new QWidget(row);
-        makeFlexible(text);
-        auto *textLayout = new QVBoxLayout(text);
-        textLayout->setContentsMargins(0, 0, 0, 0);
-        textLayout->setSpacing(2);
-
-        auto *title = new QLabel(step.title, text);
+        auto *title = new QLabel(step.title, header);
         title->setObjectName(QStringLiteral("planStepTitle"));
         makeFlexible(title);
 
+        auto makeAction = [header](const QString &label) {
+            auto *button = new QPushButton(label, header);
+            button->setObjectName(QStringLiteral("planStepButton"));
+            button->setCursor(Qt::PointingHandCursor);
+            button->setAutoDefault(false);
+            button->setFlat(false);
+            button->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+            return button;
+        };
+
+        auto *upButton = makeAction(tr("Up"));
+        auto *downButton = makeAction(tr("Down"));
+        auto *editButton = makeAction(tr("Edit"));
+        auto *removeButton = makeAction(tr("Remove"));
+
+        upButton->setEnabled(i > 0);
+        downButton->setEnabled(i + 1 < plan.steps.size());
+        upButton->setToolTip(tr("Move step up"));
+        downButton->setToolTip(tr("Move step down"));
+
+        connect(editButton, &QPushButton::clicked, this, [this, i]() { editPlanStep(i); });
+        connect(upButton, &QPushButton::clicked, this, [this, i]() { movePlanStep(i, -1); });
+        connect(downButton, &QPushButton::clicked, this, [this, i]() { movePlanStep(i, 1); });
+        connect(removeButton, &QPushButton::clicked, this, [this, i]() { removePlanStep(i); });
+
+        headerLayout->addWidget(indexLabel, 0, Qt::AlignVCenter);
+        headerLayout->addWidget(title, 1, Qt::AlignVCenter);
+        headerLayout->addWidget(upButton, 0, Qt::AlignVCenter);
+        headerLayout->addWidget(downButton, 0, Qt::AlignVCenter);
+        headerLayout->addWidget(editButton, 0, Qt::AlignVCenter);
+        headerLayout->addWidget(removeButton, 0, Qt::AlignVCenter);
+
         const QString params = formatStepParams(step.params);
-        auto *meta = new QLabel(params.isEmpty() ? step.stepId : params, text);
+        auto *meta = new QLabel(params.isEmpty() ? step.stepId : params, row);
         meta->setObjectName(QStringLiteral("planStepMeta"));
         meta->setWordWrap(true);
         makeFlexible(meta);
 
-        auto *why = new QLabel(step.rationale, text);
-        why->setObjectName(QStringLiteral("planStepRationale"));
-        why->setWordWrap(true);
-        makeFlexible(why);
-
-        textLayout->addWidget(title);
-        textLayout->addWidget(meta);
+        rowLayout->addWidget(header);
+        rowLayout->addWidget(meta);
         if (!step.rationale.isEmpty()) {
-            textLayout->addWidget(why);
-        } else {
-            why->deleteLater();
+            auto *why = new QLabel(step.rationale, row);
+            why->setObjectName(QStringLiteral("planStepRationale"));
+            why->setWordWrap(true);
+            makeFlexible(why);
+            rowLayout->addWidget(why);
         }
 
-        auto *editButton = new QPushButton(tr("Edit"), row);
-        editButton->setObjectName(QStringLiteral("secondaryButton"));
-        editButton->setCursor(Qt::PointingHandCursor);
-        editButton->setAutoDefault(false);
-        connect(editButton, &QPushButton::clicked, this, [this, i]() { editPlanStep(i); });
-
-        rowLayout->addWidget(indexLabel, 0, Qt::AlignTop);
-        rowLayout->addWidget(text, 1);
-        rowLayout->addWidget(editButton, 0, Qt::AlignTop);
         planListLayout_->addWidget(row);
     }
 }
@@ -686,7 +723,90 @@ void NeuroFlowPage::editPlanStep(int index)
     }
 
     step.params = next;
-    setPlanReady(plan_);
+    refreshPlanUi();
+}
+
+void NeuroFlowPage::movePlanStep(int index, int delta)
+{
+    const int target = index + delta;
+    if (index < 0 || index >= plan_.steps.size() || target < 0 || target >= plan_.steps.size()) {
+        return;
+    }
+    plan_.steps.swapItemsAt(index, target);
+    refreshPlanUi();
+}
+
+void NeuroFlowPage::removePlanStep(int index)
+{
+    if (index < 0 || index >= plan_.steps.size()) {
+        return;
+    }
+
+    const QString title = plan_.steps.at(index).title;
+    const auto answer = QMessageBox::question(
+        this,
+        tr("Remove step"),
+        tr("Remove “%1” from the plan?").arg(title),
+        QMessageBox::Yes | QMessageBox::No,
+        QMessageBox::No);
+    if (answer != QMessageBox::Yes) {
+        return;
+    }
+
+    plan_.steps.removeAt(index);
+    refreshPlanUi();
+}
+
+void NeuroFlowPage::addPlanStep()
+{
+    const QVector<StepCatalog::StepDefinition> catalog = StepCatalog::all();
+    if (catalog.isEmpty()) {
+        QMessageBox::warning(this, tr("No steps"), tr("The step catalog is empty."));
+        return;
+    }
+
+    QStringList labels;
+    labels.reserve(catalog.size());
+    for (const StepCatalog::StepDefinition &def : catalog) {
+        labels << QStringLiteral("%1 (%2)").arg(def.title, def.id);
+    }
+
+    bool ok = false;
+    const QString chosen = QInputDialog::getItem(
+        this,
+        tr("Add step"),
+        tr("Choose a preprocessing step:"),
+        labels,
+        0,
+        false,
+        &ok);
+    if (!ok || chosen.isEmpty()) {
+        return;
+    }
+
+    const int chosenIndex = labels.indexOf(chosen);
+    if (chosenIndex < 0 || chosenIndex >= catalog.size()) {
+        return;
+    }
+
+    plan_.steps.append(makeCatalogStep(
+        catalog.at(chosenIndex).id,
+        tr("Added manually.")));
+    refreshPlanUi();
+}
+
+PlanGenerator::Step NeuroFlowPage::makeCatalogStep(const QString &stepId, const QString &rationale)
+{
+    PlanGenerator::Step step;
+    step.stepId = stepId;
+    step.params = StepCatalog::defaultParams(stepId);
+    step.rationale = rationale;
+    if (const StepCatalog::StepDefinition *def = StepCatalog::find(stepId)) {
+        step.title = def->title;
+    } else {
+        step.title = stepId;
+    }
+    return step;
 }
 
 QString NeuroFlowPage::formatStepParams(const QJsonObject &params)

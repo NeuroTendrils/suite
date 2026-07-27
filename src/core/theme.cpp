@@ -346,6 +346,26 @@ QString buildStyleSheet(const ThemeColors &colors)
             font-size: 11px;
         }
 
+        QPushButton#planStepButton {
+            background: transparent;
+            color: @text;
+            border: 1px solid @border;
+            border-radius: 6px;
+            padding: 4px 10px;
+            font-size: 11px;
+            min-width: 0;
+            min-height: 0;
+        }
+
+        QPushButton#planStepButton:hover {
+            background-color: @selection;
+        }
+
+        QPushButton#planStepButton:disabled {
+            color: @mutedText;
+            border-color: @border;
+        }
+
         QLabel#stepEditError {
             color: #c45c5c;
             font-size: 12px;
