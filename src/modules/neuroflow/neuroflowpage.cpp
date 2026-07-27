@@ -1,6 +1,7 @@
 #include "modules/neuroflow/neuroflowpage.hpp"
 
 #include "core/datasetimport.hpp"
+#include "core/planio.hpp"
 #include "core/plangenerator.hpp"
 #include "core/projectdir.hpp"
 #include "core/stepcatalog.hpp"
@@ -118,7 +119,7 @@ NeuroFlowPage::NeuroFlowPage(QWidget *parent)
     makeFlexible(emptyHint_);
     emptyHint_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Minimum);
 
-    auto *chooseButton = new QPushButton(tr("Choose file…"), emptyPanel);
+    auto *chooseButton = new QPushButton(tr("Choose file"), emptyPanel);
     chooseButton->setObjectName(QStringLiteral("primaryButton"));
     chooseButton->setCursor(Qt::PointingHandCursor);
     chooseButton->setAutoDefault(false);
@@ -325,16 +326,38 @@ NeuroFlowPage::NeuroFlowPage(QWidget *parent)
     planListLayout_->setContentsMargins(0, 0, 0, 0);
     planListLayout_->setSpacing(8);
 
-    addStepButton_ = new QPushButton(tr("Add step…"), planPanel);
+    addStepButton_ = new QPushButton(tr("Add step"), planPanel);
     addStepButton_->setObjectName(QStringLiteral("secondaryButton"));
     addStepButton_->setCursor(Qt::PointingHandCursor);
     addStepButton_->setAutoDefault(false);
-    addStepButton_->setVisible(false);
     connect(addStepButton_, &QPushButton::clicked, this, &NeuroFlowPage::addPlanStep);
+
+    savePlanButton_ = new QPushButton(tr("Save plan"), planPanel);
+    savePlanButton_->setObjectName(QStringLiteral("secondaryButton"));
+    savePlanButton_->setCursor(Qt::PointingHandCursor);
+    savePlanButton_->setAutoDefault(false);
+    connect(savePlanButton_, &QPushButton::clicked, this, &NeuroFlowPage::savePlan);
+
+    loadPlanButton_ = new QPushButton(tr("Load plan"), planPanel);
+    loadPlanButton_->setObjectName(QStringLiteral("secondaryButton"));
+    loadPlanButton_->setCursor(Qt::PointingHandCursor);
+    loadPlanButton_->setAutoDefault(false);
+    connect(loadPlanButton_, &QPushButton::clicked, this, &NeuroFlowPage::loadPlan);
+
+    planActions_ = new QWidget(planPanel);
+    makeFlexible(planActions_);
+    auto *planActionsLayout = new QHBoxLayout(planActions_);
+    planActionsLayout->setContentsMargins(0, 0, 0, 0);
+    planActionsLayout->setSpacing(8);
+    planActionsLayout->addWidget(addStepButton_, 0, Qt::AlignLeft);
+    planActionsLayout->addWidget(savePlanButton_, 0, Qt::AlignLeft);
+    planActionsLayout->addWidget(loadPlanButton_, 0, Qt::AlignLeft);
+    planActionsLayout->addStretch(1);
+    planActions_->setVisible(false);
 
     planLayout->addWidget(planStatus_);
     planLayout->addWidget(planListHost_);
-    planLayout->addWidget(addStepButton_, 0, Qt::AlignLeft);
+    planLayout->addWidget(planActions_);
 
     layout->addWidget(header);
     layout->addSpacing(16);
@@ -437,8 +460,12 @@ void NeuroFlowPage::setDatasetPath(const QString &path, bool copied)
 
     datasetPath_ = path;
     fingerprint_ = {};
-    clearPlan();
-    setPlanIdle();
+    // Keep a loaded/edited plan when attaching a recording; only wipe
+    // auto-generated plans so the new fingerprint can replace them.
+    if (!planUserOwned_) {
+        clearPlan();
+        setPlanIdle();
+    }
     const QFileInfo info(path);
 
     fullFileName_ = info.fileName();
@@ -532,9 +559,11 @@ void NeuroFlowPage::setFingerprintIdle()
 void NeuroFlowPage::setFingerprintLoading()
 {
     fingerprint_ = {};
-    clearPlan();
-    setPlanIdle();
-    fingerprintStatus_->setText(tr("Reading recording…"));
+    if (!planUserOwned_) {
+        clearPlan();
+        setPlanIdle();
+    }
+    fingerprintStatus_->setText(tr("Reading recording"));
     fingerprintStatus_->setVisible(true);
     fingerprintSkeleton_->setVisible(true);
     fingerprintCard_->setVisible(false);
@@ -547,14 +576,21 @@ void NeuroFlowPage::setFingerprintReady(const QJsonObject &result)
     fingerprintStatus_->setVisible(false);
     fingerprintSkeleton_->setVisible(false);
     fingerprintCard_->setVisible(true);
-    regeneratePlan();
+    // Preserve plans the user loaded or edited; only auto-build when empty.
+    if (planUserOwned_ && !PlanGenerator::isEmpty(plan_)) {
+        setPlanReady(plan_);
+    } else {
+        regeneratePlan();
+    }
 }
 
 void NeuroFlowPage::setFingerprintError(const QString &message)
 {
     fingerprint_ = {};
-    clearPlan();
-    setPlanIdle();
+    if (!planUserOwned_) {
+        clearPlan();
+        setPlanIdle();
+    }
     fingerprintStatus_->setText(message);
     fingerprintStatus_->setVisible(true);
     fingerprintSkeleton_->setVisible(false);
@@ -563,6 +599,8 @@ void NeuroFlowPage::setFingerprintError(const QString &message)
 
 void NeuroFlowPage::regeneratePlan()
 {
+    planPath_.clear();
+    planUserOwned_ = false;
     plan_ = PlanGenerator::fromFingerprint(fingerprint_);
     // Always show the plan panel after a fingerprint so users can add steps
     // even if heuristics produced an empty starter plan.
@@ -572,22 +610,34 @@ void NeuroFlowPage::regeneratePlan()
 void NeuroFlowPage::clearPlan()
 {
     plan_ = {};
+    planPath_.clear();
+    planUserOwned_ = false;
 }
 
 void NeuroFlowPage::setPlanIdle()
 {
     clearPlanList();
     planStatus_->setText(
-        tr("A default step plan appears here after the recording is fingerprinted."));
+        tr("A default step plan appears here after the recording is fingerprinted. "
+           "You can also load a saved plan."));
     planStatus_->setToolTip(QString());
     planListHost_->setVisible(false);
     addStepButton_->setVisible(false);
+    savePlanButton_->setVisible(false);
+    loadPlanButton_->setVisible(true);
+    planActions_->setVisible(true);
 }
 
 void NeuroFlowPage::setPlanReady(const PlanGenerator::Plan &plan)
 {
     if (plan.steps.isEmpty()) {
         planStatus_->setText(tr("No steps yet. Add a step to build a plan."));
+    } else if (!planPath_.isEmpty()) {
+        planStatus_->setText(
+            tr("%n step(s) (%1). Edit, reorder, save, or load another plan.",
+               nullptr,
+               plan.steps.size())
+                .arg(QFileInfo(planPath_).fileName()));
     } else {
         planStatus_->setText(
             tr("%n step(s). Edit parameters, reorder with Up/Down, or add/remove steps.",
@@ -599,6 +649,10 @@ void NeuroFlowPage::setPlanReady(const PlanGenerator::Plan &plan)
     rebuildPlanList(plan);
     planListHost_->setVisible(true);
     addStepButton_->setVisible(true);
+    savePlanButton_->setVisible(true);
+    savePlanButton_->setEnabled(!plan.steps.isEmpty());
+    loadPlanButton_->setVisible(true);
+    planActions_->setVisible(true);
 }
 
 void NeuroFlowPage::refreshPlanUi()
@@ -723,6 +777,7 @@ void NeuroFlowPage::editPlanStep(int index)
     }
 
     step.params = next;
+    planUserOwned_ = true;
     refreshPlanUi();
 }
 
@@ -733,6 +788,7 @@ void NeuroFlowPage::movePlanStep(int index, int delta)
         return;
     }
     plan_.steps.swapItemsAt(index, target);
+    planUserOwned_ = true;
     refreshPlanUi();
 }
 
@@ -754,6 +810,7 @@ void NeuroFlowPage::removePlanStep(int index)
     }
 
     plan_.steps.removeAt(index);
+    planUserOwned_ = true;
     refreshPlanUi();
 }
 
@@ -792,7 +849,90 @@ void NeuroFlowPage::addPlanStep()
     plan_.steps.append(makeCatalogStep(
         catalog.at(chosenIndex).id,
         tr("Added manually.")));
+    planUserOwned_ = true;
     refreshPlanUi();
+}
+
+void NeuroFlowPage::savePlan()
+{
+    if (ProjectDir::instance().root().isEmpty()) {
+        QMessageBox::warning(this, tr("No project folder"),
+                             tr("Configure a project folder before saving plans."));
+        return;
+    }
+    if (PlanGenerator::isEmpty(plan_)) {
+        QMessageBox::warning(this, tr("Empty plan"), tr("Add at least one step before saving."));
+        return;
+    }
+
+    QString preferredBase = QFileInfo(fullFileName_).completeBaseName();
+    if (preferredBase.isEmpty()) {
+        preferredBase = QStringLiteral("plan");
+    } else {
+        preferredBase += QStringLiteral("_plan");
+    }
+
+    const QString defaultPath = planPath_.isEmpty()
+                                    ? PlanIo::suggestSavePath(preferredBase)
+                                    : planPath_;
+    const QString destination = QFileDialog::getSaveFileName(
+        this,
+        tr("Save plan"),
+        defaultPath,
+        PlanIo::fileFilters().join(QStringLiteral(";;")));
+    if (destination.isEmpty()) {
+        return;
+    }
+
+    QJsonObject metadata;
+    if (!datasetPath_.isEmpty()) {
+        metadata.insert(QStringLiteral("dataset_path"), datasetPath_);
+    }
+    if (!fullFileName_.isEmpty()) {
+        metadata.insert(QStringLiteral("name"), preferredBase);
+    }
+
+    const PlanIo::Result result = PlanIo::save(plan_, destination, metadata);
+    if (!result.ok) {
+        QMessageBox::warning(this, tr("Save failed"), result.error);
+        return;
+    }
+
+    planPath_ = result.path;
+    refreshPlanUi();
+    QMessageBox::information(
+        this,
+        tr("Plan saved"),
+        tr("Saved to %1").arg(QDir::toNativeSeparators(result.path)));
+}
+
+void NeuroFlowPage::loadPlan()
+{
+    if (ProjectDir::instance().root().isEmpty()) {
+        QMessageBox::warning(this, tr("No project folder"),
+                             tr("Configure a project folder before loading plans."));
+        return;
+    }
+
+    const QString source = QFileDialog::getOpenFileName(
+        this,
+        tr("Load plan"),
+        ProjectDir::instance().plansDir(),
+        PlanIo::fileFilters().join(QStringLiteral(";;")));
+    if (source.isEmpty()) {
+        return;
+    }
+
+    const PlanIo::Result result = PlanIo::load(source);
+    if (!result.ok) {
+        QMessageBox::warning(this, tr("Load failed"), result.error);
+        return;
+    }
+
+    plan_ = result.plan;
+    planPath_ = result.path;
+    planUserOwned_ = true;
+    setPlanReady(plan_);
 }
 
 PlanGenerator::Step NeuroFlowPage::makeCatalogStep(const QString &stepId, const QString &rationale)

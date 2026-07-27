@@ -52,6 +52,8 @@ private:
     void movePlanStep(int index, int delta);
     void removePlanStep(int index);
     void addPlanStep();
+    void savePlan();
+    void loadPlan();
     void refreshPlanUi();
     void refreshIcons();
     void updateElidedTexts();
@@ -86,10 +88,15 @@ private:
     QLabel *planStatus_ = nullptr;
     QWidget *planListHost_ = nullptr;
     QVBoxLayout *planListLayout_ = nullptr;
+    QWidget *planActions_ = nullptr;
     QPushButton *addStepButton_ = nullptr;
+    QPushButton *savePlanButton_ = nullptr;
+    QPushButton *loadPlanButton_ = nullptr;
     QString datasetPath_;
     QString fullFileName_;
     QString fullFilePath_;
+    QString planPath_;
+    bool planUserOwned_ = false;
     QJsonObject fingerprint_;
     PlanGenerator::Plan plan_;
 };
