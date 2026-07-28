@@ -4,6 +4,7 @@
 #include <QJsonObject>
 #include <QWidget>
 
+class QFormLayout;
 class QLabel;
 class QPushButton;
 class QStackedWidget;
@@ -32,6 +33,10 @@ private:
     void rebuildTemplateList();
     void selectTemplate(const QString &templateId);
     void configureTemplate(const QString &templateId);
+    void rebuildTuneForm();
+    void syncTuneFormFromConfig();
+    void applyTuneFormToConfig();
+    void resetTuneDefaults();
     [[nodiscard]] QJsonObject configFor(const QString &templateId) const;
     void refreshIcons();
     void updateElidedTexts();
@@ -51,6 +56,13 @@ private:
     QLabel *templatesStatus_ = nullptr;
     QWidget *templateListHost_ = nullptr;
     QVBoxLayout *templateListLayout_ = nullptr;
+    QLabel *tuneStatus_ = nullptr;
+    QWidget *tuneFormHost_ = nullptr;
+    QFormLayout *tuneForm_ = nullptr;
+    QPushButton *resetTuneButton_ = nullptr;
+    QLabel *tuneError_ = nullptr;
+    QHash<QString, QWidget *> tuneEditors_;
+    bool tuneUpdating_ = false;
     QString datasetPath_;
     QString fullFileName_;
     QString fullFilePath_;

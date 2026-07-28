@@ -9,14 +9,19 @@
 #include "widgets/icons.hpp"
 #include "widgets/pageheader.hpp"
 
+#include <QCheckBox>
+#include <QComboBox>
 #include <QDir>
+#include <QDoubleSpinBox>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QFontMetrics>
+#include <QFormLayout>
 #include <QFrame>
 #include <QHash>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QLineEdit>
 #include <QMessageBox>
 #include <QPushButton>
 #include <QResizeEvent>
@@ -230,6 +235,61 @@ NeuroStudioPage::NeuroStudioPage(QWidget *parent)
     templatesLayout->addWidget(templatesStatus_);
     templatesLayout->addWidget(templateListHost_);
 
+    auto *tuneLabel = new QLabel(tr("Tune"), content);
+    tuneLabel->setObjectName(QStringLiteral("groupLabel"));
+    makeFlexible(tuneLabel);
+
+    auto *tunePanel = makePanel(QStringLiteral("fingerprintPanel"), content);
+    auto *tuneLayout = new QVBoxLayout(tunePanel);
+    tuneLayout->setContentsMargins(12, 12, 12, 12);
+    tuneLayout->setSpacing(8);
+
+    tuneStatus_ = new QLabel(tunePanel);
+    tuneStatus_->setObjectName(QStringLiteral("upcomingCaption"));
+    tuneStatus_->setWordWrap(true);
+    makeFlexible(tuneStatus_);
+
+    tuneFormHost_ = new QWidget(tunePanel);
+    makeFlexible(tuneFormHost_);
+    tuneForm_ = new QFormLayout(tuneFormHost_);
+    tuneForm_->setContentsMargins(0, 0, 0, 0);
+    tuneForm_->setHorizontalSpacing(12);
+    tuneForm_->setVerticalSpacing(10);
+    tuneForm_->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
+
+    tuneError_ = new QLabel(tunePanel);
+    tuneError_->setObjectName(QStringLiteral("stepEditError"));
+    tuneError_->setWordWrap(true);
+    tuneError_->setVisible(false);
+    makeFlexible(tuneError_);
+
+    resetTuneButton_ = new QPushButton(tr("Reset to defaults"), tunePanel);
+    resetTuneButton_->setObjectName(QStringLiteral("secondaryButton"));
+    resetTuneButton_->setCursor(Qt::PointingHandCursor);
+    resetTuneButton_->setAutoDefault(false);
+    connect(resetTuneButton_, &QPushButton::clicked, this, &NeuroStudioPage::resetTuneDefaults);
+
+    auto *tuneActions = new QWidget(tunePanel);
+    makeFlexible(tuneActions);
+    auto *tuneActionsLayout = new QHBoxLayout(tuneActions);
+    tuneActionsLayout->setContentsMargins(0, 0, 0, 0);
+    tuneActionsLayout->setSpacing(8);
+    tuneActionsLayout->addWidget(resetTuneButton_, 0, Qt::AlignLeft);
+    tuneActionsLayout->addStretch(1);
+
+    auto *autoTuneNote = new QLabel(
+        tr("Manual controls only — no auto hyperparameter search in this phase."),
+        tunePanel);
+    autoTuneNote->setObjectName(QStringLiteral("upcomingCaption"));
+    autoTuneNote->setWordWrap(true);
+    makeFlexible(autoTuneNote);
+
+    tuneLayout->addWidget(tuneStatus_);
+    tuneLayout->addWidget(tuneFormHost_);
+    tuneLayout->addWidget(tuneError_);
+    tuneLayout->addWidget(tuneActions);
+    tuneLayout->addWidget(autoTuneNote);
+
     layout->addWidget(header);
     layout->addSpacing(16);
     layout->addWidget(datasetLabel);
@@ -239,6 +299,10 @@ NeuroStudioPage::NeuroStudioPage(QWidget *parent)
     layout->addWidget(templatesLabel);
     layout->addSpacing(6);
     layout->addWidget(templatesPanel);
+    layout->addSpacing(16);
+    layout->addWidget(tuneLabel);
+    layout->addSpacing(6);
+    layout->addWidget(tunePanel);
     layout->addStretch(1);
 
     scroll->setWidget(content);
@@ -359,6 +423,7 @@ void NeuroStudioPage::refreshRecommendation()
             selectedTemplateId_ = TemplateCatalog::ids().first();
         }
         rebuildTemplateList();
+        rebuildTuneForm();
         return;
     }
 
@@ -376,6 +441,7 @@ void NeuroStudioPage::refreshRecommendation()
     }
     templatesStatus_->setText(rec.summary);
     rebuildTemplateList();
+    rebuildTuneForm();
 }
 
 void NeuroStudioPage::rebuildTemplateList()
@@ -503,6 +569,7 @@ void NeuroStudioPage::selectTemplate(const QString &templateId)
         templateConfigs_.insert(templateId, TemplateCatalog::defaultConfig(templateId));
     }
     rebuildTemplateList();
+    rebuildTuneForm();
 }
 
 void NeuroStudioPage::configureTemplate(const QString &templateId)
@@ -518,6 +585,198 @@ void NeuroStudioPage::configureTemplate(const QString &templateId)
 
     templateConfigs_.insert(templateId, dialog.config());
     selectedTemplateId_ = templateId;
+    rebuildTemplateList();
+    rebuildTuneForm();
+}
+
+void NeuroStudioPage::rebuildTuneForm()
+{
+    if (tuneForm_ == nullptr) {
+        return;
+    }
+
+    // Clear previous editors.
+    while (QLayoutItem *item = tuneForm_->takeAt(0)) {
+        if (QWidget *widget = item->widget()) {
+            widget->deleteLater();
+        }
+        delete item;
+    }
+    tuneEditors_.clear();
+    tuneError_->clear();
+    tuneError_->setVisible(false);
+
+    const TemplateCatalog::TemplateDefinition *def = TemplateCatalog::find(selectedTemplateId_);
+    if (def == nullptr) {
+        tuneStatus_->setText(tr("Select a template to tune hyperparameters manually."));
+        resetTuneButton_->setEnabled(false);
+        return;
+    }
+
+    tuneStatus_->setText(
+        tr("Tuning “%1”. Changes apply immediately to the selected recipe (no auto-search).")
+            .arg(def->title));
+    resetTuneButton_->setEnabled(true);
+
+    const QJsonObject config = configFor(selectedTemplateId_);
+    tuneUpdating_ = true;
+
+    auto addSection = [this](const QString &title) {
+        auto *label = new QLabel(title, tuneFormHost_);
+        label->setObjectName(QStringLiteral("groupLabel"));
+        tuneForm_->addRow(label);
+    };
+
+    auto addParams = [this, &config](const QVector<TemplateCatalog::ParamSchema> &schemas) {
+        for (const TemplateCatalog::ParamSchema &schema : schemas) {
+            const QJsonValue current = config.contains(schema.id) ? config.value(schema.id)
+                                                                  : schema.defaultValue;
+            QWidget *editor = nullptr;
+
+            switch (schema.type) {
+            case TemplateCatalog::ParamType::Boolean: {
+                auto *box = new QCheckBox(tuneFormHost_);
+                box->setChecked(current.toBool(schema.defaultValue.toBool()));
+                connect(box, &QCheckBox::toggled, this, [this](bool) {
+                    if (!tuneUpdating_) {
+                        applyTuneFormToConfig();
+                    }
+                });
+                editor = box;
+                break;
+            }
+            case TemplateCatalog::ParamType::Enum: {
+                auto *combo = new QComboBox(tuneFormHost_);
+                combo->addItems(schema.enumValues);
+                const QString value = current.toString(schema.defaultValue.toString());
+                const int index = combo->findText(value);
+                combo->setCurrentIndex(index >= 0 ? index : 0);
+                connect(combo, &QComboBox::currentTextChanged, this, [this](const QString &) {
+                    if (!tuneUpdating_) {
+                        applyTuneFormToConfig();
+                    }
+                });
+                editor = combo;
+                break;
+            }
+            case TemplateCatalog::ParamType::String: {
+                auto *line = new QLineEdit(tuneFormHost_);
+                line->setText(current.toString(schema.defaultValue.toString()));
+                connect(line, &QLineEdit::editingFinished, this, [this]() {
+                    if (!tuneUpdating_) {
+                        applyTuneFormToConfig();
+                    }
+                });
+                editor = line;
+                break;
+            }
+            case TemplateCatalog::ParamType::Integer:
+            case TemplateCatalog::ParamType::Number: {
+                auto *spin = new QDoubleSpinBox(tuneFormHost_);
+                spin->setDecimals(schema.type == TemplateCatalog::ParamType::Integer ? 0 : 6);
+                spin->setMinimum(schema.minimum.value_or(-1.0e9));
+                spin->setMaximum(schema.maximum.value_or(1.0e9));
+                spin->setSingleStep(schema.type == TemplateCatalog::ParamType::Integer ? 1.0
+                                                                                       : 0.0001);
+                if (!schema.unit.isEmpty()) {
+                    spin->setSuffix(QStringLiteral(" %1").arg(schema.unit));
+                }
+                spin->setValue(current.toDouble(schema.defaultValue.toDouble()));
+                connect(spin, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [this](double) {
+                    if (!tuneUpdating_) {
+                        applyTuneFormToConfig();
+                    }
+                });
+                editor = spin;
+                break;
+            }
+            }
+
+            if (editor == nullptr) {
+                continue;
+            }
+            tuneEditors_.insert(schema.id, editor);
+            auto *label = new QLabel(schema.label, tuneFormHost_);
+            if (!schema.help.isEmpty()) {
+                label->setToolTip(schema.help);
+                editor->setToolTip(schema.help);
+            }
+            tuneForm_->addRow(label, editor);
+        }
+    };
+
+    addSection(tr("Model"));
+    addParams(def->hyperparams);
+    addSection(tr("Train"));
+    addParams(def->train);
+
+    tuneUpdating_ = false;
+}
+
+void NeuroStudioPage::syncTuneFormFromConfig()
+{
+    rebuildTuneForm();
+}
+
+void NeuroStudioPage::applyTuneFormToConfig()
+{
+    if (selectedTemplateId_.isEmpty() || TemplateCatalog::find(selectedTemplateId_) == nullptr) {
+        return;
+    }
+
+    QJsonObject config;
+    const TemplateCatalog::TemplateDefinition *def = TemplateCatalog::find(selectedTemplateId_);
+    auto collect = [this, &config](const QVector<TemplateCatalog::ParamSchema> &schemas) {
+        for (const TemplateCatalog::ParamSchema &schema : schemas) {
+            QWidget *editor = tuneEditors_.value(schema.id, nullptr);
+            if (editor == nullptr) {
+                continue;
+            }
+            switch (schema.type) {
+            case TemplateCatalog::ParamType::Boolean:
+                config.insert(schema.id, qobject_cast<QCheckBox *>(editor)->isChecked());
+                break;
+            case TemplateCatalog::ParamType::Enum:
+                config.insert(schema.id, qobject_cast<QComboBox *>(editor)->currentText());
+                break;
+            case TemplateCatalog::ParamType::String:
+                config.insert(schema.id, qobject_cast<QLineEdit *>(editor)->text());
+                break;
+            case TemplateCatalog::ParamType::Integer: {
+                const double value = qobject_cast<QDoubleSpinBox *>(editor)->value();
+                config.insert(schema.id, static_cast<int>(qRound(value)));
+                break;
+            }
+            case TemplateCatalog::ParamType::Number:
+                config.insert(schema.id, qobject_cast<QDoubleSpinBox *>(editor)->value());
+                break;
+            }
+        }
+    };
+    collect(def->hyperparams);
+    collect(def->train);
+
+    const QString error = TemplateCatalog::validateConfig(selectedTemplateId_, config);
+    if (!error.isEmpty()) {
+        tuneError_->setText(error);
+        tuneError_->setVisible(true);
+        return;
+    }
+
+    tuneError_->clear();
+    tuneError_->setVisible(false);
+    templateConfigs_.insert(selectedTemplateId_, config);
+    rebuildTemplateList();
+}
+
+void NeuroStudioPage::resetTuneDefaults()
+{
+    if (selectedTemplateId_.isEmpty()) {
+        return;
+    }
+    templateConfigs_.insert(selectedTemplateId_,
+                            TemplateCatalog::defaultConfig(selectedTemplateId_));
+    rebuildTuneForm();
     rebuildTemplateList();
 }
 
