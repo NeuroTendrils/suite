@@ -1,5 +1,7 @@
 #pragma once
 
+#include <QHash>
+#include <QJsonObject>
 #include <QWidget>
 
 class QLabel;
@@ -15,6 +17,8 @@ public:
     explicit NeuroStudioPage(QWidget *parent = nullptr);
 
     [[nodiscard]] QString currentDatasetPath() const;
+    [[nodiscard]] QString currentTemplateId() const;
+    [[nodiscard]] QJsonObject currentTemplateConfig() const;
 
 protected:
     void resizeEvent(QResizeEvent *event) override;
@@ -26,6 +30,9 @@ private:
     void setDatasetIdle();
     void refreshRecommendation();
     void rebuildTemplateList();
+    void selectTemplate(const QString &templateId);
+    void configureTemplate(const QString &templateId);
+    [[nodiscard]] QJsonObject configFor(const QString &templateId) const;
     void refreshIcons();
     void updateElidedTexts();
     [[nodiscard]] static QString formatFileSize(qint64 bytes);
@@ -49,4 +56,6 @@ private:
     QString fullFilePath_;
     QString datasetKind_;
     QString suggestedTemplateId_;
+    QString selectedTemplateId_;
+    QHash<QString, QJsonObject> templateConfigs_;
 };

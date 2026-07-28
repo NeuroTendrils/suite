@@ -70,6 +70,8 @@ qt_add_executable(neurotendrils
     include/modules/neuroflow/stepeditdialog.hpp
     src/modules/neurostudio/neurostudiopage.cpp
     include/modules/neurostudio/neurostudiopage.hpp
+    src/modules/neurostudio/templateeditdialog.cpp
+    include/modules/neurostudio/templateeditdialog.hpp
     src/modules/neurolearn/neurolearnpage.cpp
     include/modules/neurolearn/neurolearnpage.hpp
     src/modules/hub/hubpage.cpp

@@ -5,6 +5,7 @@
 #include "core/templatecatalog.hpp"
 #include "core/templaterecommender.hpp"
 #include "core/theme.hpp"
+#include "modules/neurostudio/templateeditdialog.hpp"
 #include "widgets/icons.hpp"
 #include "widgets/pageheader.hpp"
 
@@ -254,6 +255,16 @@ QString NeuroStudioPage::currentDatasetPath() const
     return datasetPath_;
 }
 
+QString NeuroStudioPage::currentTemplateId() const
+{
+    return selectedTemplateId_;
+}
+
+QJsonObject NeuroStudioPage::currentTemplateConfig() const
+{
+    return configFor(selectedTemplateId_);
+}
+
 void NeuroStudioPage::resizeEvent(QResizeEvent *event)
 {
     QWidget::resizeEvent(event);
@@ -340,9 +351,13 @@ void NeuroStudioPage::refreshRecommendation()
 
     if (datasetPath_.isEmpty()) {
         templatesStatus_->setText(
-            tr("%n template(s) available. Choose training data to rank suggestions.",
+            tr("%n template(s) available. Choose training data to rank suggestions, then Select / "
+               "Configure.",
                nullptr,
                TemplateCatalog::all().size()));
+        if (selectedTemplateId_.isEmpty() && !TemplateCatalog::ids().isEmpty()) {
+            selectedTemplateId_ = TemplateCatalog::ids().first();
+        }
         rebuildTemplateList();
         return;
     }
@@ -351,6 +366,13 @@ void NeuroStudioPage::refreshRecommendation()
         TemplateRecommender::recommend(datasetPath_, datasetKind_);
     if (!rec.ranked.isEmpty()) {
         suggestedTemplateId_ = rec.ranked.first().templateId;
+        // Adopt the suggestion when nothing is selected yet, or the prior
+        // selection was only the previous suggestion.
+        if (selectedTemplateId_.isEmpty()
+            || selectedTemplateId_ == suggestedTemplateId_
+            || !TemplateCatalog::find(selectedTemplateId_)) {
+            selectedTemplateId_ = suggestedTemplateId_;
+        }
     }
     templatesStatus_->setText(rec.summary);
     rebuildTemplateList();
@@ -393,14 +415,51 @@ void NeuroStudioPage::rebuildTemplateList()
         makeFlexible(row);
         auto *rowLayout = new QVBoxLayout(row);
         rowLayout->setContentsMargins(12, 10, 12, 10);
-        rowLayout->setSpacing(4);
+        rowLayout->setSpacing(6);
+
+        auto *header = new QWidget(row);
+        makeFlexible(header);
+        auto *headerLayout = new QHBoxLayout(header);
+        headerLayout->setContentsMargins(0, 0, 0, 0);
+        headerLayout->setSpacing(8);
 
         const bool suggested = !suggestedTemplateId_.isEmpty()
                                && item.id == suggestedTemplateId_;
-        auto *title = new QLabel(
-            suggested ? tr("Suggested · %1").arg(item.title) : item.title, row);
+        const bool selected = !selectedTemplateId_.isEmpty() && item.id == selectedTemplateId_;
+
+        QString titleText = item.title;
+        if (selected && suggested) {
+            titleText = tr("Selected · Suggested · %1").arg(item.title);
+        } else if (selected) {
+            titleText = tr("Selected · %1").arg(item.title);
+        } else if (suggested) {
+            titleText = tr("Suggested · %1").arg(item.title);
+        }
+
+        auto *title = new QLabel(titleText, header);
         title->setObjectName(QStringLiteral("planStepTitle"));
         makeFlexible(title);
+
+        auto *selectButton = new QPushButton(selected ? tr("Selected") : tr("Select"), header);
+        selectButton->setObjectName(QStringLiteral("planStepButton"));
+        selectButton->setCursor(Qt::PointingHandCursor);
+        selectButton->setAutoDefault(false);
+        selectButton->setEnabled(!selected);
+        connect(selectButton, &QPushButton::clicked, this, [this, id = item.id]() {
+            selectTemplate(id);
+        });
+
+        auto *configureButton = new QPushButton(tr("Configure"), header);
+        configureButton->setObjectName(QStringLiteral("planStepButton"));
+        configureButton->setCursor(Qt::PointingHandCursor);
+        configureButton->setAutoDefault(false);
+        connect(configureButton, &QPushButton::clicked, this, [this, id = item.id]() {
+            configureTemplate(id);
+        });
+
+        headerLayout->addWidget(title, 1, Qt::AlignVCenter);
+        headerLayout->addWidget(selectButton, 0, Qt::AlignVCenter);
+        headerLayout->addWidget(configureButton, 0, Qt::AlignVCenter);
 
         auto *meta = new QLabel(
             tr("%1 · %2 · %3").arg(item.id, item.task, item.modelFamily), row);
@@ -412,16 +471,65 @@ void NeuroStudioPage::rebuildTemplateList()
         if (rationales.contains(item.id)) {
             body = rationales.value(item.id) + QLatin1Char('\n') + body;
         }
+        if (selected) {
+            const QJsonObject cfg = configFor(item.id);
+            body += QLatin1Char('\n')
+                    + tr("Config: epochs=%1, batch=%2, lr=%3, seed=%4")
+                          .arg(cfg.value(QStringLiteral("epochs")).toInt())
+                          .arg(cfg.value(QStringLiteral("batch_size")).toInt())
+                          .arg(cfg.value(QStringLiteral("lr")).toDouble())
+                          .arg(cfg.value(QStringLiteral("seed")).toInt());
+        }
+
         auto *desc = new QLabel(body, row);
         desc->setObjectName(QStringLiteral("planStepRationale"));
         desc->setWordWrap(true);
         makeFlexible(desc);
 
-        rowLayout->addWidget(title);
+        rowLayout->addWidget(header);
         rowLayout->addWidget(meta);
         rowLayout->addWidget(desc);
         templateListLayout_->addWidget(row);
     }
+}
+
+void NeuroStudioPage::selectTemplate(const QString &templateId)
+{
+    if (!TemplateCatalog::find(templateId)) {
+        return;
+    }
+    selectedTemplateId_ = templateId;
+    if (!templateConfigs_.contains(templateId)) {
+        templateConfigs_.insert(templateId, TemplateCatalog::defaultConfig(templateId));
+    }
+    rebuildTemplateList();
+}
+
+void NeuroStudioPage::configureTemplate(const QString &templateId)
+{
+    if (!TemplateCatalog::find(templateId)) {
+        return;
+    }
+
+    TemplateEditDialog dialog(templateId, configFor(templateId), this);
+    if (dialog.exec() != QDialog::Accepted) {
+        return;
+    }
+
+    templateConfigs_.insert(templateId, dialog.config());
+    selectedTemplateId_ = templateId;
+    rebuildTemplateList();
+}
+
+QJsonObject NeuroStudioPage::configFor(const QString &templateId) const
+{
+    if (templateId.isEmpty()) {
+        return {};
+    }
+    if (templateConfigs_.contains(templateId)) {
+        return templateConfigs_.value(templateId);
+    }
+    return TemplateCatalog::defaultConfig(templateId);
 }
 
 void NeuroStudioPage::refreshIcons()
