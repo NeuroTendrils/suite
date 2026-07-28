@@ -118,7 +118,9 @@ QString WorkerClient::workersRoot()
     candidates.removeDuplicates();
     for (const QString &candidate : candidates) {
         const QDir dir(candidate);
-        if (dir.exists() && QFileInfo::exists(dir.filePath(QStringLiteral("neuroflow")))) {
+        if (dir.exists()
+            && (QFileInfo::exists(dir.filePath(QStringLiteral("neuroflow")))
+                || QFileInfo::exists(dir.filePath(QStringLiteral("neurostudio"))))) {
             return QDir::cleanPath(dir.absolutePath());
         }
     }
@@ -366,6 +368,7 @@ QStringList WorkerClient::pythonPathEntries(const QString &workers)
     return {
         QDir(workers).filePath(QStringLiteral("_shared")),
         QDir(workers).filePath(QStringLiteral("neuroflow")),
+        QDir(workers).filePath(QStringLiteral("neurostudio")),
     };
 }
 

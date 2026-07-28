@@ -2,6 +2,7 @@
 
 #include "core/projectdir.hpp"
 #include "core/studiodataset.hpp"
+#include "core/templatecatalog.hpp"
 #include "core/theme.hpp"
 #include "widgets/icons.hpp"
 #include "widgets/pageheader.hpp"
@@ -203,12 +204,64 @@ NeuroStudioPage::NeuroStudioPage(QWidget *parent)
     datasetStack_->addWidget(emptyPanel);
     datasetStack_->addWidget(filePanel);
 
+    auto *templatesLabel = new QLabel(tr("Templates"), content);
+    templatesLabel->setObjectName(QStringLiteral("groupLabel"));
+    makeFlexible(templatesLabel);
+
+    auto *templatesPanel = makePanel(QStringLiteral("fingerprintPanel"), content);
+    auto *templatesLayout = new QVBoxLayout(templatesPanel);
+    templatesLayout->setContentsMargins(12, 12, 12, 12);
+    templatesLayout->setSpacing(8);
+
+    auto *templatesStatus = new QLabel(
+        tr("%n Braindecode-style template(s). Picker and config forms come next.",
+           nullptr,
+           TemplateCatalog::all().size()),
+        templatesPanel);
+    templatesStatus->setObjectName(QStringLiteral("upcomingCaption"));
+    templatesStatus->setWordWrap(true);
+    makeFlexible(templatesStatus);
+    templatesLayout->addWidget(templatesStatus);
+
+    for (const TemplateCatalog::TemplateDefinition &item : TemplateCatalog::all()) {
+        auto *row = new QFrame(templatesPanel);
+        row->setObjectName(QStringLiteral("planStepRow"));
+        row->setFrameShape(QFrame::NoFrame);
+        makeFlexible(row);
+        auto *rowLayout = new QVBoxLayout(row);
+        rowLayout->setContentsMargins(12, 10, 12, 10);
+        rowLayout->setSpacing(4);
+
+        auto *title = new QLabel(item.title, row);
+        title->setObjectName(QStringLiteral("planStepTitle"));
+        makeFlexible(title);
+
+        auto *meta = new QLabel(
+            tr("%1 · %2 · %3").arg(item.id, item.task, item.modelFamily), row);
+        meta->setObjectName(QStringLiteral("planStepMeta"));
+        meta->setWordWrap(true);
+        makeFlexible(meta);
+
+        auto *desc = new QLabel(item.description, row);
+        desc->setObjectName(QStringLiteral("planStepRationale"));
+        desc->setWordWrap(true);
+        makeFlexible(desc);
+
+        rowLayout->addWidget(title);
+        rowLayout->addWidget(meta);
+        rowLayout->addWidget(desc);
+        templatesLayout->addWidget(row);
+    }
+
     layout->addWidget(header);
     layout->addSpacing(16);
     layout->addWidget(datasetLabel);
     layout->addSpacing(6);
     layout->addWidget(datasetStack_);
     layout->addSpacing(16);
+    layout->addWidget(templatesLabel);
+    layout->addSpacing(6);
+    layout->addWidget(templatesPanel);
     layout->addStretch(1);
 
     scroll->setWidget(content);

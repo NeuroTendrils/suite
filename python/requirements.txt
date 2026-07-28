@@ -1,2 +1,3 @@
 # Host venv for NeuroTendrils workers (install via python/setup_venv.sh).
 -r ../workers/neuroflow/requirements.txt
+-r ../workers/neurostudio/requirements.txt
