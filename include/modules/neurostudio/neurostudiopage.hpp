@@ -5,6 +5,7 @@
 class QLabel;
 class QPushButton;
 class QStackedWidget;
+class QVBoxLayout;
 
 class NeuroStudioPage : public QWidget
 {
@@ -23,6 +24,8 @@ private:
     void clearDataset();
     void setDatasetPath(const QString &path, const QString &kind);
     void setDatasetIdle();
+    void refreshRecommendation();
+    void rebuildTemplateList();
     void refreshIcons();
     void updateElidedTexts();
     [[nodiscard]] static QString formatFileSize(qint64 bytes);
@@ -38,8 +41,12 @@ private:
     QLabel *fileBadge_ = nullptr;
     QPushButton *changeButton_ = nullptr;
     QPushButton *clearButton_ = nullptr;
+    QLabel *templatesStatus_ = nullptr;
+    QWidget *templateListHost_ = nullptr;
+    QVBoxLayout *templateListLayout_ = nullptr;
     QString datasetPath_;
     QString fullFileName_;
     QString fullFilePath_;
     QString datasetKind_;
+    QString suggestedTemplateId_;
 };

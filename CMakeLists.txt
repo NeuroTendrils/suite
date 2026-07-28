@@ -42,6 +42,8 @@ qt_add_executable(neurotendrils
     include/core/studiodataset.hpp
     src/core/templatecatalog.cpp
     include/core/templatecatalog.hpp
+    src/core/templaterecommender.cpp
+    include/core/templaterecommender.hpp
     src/core/stepcatalog.cpp
     include/core/stepcatalog.hpp
     src/core/plangenerator.cpp

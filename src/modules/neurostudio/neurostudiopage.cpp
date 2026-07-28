@@ -3,6 +3,7 @@
 #include "core/projectdir.hpp"
 #include "core/studiodataset.hpp"
 #include "core/templatecatalog.hpp"
+#include "core/templaterecommender.hpp"
 #include "core/theme.hpp"
 #include "widgets/icons.hpp"
 #include "widgets/pageheader.hpp"
@@ -12,6 +13,7 @@
 #include <QFileInfo>
 #include <QFontMetrics>
 #include <QFrame>
+#include <QHash>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QMessageBox>
@@ -213,45 +215,19 @@ NeuroStudioPage::NeuroStudioPage(QWidget *parent)
     templatesLayout->setContentsMargins(12, 12, 12, 12);
     templatesLayout->setSpacing(8);
 
-    auto *templatesStatus = new QLabel(
-        tr("%n Braindecode-style template(s). Picker and config forms come next.",
-           nullptr,
-           TemplateCatalog::all().size()),
-        templatesPanel);
-    templatesStatus->setObjectName(QStringLiteral("upcomingCaption"));
-    templatesStatus->setWordWrap(true);
-    makeFlexible(templatesStatus);
-    templatesLayout->addWidget(templatesStatus);
+    templatesStatus_ = new QLabel(templatesPanel);
+    templatesStatus_->setObjectName(QStringLiteral("upcomingCaption"));
+    templatesStatus_->setWordWrap(true);
+    makeFlexible(templatesStatus_);
 
-    for (const TemplateCatalog::TemplateDefinition &item : TemplateCatalog::all()) {
-        auto *row = new QFrame(templatesPanel);
-        row->setObjectName(QStringLiteral("planStepRow"));
-        row->setFrameShape(QFrame::NoFrame);
-        makeFlexible(row);
-        auto *rowLayout = new QVBoxLayout(row);
-        rowLayout->setContentsMargins(12, 10, 12, 10);
-        rowLayout->setSpacing(4);
+    templateListHost_ = new QWidget(templatesPanel);
+    makeFlexible(templateListHost_);
+    templateListLayout_ = new QVBoxLayout(templateListHost_);
+    templateListLayout_->setContentsMargins(0, 0, 0, 0);
+    templateListLayout_->setSpacing(8);
 
-        auto *title = new QLabel(item.title, row);
-        title->setObjectName(QStringLiteral("planStepTitle"));
-        makeFlexible(title);
-
-        auto *meta = new QLabel(
-            tr("%1 · %2 · %3").arg(item.id, item.task, item.modelFamily), row);
-        meta->setObjectName(QStringLiteral("planStepMeta"));
-        meta->setWordWrap(true);
-        makeFlexible(meta);
-
-        auto *desc = new QLabel(item.description, row);
-        desc->setObjectName(QStringLiteral("planStepRationale"));
-        desc->setWordWrap(true);
-        makeFlexible(desc);
-
-        rowLayout->addWidget(title);
-        rowLayout->addWidget(meta);
-        rowLayout->addWidget(desc);
-        templatesLayout->addWidget(row);
-    }
+    templatesLayout->addWidget(templatesStatus_);
+    templatesLayout->addWidget(templateListHost_);
 
     layout->addWidget(header);
     layout->addSpacing(16);
@@ -270,6 +246,7 @@ NeuroStudioPage::NeuroStudioPage(QWidget *parent)
     connect(&Theme::instance(), &Theme::changed, this, &NeuroStudioPage::refreshIcons);
     refreshIcons();
     setDatasetIdle();
+    refreshRecommendation();
 }
 
 QString NeuroStudioPage::currentDatasetPath() const
@@ -323,6 +300,7 @@ void NeuroStudioPage::clearDataset()
     fileBadge_->clear();
     fileBadge_->setVisible(false);
     setDatasetIdle();
+    refreshRecommendation();
 }
 
 void NeuroStudioPage::setDatasetPath(const QString &path, const QString &kind)
@@ -348,11 +326,102 @@ void NeuroStudioPage::setDatasetPath(const QString &path, const QString &kind)
     datasetStack_->setCurrentIndex(1);
     refreshIcons();
     updateElidedTexts();
+    refreshRecommendation();
 }
 
 void NeuroStudioPage::setDatasetIdle()
 {
     datasetStack_->setCurrentIndex(0);
+}
+
+void NeuroStudioPage::refreshRecommendation()
+{
+    suggestedTemplateId_.clear();
+
+    if (datasetPath_.isEmpty()) {
+        templatesStatus_->setText(
+            tr("%n template(s) available. Choose training data to rank suggestions.",
+               nullptr,
+               TemplateCatalog::all().size()));
+        rebuildTemplateList();
+        return;
+    }
+
+    const TemplateRecommender::Result rec =
+        TemplateRecommender::recommend(datasetPath_, datasetKind_);
+    if (!rec.ranked.isEmpty()) {
+        suggestedTemplateId_ = rec.ranked.first().templateId;
+    }
+    templatesStatus_->setText(rec.summary);
+    rebuildTemplateList();
+}
+
+void NeuroStudioPage::rebuildTemplateList()
+{
+    while (QLayoutItem *item = templateListLayout_->takeAt(0)) {
+        if (QWidget *widget = item->widget()) {
+            widget->deleteLater();
+        }
+        delete item;
+    }
+
+    TemplateRecommender::Result rec;
+    if (!datasetPath_.isEmpty()) {
+        rec = TemplateRecommender::recommend(datasetPath_, datasetKind_);
+    }
+
+    QVector<TemplateCatalog::TemplateDefinition> order = TemplateCatalog::all();
+    if (!rec.ranked.isEmpty()) {
+        order.clear();
+        for (const TemplateRecommender::Suggestion &suggestion : rec.ranked) {
+            if (const TemplateCatalog::TemplateDefinition *def =
+                    TemplateCatalog::find(suggestion.templateId)) {
+                order.append(*def);
+            }
+        }
+    }
+
+    QHash<QString, QString> rationales;
+    for (const TemplateRecommender::Suggestion &suggestion : rec.ranked) {
+        rationales.insert(suggestion.templateId, suggestion.rationale);
+    }
+
+    for (const TemplateCatalog::TemplateDefinition &item : order) {
+        auto *row = new QFrame(templateListHost_);
+        row->setObjectName(QStringLiteral("planStepRow"));
+        row->setFrameShape(QFrame::NoFrame);
+        makeFlexible(row);
+        auto *rowLayout = new QVBoxLayout(row);
+        rowLayout->setContentsMargins(12, 10, 12, 10);
+        rowLayout->setSpacing(4);
+
+        const bool suggested = !suggestedTemplateId_.isEmpty()
+                               && item.id == suggestedTemplateId_;
+        auto *title = new QLabel(
+            suggested ? tr("Suggested · %1").arg(item.title) : item.title, row);
+        title->setObjectName(QStringLiteral("planStepTitle"));
+        makeFlexible(title);
+
+        auto *meta = new QLabel(
+            tr("%1 · %2 · %3").arg(item.id, item.task, item.modelFamily), row);
+        meta->setObjectName(QStringLiteral("planStepMeta"));
+        meta->setWordWrap(true);
+        makeFlexible(meta);
+
+        QString body = item.description;
+        if (rationales.contains(item.id)) {
+            body = rationales.value(item.id) + QLatin1Char('\n') + body;
+        }
+        auto *desc = new QLabel(body, row);
+        desc->setObjectName(QStringLiteral("planStepRationale"));
+        desc->setWordWrap(true);
+        makeFlexible(desc);
+
+        rowLayout->addWidget(title);
+        rowLayout->addWidget(meta);
+        rowLayout->addWidget(desc);
+        templateListLayout_->addWidget(row);
+    }
 }
 
 void NeuroStudioPage::refreshIcons()
