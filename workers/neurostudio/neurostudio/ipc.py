@@ -11,6 +11,7 @@ from typing import Any, Mapping
 
 from . import __version__
 from .devices import list_devices
+from .export import ExportError, export_model, list_formats
 from .templates import catalog as template_catalog
 from .train import TrainError, train
 
@@ -83,6 +84,50 @@ def _handle(request_id: str, cmd: str, args: Mapping[str, Any]) -> None:
 
     if cmd == "devices":
         _success(request_id, {"devices": list_devices()})
+        return
+
+    if cmd == "formats":
+        _success(request_id, {"formats": list_formats()})
+        return
+
+    if cmd == "export":
+        checkpoint_path = args.get("checkpoint_path")
+        output_dir = args.get("output_dir")
+        fmt = args.get("format") or "pt"
+        train_meta_path = args.get("train_meta_path")
+        if not isinstance(checkpoint_path, str) or not checkpoint_path.strip():
+            _error(request_id, "invalid_args", "export requires string args.checkpoint_path")
+            return
+        if not isinstance(output_dir, str) or not output_dir.strip():
+            _error(request_id, "invalid_args", "export requires string args.output_dir")
+            return
+        if not isinstance(fmt, str) or not fmt.strip():
+            _error(request_id, "invalid_args", "export args.format must be a string")
+            return
+        if train_meta_path is not None and not isinstance(train_meta_path, str):
+            _error(request_id, "invalid_args", "export args.train_meta_path must be a string")
+            return
+
+        def on_progress(data: Mapping[str, Any]) -> None:
+            _event(request_id, "export", data)
+            message = str(data.get("message") or "")
+            if message:
+                sys.stderr.write(message + "\n")
+                sys.stderr.flush()
+
+        try:
+            _success(
+                request_id,
+                export_model(
+                    checkpoint_path=checkpoint_path,
+                    output_dir=output_dir,
+                    format=fmt,
+                    train_meta_path=train_meta_path,
+                    on_progress=on_progress,
+                ),
+            )
+        except ExportError as exc:
+            _error(request_id, exc.code, exc.message)
         return
 
     if cmd == "train":

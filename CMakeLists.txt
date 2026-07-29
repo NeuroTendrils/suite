@@ -42,6 +42,10 @@ qt_add_executable(neurotendrils
     include/core/studiodataset.hpp
     src/core/studiotrainio.cpp
     include/core/studiotrainio.hpp
+    src/core/studioexportio.cpp
+    include/core/studioexportio.hpp
+    src/core/modellibrary.cpp
+    include/core/modellibrary.hpp
     src/core/templatecatalog.cpp
     include/core/templatecatalog.hpp
     src/core/templaterecommender.cpp

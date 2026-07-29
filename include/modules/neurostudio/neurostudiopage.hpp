@@ -43,17 +43,24 @@ private:
     void resetTuneDefaults();
     void startTraining();
     void cancelTraining();
-    void onTrainFinished(bool ok,
-                         const QJsonObject &result,
-                         const QString &errorCode,
-                         const QString &errorMessage);
-    void onTrainEvent(const QString &requestId, const QString &name, const QJsonObject &data);
-    void onTrainLog(const QString &redactedLine);
+    void startExport();
+    void cancelExport();
+    void onWorkerFinished(bool ok,
+                          const QJsonObject &result,
+                          const QString &errorCode,
+                          const QString &errorMessage);
+    void onWorkerEvent(const QString &requestId, const QString &name, const QJsonObject &data);
+    void onWorkerLog(const QString &redactedLine);
     void setTrainIdle();
     void setTrainLoading();
     void setTrainReady(const QJsonObject &result);
     void setTrainError(const QString &message);
+    void setExportIdle();
+    void setExportLoading();
+    void setExportReady(const QJsonObject &result);
+    void setExportError(const QString &message);
     void updateTrainActionsEnabled();
+    void updateExportActionsEnabled();
     void renderConfusion(const QJsonArray &matrix);
     void clearConfusion();
     [[nodiscard]] QJsonObject configFor(const QString &templateId) const;
@@ -63,7 +70,9 @@ private:
     [[nodiscard]] static QString kindLabel(const QString &kind);
 
     WorkerClient *workerClient_ = nullptr;
+    QString activeOp_;
     bool trainBusy_ = false;
+    bool exportBusy_ = false;
     QStackedWidget *datasetStack_ = nullptr;
     QLabel *emptyIconLabel_ = nullptr;
     QLabel *emptyHint_ = nullptr;
@@ -95,6 +104,13 @@ private:
     QLabel *artifactsLabel_ = nullptr;
     QWidget *confusionHost_ = nullptr;
     QVBoxLayout *confusionLayout_ = nullptr;
+    QComboBox *exportFormatCombo_ = nullptr;
+    QPushButton *exportButton_ = nullptr;
+    QPushButton *cancelExportButton_ = nullptr;
+    QPushButton *publishPlaceholderButton_ = nullptr;
+    QLabel *exportStatus_ = nullptr;
+    SkeletonLoader *exportSkeleton_ = nullptr;
+    QLabel *exportResult_ = nullptr;
     QString datasetPath_;
     QString fullFileName_;
     QString fullFilePath_;
@@ -102,5 +118,7 @@ private:
     QString suggestedTemplateId_;
     QString selectedTemplateId_;
     QString trainRunDir_;
+    QString exportModelDir_;
+    QJsonObject lastTrainResult_;
     QHash<QString, QJsonObject> templateConfigs_;
 };

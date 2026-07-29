@@ -2,6 +2,7 @@
 
 #include "core/projectdir.hpp"
 #include "core/studiodataset.hpp"
+#include "core/studioexportio.hpp"
 #include "core/studiotrainio.hpp"
 #include "core/templatecatalog.hpp"
 #include "core/templaterecommender.hpp"
@@ -400,6 +401,101 @@ NeuroStudioPage::NeuroStudioPage(QWidget *parent)
     trainLayout->addWidget(trainLog_);
     trainLayout->addWidget(trainActions);
 
+    auto *exportLabel = new QLabel(tr("Export"), content);
+    exportLabel->setObjectName(QStringLiteral("groupLabel"));
+    makeFlexible(exportLabel);
+
+    auto *exportPanel = makePanel(QStringLiteral("fingerprintPanel"), content);
+    auto *exportLayout = new QVBoxLayout(exportPanel);
+    exportLayout->setContentsMargins(12, 12, 12, 12);
+    exportLayout->setSpacing(8);
+
+    exportStatus_ = new QLabel(exportPanel);
+    exportStatus_->setObjectName(QStringLiteral("upcomingCaption"));
+    exportStatus_->setWordWrap(true);
+    makeFlexible(exportStatus_);
+
+    exportSkeleton_ = new SkeletonLoader(exportPanel);
+    exportSkeleton_->addBlock(0.85, 14, 6);
+    exportSkeleton_->addBlock(0.6, 14, 6);
+    exportSkeleton_->setVisible(false);
+
+    exportResult_ = new QLabel(exportPanel);
+    exportResult_->setObjectName(QStringLiteral("upcomingCaption"));
+    exportResult_->setWordWrap(true);
+    exportResult_->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    exportResult_->setVisible(false);
+    makeFlexible(exportResult_);
+
+    auto *formatRow = new QWidget(exportPanel);
+    makeFlexible(formatRow);
+    auto *formatRowLayout = new QHBoxLayout(formatRow);
+    formatRowLayout->setContentsMargins(0, 0, 0, 0);
+    formatRowLayout->setSpacing(8);
+    auto *formatLabel = new QLabel(tr("Format"), formatRow);
+    formatLabel->setObjectName(QStringLiteral("upcomingCaption"));
+    exportFormatCombo_ = new QComboBox(formatRow);
+    exportFormatCombo_->addItem(tr("PyTorch (.pt)"), QStringLiteral("pt"));
+    exportFormatCombo_->addItem(tr("TorchScript"), QStringLiteral("torchscript"));
+    exportFormatCombo_->addItem(tr("ONNX"), QStringLiteral("onnx"));
+    exportFormatCombo_->addItem(tr("SafeTensors"), QStringLiteral("safetensors"));
+    exportFormatCombo_->setCurrentIndex(0);
+    formatRowLayout->addWidget(formatLabel, 0);
+    formatRowLayout->addWidget(exportFormatCombo_, 0);
+    formatRowLayout->addStretch(1);
+
+    exportButton_ = new QPushButton(tr("Export"), exportPanel);
+    exportButton_->setObjectName(QStringLiteral("primaryButton"));
+    exportButton_->setCursor(Qt::PointingHandCursor);
+    exportButton_->setAutoDefault(false);
+    connect(exportButton_, &QPushButton::clicked, this, &NeuroStudioPage::startExport);
+
+    cancelExportButton_ = new QPushButton(tr("Cancel"), exportPanel);
+    cancelExportButton_->setObjectName(QStringLiteral("secondaryButton"));
+    cancelExportButton_->setCursor(Qt::PointingHandCursor);
+    cancelExportButton_->setAutoDefault(false);
+    cancelExportButton_->setVisible(false);
+    connect(cancelExportButton_, &QPushButton::clicked, this, &NeuroStudioPage::cancelExport);
+
+    publishPlaceholderButton_ = new QPushButton(tr("Publish to cloud…"), exportPanel);
+    publishPlaceholderButton_->setObjectName(QStringLiteral("secondaryButton"));
+    publishPlaceholderButton_->setCursor(Qt::PointingHandCursor);
+    publishPlaceholderButton_->setAutoDefault(false);
+    publishPlaceholderButton_->setEnabled(false);
+    publishPlaceholderButton_->setToolTip(
+        tr("Cloud publish is not available yet — local models stay in models/."));
+    connect(publishPlaceholderButton_, &QPushButton::clicked, this, [this]() {
+        QMessageBox::information(
+            this,
+            tr("Cloud publish"),
+            tr("Cloud publish is a placeholder for a later release. Exported models remain "
+               "local under models/ and appear in Hub."));
+    });
+
+    auto *exportActions = new QWidget(exportPanel);
+    makeFlexible(exportActions);
+    auto *exportActionsLayout = new QHBoxLayout(exportActions);
+    exportActionsLayout->setContentsMargins(0, 0, 0, 0);
+    exportActionsLayout->setSpacing(8);
+    exportActionsLayout->addWidget(exportButton_, 0, Qt::AlignLeft);
+    exportActionsLayout->addWidget(cancelExportButton_, 0, Qt::AlignLeft);
+    exportActionsLayout->addWidget(publishPlaceholderButton_, 0, Qt::AlignLeft);
+    exportActionsLayout->addStretch(1);
+
+    auto *exportNote = new QLabel(
+        tr("Exports land in models/ with a model.json sidecar and show up in Hub."),
+        exportPanel);
+    exportNote->setObjectName(QStringLiteral("upcomingCaption"));
+    exportNote->setWordWrap(true);
+    makeFlexible(exportNote);
+
+    exportLayout->addWidget(exportStatus_);
+    exportLayout->addWidget(formatRow);
+    exportLayout->addWidget(exportSkeleton_);
+    exportLayout->addWidget(exportResult_);
+    exportLayout->addWidget(exportActions);
+    exportLayout->addWidget(exportNote);
+
     layout->addWidget(header);
     layout->addSpacing(16);
     layout->addWidget(datasetLabel);
@@ -417,19 +513,24 @@ NeuroStudioPage::NeuroStudioPage(QWidget *parent)
     layout->addWidget(trainLabel);
     layout->addSpacing(6);
     layout->addWidget(trainPanel);
+    layout->addSpacing(16);
+    layout->addWidget(exportLabel);
+    layout->addSpacing(6);
+    layout->addWidget(exportPanel);
     layout->addStretch(1);
 
     scroll->setWidget(content);
     rootLayout->addWidget(scroll);
 
     connect(&Theme::instance(), &Theme::changed, this, &NeuroStudioPage::refreshIcons);
-    connect(workerClient_, &WorkerClient::finished, this, &NeuroStudioPage::onTrainFinished);
-    connect(workerClient_, &WorkerClient::eventReceived, this, &NeuroStudioPage::onTrainEvent);
-    connect(workerClient_, &WorkerClient::logMessage, this, &NeuroStudioPage::onTrainLog);
+    connect(workerClient_, &WorkerClient::finished, this, &NeuroStudioPage::onWorkerFinished);
+    connect(workerClient_, &WorkerClient::eventReceived, this, &NeuroStudioPage::onWorkerEvent);
+    connect(workerClient_, &WorkerClient::logMessage, this, &NeuroStudioPage::onWorkerLog);
     refreshIcons();
     setDatasetIdle();
     refreshRecommendation();
     setTrainIdle();
+    setExportIdle();
 }
 
 QString NeuroStudioPage::currentDatasetPath() const
@@ -957,7 +1058,9 @@ void NeuroStudioPage::startTraining()
     const QString device = deviceCombo_->currentData().toString();
     setTrainLoading();
     trainBusy_ = true;
+    activeOp_ = QStringLiteral("train");
     updateTrainActionsEnabled();
+    updateExportActionsEnabled();
 
     workerClient_->startRequest(
         QStringLiteral("neurostudio"),
@@ -974,19 +1077,112 @@ void NeuroStudioPage::startTraining()
 
 void NeuroStudioPage::cancelTraining()
 {
-    if (workerClient_ != nullptr && workerClient_->isBusy()) {
+    if (activeOp_ == QLatin1String("train") && workerClient_ != nullptr && workerClient_->isBusy()) {
         workerClient_->cancel();
     }
 }
 
-void NeuroStudioPage::onTrainFinished(bool ok,
-                                      const QJsonObject &result,
-                                      const QString &errorCode,
-                                      const QString &errorMessage)
+void NeuroStudioPage::startExport()
 {
-    trainBusy_ = false;
-    updateTrainActionsEnabled();
+    if (ProjectDir::instance().root().isEmpty()) {
+        QMessageBox::warning(this, tr("No project folder"),
+                             tr("Configure a project folder before exporting."));
+        return;
+    }
+    const QString checkpoint = lastTrainResult_.value(QStringLiteral("checkpoint_path")).toString();
+    if (checkpoint.isEmpty() || !QFileInfo::exists(checkpoint)) {
+        QMessageBox::warning(this, tr("No checkpoint"),
+                             tr("Train a model first — export needs a checkpoint.pt."));
+        return;
+    }
+    if (!ProjectDir::instance().contains(checkpoint)) {
+        QMessageBox::warning(this, tr("Invalid checkpoint"),
+                             tr("Checkpoint must stay inside the project folder."));
+        return;
+    }
+    if (WorkerClient::workersRoot().isEmpty()) {
+        QMessageBox::warning(this, tr("Worker missing"),
+                             tr("NeuroStudio worker not found."));
+        return;
+    }
+    if (workerClient_->isBusy()) {
+        QMessageBox::warning(this, tr("Busy"), tr("A worker is already running."));
+        return;
+    }
 
+    QString preferred = selectedTemplateId_;
+    if (preferred.isEmpty()) {
+        preferred = QStringLiteral("model");
+    }
+    preferred = preferred + QLatin1Char('_')
+                + exportFormatCombo_->currentData().toString();
+
+    const StudioExportIo::Paths paths = StudioExportIo::suggestPaths(preferred);
+    if (paths.modelDir.isEmpty()) {
+        QMessageBox::warning(this, tr("Export failed"),
+                             tr("Could not create a models/ folder."));
+        return;
+    }
+    exportModelDir_ = paths.modelDir;
+
+    setExportLoading();
+    exportBusy_ = true;
+    activeOp_ = QStringLiteral("export");
+    updateTrainActionsEnabled();
+    updateExportActionsEnabled();
+
+    workerClient_->startRequest(
+        QStringLiteral("neurostudio"),
+        QStringLiteral("export"),
+        QJsonObject{
+            {QStringLiteral("checkpoint_path"), checkpoint},
+            {QStringLiteral("output_dir"), exportModelDir_},
+            {QStringLiteral("format"), exportFormatCombo_->currentData().toString()},
+            {QStringLiteral("train_meta_path"),
+             lastTrainResult_.value(QStringLiteral("train_meta_path")).toString()},
+        },
+        10 * 60 * 1000);
+}
+
+void NeuroStudioPage::cancelExport()
+{
+    if (activeOp_ == QLatin1String("export") && workerClient_ != nullptr && workerClient_->isBusy()) {
+        workerClient_->cancel();
+    }
+}
+
+void NeuroStudioPage::onWorkerFinished(bool ok,
+                                       const QJsonObject &result,
+                                       const QString &errorCode,
+                                       const QString &errorMessage)
+{
+    const QString op = activeOp_;
+    activeOp_.clear();
+    trainBusy_ = false;
+    exportBusy_ = false;
+    updateTrainActionsEnabled();
+    updateExportActionsEnabled();
+
+    if (op == QLatin1String("export")) {
+        if (errorCode == QLatin1String("cancelled")) {
+            setExportError(tr("Export cancelled."));
+            return;
+        }
+        if (!ok) {
+            const QString detail = errorMessage.isEmpty() ? errorCode : errorMessage;
+            setExportError(tr("Export failed: %1").arg(detail));
+            return;
+        }
+        const QString outDir = result.value(QStringLiteral("output_dir")).toString(exportModelDir_);
+        if (!outDir.isEmpty() && !ProjectDir::instance().contains(outDir)) {
+            setExportError(tr("Worker wrote outside the project folder."));
+            return;
+        }
+        setExportReady(result);
+        return;
+    }
+
+    // Default / train
     if (errorCode == QLatin1String("cancelled")) {
         setTrainError(tr("Training cancelled."));
         return;
@@ -1005,12 +1201,20 @@ void NeuroStudioPage::onTrainFinished(bool ok,
     setTrainReady(result);
 }
 
-void NeuroStudioPage::onTrainEvent(const QString &requestId,
-                                   const QString &name,
-                                   const QJsonObject &data)
+void NeuroStudioPage::onWorkerEvent(const QString &requestId,
+                                    const QString &name,
+                                    const QJsonObject &data)
 {
     Q_UNUSED(requestId);
-    if (!trainBusy_ || name != QLatin1String("metrics")) {
+    if (activeOp_ == QLatin1String("export") && name == QLatin1String("export")) {
+        const QString message = data.value(QStringLiteral("message")).toString();
+        if (!message.isEmpty()) {
+            exportStatus_->setText(message);
+        }
+        return;
+    }
+
+    if (activeOp_ != QLatin1String("train") || name != QLatin1String("metrics")) {
         return;
     }
 
@@ -1032,9 +1236,19 @@ void NeuroStudioPage::onTrainEvent(const QString &requestId,
     }
 }
 
-void NeuroStudioPage::onTrainLog(const QString &redactedLine)
+void NeuroStudioPage::onWorkerLog(const QString &redactedLine)
 {
-    if (!trainBusy_ || trainLog_ == nullptr) {
+    if (activeOp_ == QLatin1String("export") && exportStatus_ != nullptr) {
+        if (redactedLine.startsWith(QLatin1String("Loading "))
+            || redactedLine.startsWith(QLatin1String("Rebuilding "))
+            || redactedLine.startsWith(QLatin1String("Writing "))
+            || redactedLine.startsWith(QLatin1String("Exported "))) {
+            exportStatus_->setText(redactedLine);
+        }
+        return;
+    }
+
+    if (activeOp_ != QLatin1String("train") || trainLog_ == nullptr) {
         return;
     }
     if (redactedLine.startsWith(QLatin1String("Starting worker:"))) {
@@ -1067,6 +1281,7 @@ void NeuroStudioPage::onTrainLog(const QString &redactedLine)
 void NeuroStudioPage::setTrainIdle()
 {
     trainBusy_ = false;
+    lastTrainResult_ = {};
     trainStatus_->setText(
         tr("Train the selected template on local data. Metrics stream live; artifacts land in "
            "runs/. Uses real trial labels from epoched events or raw annotations/stim when "
@@ -1083,6 +1298,7 @@ void NeuroStudioPage::setTrainIdle()
     clearConfusion();
     cancelTrainButton_->setVisible(false);
     updateTrainActionsEnabled();
+    updateExportActionsEnabled();
 }
 
 void NeuroStudioPage::setTrainLoading()
@@ -1100,6 +1316,7 @@ void NeuroStudioPage::setTrainLoading()
     clearConfusion();
     cancelTrainButton_->setVisible(true);
     trainButton_->setEnabled(false);
+    updateExportActionsEnabled();
 }
 
 void NeuroStudioPage::setTrainReady(const QJsonObject &result)
@@ -1170,7 +1387,9 @@ void NeuroStudioPage::setTrainReady(const QJsonObject &result)
     }
     artifactsLabel_->setText(arts.join(QLatin1Char('\n')));
     artifactsLabel_->setVisible(!arts.isEmpty());
+    lastTrainResult_ = result;
     updateTrainActionsEnabled();
+    updateExportActionsEnabled();
 }
 
 void NeuroStudioPage::setTrainError(const QString &message)
@@ -1179,6 +1398,67 @@ void NeuroStudioPage::setTrainError(const QString &message)
     cancelTrainButton_->setVisible(false);
     trainStatus_->setText(message);
     updateTrainActionsEnabled();
+    updateExportActionsEnabled();
+}
+
+void NeuroStudioPage::setExportIdle()
+{
+    exportBusy_ = false;
+    exportStatus_->setText(
+        tr("Export a trained checkpoint to models/ for local use and Hub. Cloud publish is a "
+           "placeholder."));
+    exportSkeleton_->setVisible(false);
+    exportResult_->clear();
+    exportResult_->setVisible(false);
+    cancelExportButton_->setVisible(false);
+    updateExportActionsEnabled();
+}
+
+void NeuroStudioPage::setExportLoading()
+{
+    exportStatus_->setText(tr("Exporting…"));
+    exportSkeleton_->setVisible(true);
+    exportResult_->clear();
+    exportResult_->setVisible(false);
+    cancelExportButton_->setVisible(true);
+    exportButton_->setEnabled(false);
+}
+
+void NeuroStudioPage::setExportReady(const QJsonObject &result)
+{
+    exportSkeleton_->setVisible(false);
+    cancelExportButton_->setVisible(false);
+
+    const QString fmt = result.value(QStringLiteral("format_label")).toString(
+        result.value(QStringLiteral("format")).toString());
+    const QString outDir = result.value(QStringLiteral("output_dir")).toString(exportModelDir_);
+    const QString artifact = result.value(QStringLiteral("artifact_path")).toString();
+    const QString meta = result.value(QStringLiteral("metadata_path")).toString();
+
+    exportStatus_->setText(tr("Export complete (%1).").arg(fmt));
+
+    QStringList lines;
+    if (!outDir.isEmpty()) {
+        lines << tr("Model folder: %1").arg(QDir::toNativeSeparators(outDir));
+    }
+    if (!artifact.isEmpty()) {
+        lines << tr("Artifact: %1").arg(QDir::toNativeSeparators(artifact));
+    }
+    if (!meta.isEmpty()) {
+        lines << tr("Metadata: %1").arg(QDir::toNativeSeparators(meta));
+    }
+    lines << tr("Visible in Hub → Local models.");
+    exportResult_->setText(lines.join(QLatin1Char('\n')));
+    exportResult_->setVisible(true);
+    updateExportActionsEnabled();
+}
+
+void NeuroStudioPage::setExportError(const QString &message)
+{
+    exportSkeleton_->setVisible(false);
+    cancelExportButton_->setVisible(false);
+    exportStatus_->setText(message);
+    updateExportActionsEnabled();
 }
 
 void NeuroStudioPage::updateTrainActionsEnabled()
@@ -1186,12 +1466,31 @@ void NeuroStudioPage::updateTrainActionsEnabled()
     if (trainButton_ == nullptr) {
         return;
     }
+    const bool workerBusy = workerClient_ != nullptr && workerClient_->isBusy();
     const bool canTrain = !datasetPath_.isEmpty() && !selectedTemplateId_.isEmpty()
-                          && !trainBusy_
-                          && (workerClient_ == nullptr || !workerClient_->isBusy());
+                          && !trainBusy_ && !exportBusy_ && !workerBusy;
     trainButton_->setEnabled(canTrain);
     if (deviceCombo_ != nullptr) {
-        deviceCombo_->setEnabled(!trainBusy_);
+        deviceCombo_->setEnabled(!trainBusy_ && !exportBusy_);
+    }
+}
+
+void NeuroStudioPage::updateExportActionsEnabled()
+{
+    if (exportButton_ == nullptr) {
+        return;
+    }
+    const bool workerBusy = workerClient_ != nullptr && workerClient_->isBusy();
+    const QString checkpoint = lastTrainResult_.value(QStringLiteral("checkpoint_path")).toString();
+    const bool canExport = !checkpoint.isEmpty() && QFileInfo::exists(checkpoint) && !trainBusy_
+                           && !exportBusy_ && !workerBusy;
+    exportButton_->setEnabled(canExport);
+    if (exportFormatCombo_ != nullptr) {
+        exportFormatCombo_->setEnabled(!exportBusy_ && !trainBusy_);
+    }
+    // Placeholder stays disabled — cloud not wired.
+    if (publishPlaceholderButton_ != nullptr) {
+        publishPlaceholderButton_->setEnabled(false);
     }
 }
 
