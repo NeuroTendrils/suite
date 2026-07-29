@@ -10,7 +10,9 @@ import sys
 from typing import Any, Mapping
 
 from . import __version__
+from .devices import list_devices
 from .templates import catalog as template_catalog
+from .train import TrainError, train
 
 PROTOCOL_VERSION = 1
 
@@ -51,6 +53,18 @@ def _error(
     )
 
 
+def _event(request_id: str, name: str, data: Mapping[str, Any] | None = None) -> None:
+    _write(
+        {
+            "v": PROTOCOL_VERSION,
+            "id": request_id,
+            "type": "event",
+            "name": name,
+            "data": dict(data or {}),
+        }
+    )
+
+
 def _handle(request_id: str, cmd: str, args: Mapping[str, Any]) -> None:
     if cmd == "ping":
         _success(
@@ -65,6 +79,55 @@ def _handle(request_id: str, cmd: str, args: Mapping[str, Any]) -> None:
 
     if cmd == "catalog":
         _success(request_id, {"templates": template_catalog()})
+        return
+
+    if cmd == "devices":
+        _success(request_id, {"devices": list_devices()})
+        return
+
+    if cmd == "train":
+        input_path = args.get("input_path")
+        output_dir = args.get("output_dir")
+        template_id = args.get("template_id")
+        config = args.get("config") or {}
+        device = args.get("device") or "cpu"
+        if not isinstance(input_path, str) or not input_path.strip():
+            _error(request_id, "invalid_args", "train requires string args.input_path")
+            return
+        if not isinstance(output_dir, str) or not output_dir.strip():
+            _error(request_id, "invalid_args", "train requires string args.output_dir")
+            return
+        if not isinstance(template_id, str) or not template_id.strip():
+            _error(request_id, "invalid_args", "train requires string args.template_id")
+            return
+        if not isinstance(config, dict):
+            _error(request_id, "invalid_args", "train args.config must be an object")
+            return
+        if not isinstance(device, str):
+            _error(request_id, "invalid_args", "train args.device must be a string")
+            return
+
+        def on_progress(data: Mapping[str, Any]) -> None:
+            _event(request_id, "metrics", data)
+            message = str(data.get("message") or "")
+            if message:
+                sys.stderr.write(message + "\n")
+                sys.stderr.flush()
+
+        try:
+            _success(
+                request_id,
+                train(
+                    input_path=input_path,
+                    output_dir=output_dir,
+                    template_id=template_id,
+                    config=config,
+                    device=device,
+                    on_progress=on_progress,
+                ),
+            )
+        except TrainError as exc:
+            _error(request_id, exc.code, exc.message)
         return
 
     _error(request_id, "unknown_command", f"unknown command: {cmd}")

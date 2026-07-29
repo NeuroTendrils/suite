@@ -1,0 +1,6 @@
+# NeuroStudio train stack (Phase 6).
+torch>=2.1
+numpy>=1.24
+scikit-learn>=1.3
+# Optional: braindecode installs separately if users want catalog backends.
+# braindecode>=0.8

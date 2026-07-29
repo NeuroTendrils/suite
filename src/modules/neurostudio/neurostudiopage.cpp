@@ -2,12 +2,15 @@
 
 #include "core/projectdir.hpp"
 #include "core/studiodataset.hpp"
+#include "core/studiotrainio.hpp"
 #include "core/templatecatalog.hpp"
 #include "core/templaterecommender.hpp"
 #include "core/theme.hpp"
+#include "core/workerclient.hpp"
 #include "modules/neurostudio/templateeditdialog.hpp"
 #include "widgets/icons.hpp"
 #include "widgets/pageheader.hpp"
+#include "widgets/skeletonloader.hpp"
 
 #include <QCheckBox>
 #include <QComboBox>
@@ -18,8 +21,10 @@
 #include <QFontMetrics>
 #include <QFormLayout>
 #include <QFrame>
+#include <QGridLayout>
 #include <QHash>
 #include <QHBoxLayout>
+#include <QJsonArray>
 #include <QLabel>
 #include <QLineEdit>
 #include <QMessageBox>
@@ -53,6 +58,7 @@ QFrame *makePanel(const QString &objectName, QWidget *parent)
 
 NeuroStudioPage::NeuroStudioPage(QWidget *parent)
     : QWidget(parent)
+    , workerClient_(new WorkerClient(this))
 {
     makeFlexible(this);
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
@@ -290,6 +296,110 @@ NeuroStudioPage::NeuroStudioPage(QWidget *parent)
     tuneLayout->addWidget(tuneActions);
     tuneLayout->addWidget(autoTuneNote);
 
+    auto *trainLabel = new QLabel(tr("Train"), content);
+    trainLabel->setObjectName(QStringLiteral("groupLabel"));
+    makeFlexible(trainLabel);
+
+    auto *trainPanel = makePanel(QStringLiteral("fingerprintPanel"), content);
+    auto *trainLayout = new QVBoxLayout(trainPanel);
+    trainLayout->setContentsMargins(12, 12, 12, 12);
+    trainLayout->setSpacing(8);
+
+    trainStatus_ = new QLabel(trainPanel);
+    trainStatus_->setObjectName(QStringLiteral("upcomingCaption"));
+    trainStatus_->setWordWrap(true);
+    makeFlexible(trainStatus_);
+
+    trainSkeleton_ = new SkeletonLoader(trainPanel);
+    trainSkeleton_->addBlock(0.9, 14, 6);
+    trainSkeleton_->addBlock(0.7, 14, 6);
+    trainSkeleton_->addBlock(0.55, 14, 6);
+    trainSkeleton_->setVisible(false);
+
+    liveMetrics_ = new QLabel(trainPanel);
+    liveMetrics_->setObjectName(QStringLiteral("planStepTitle"));
+    liveMetrics_->setWordWrap(true);
+    liveMetrics_->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    liveMetrics_->setVisible(false);
+    makeFlexible(liveMetrics_);
+
+    finalMetrics_ = new QLabel(trainPanel);
+    finalMetrics_->setObjectName(QStringLiteral("upcomingCaption"));
+    finalMetrics_->setWordWrap(true);
+    finalMetrics_->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    finalMetrics_->setVisible(false);
+    makeFlexible(finalMetrics_);
+
+    confusionHost_ = new QWidget(trainPanel);
+    makeFlexible(confusionHost_);
+    confusionLayout_ = new QVBoxLayout(confusionHost_);
+    confusionLayout_->setContentsMargins(0, 0, 0, 0);
+    confusionLayout_->setSpacing(6);
+    confusionHost_->setVisible(false);
+
+    artifactsLabel_ = new QLabel(trainPanel);
+    artifactsLabel_->setObjectName(QStringLiteral("upcomingCaption"));
+    artifactsLabel_->setWordWrap(true);
+    artifactsLabel_->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    artifactsLabel_->setVisible(false);
+    makeFlexible(artifactsLabel_);
+
+    trainLog_ = new QLabel(trainPanel);
+    trainLog_->setObjectName(QStringLiteral("upcomingCaption"));
+    trainLog_->setWordWrap(true);
+    trainLog_->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    trainLog_->setVisible(false);
+    makeFlexible(trainLog_);
+
+    auto *deviceRow = new QWidget(trainPanel);
+    makeFlexible(deviceRow);
+    auto *deviceRowLayout = new QHBoxLayout(deviceRow);
+    deviceRowLayout->setContentsMargins(0, 0, 0, 0);
+    deviceRowLayout->setSpacing(8);
+    auto *deviceLabel = new QLabel(tr("Device"), deviceRow);
+    deviceLabel->setObjectName(QStringLiteral("upcomingCaption"));
+    deviceCombo_ = new QComboBox(deviceRow);
+    deviceCombo_->addItem(tr("Auto"), QStringLiteral("auto"));
+    deviceCombo_->addItem(tr("CPU"), QStringLiteral("cpu"));
+    deviceCombo_->addItem(tr("CUDA (NVIDIA)"), QStringLiteral("cuda"));
+    deviceCombo_->addItem(tr("MPS (Apple)"), QStringLiteral("mps"));
+    deviceCombo_->setCurrentIndex(0);
+    deviceRowLayout->addWidget(deviceLabel, 0);
+    deviceRowLayout->addWidget(deviceCombo_, 0);
+    deviceRowLayout->addStretch(1);
+
+    trainButton_ = new QPushButton(tr("Train"), trainPanel);
+    trainButton_->setObjectName(QStringLiteral("primaryButton"));
+    trainButton_->setCursor(Qt::PointingHandCursor);
+    trainButton_->setAutoDefault(false);
+    connect(trainButton_, &QPushButton::clicked, this, &NeuroStudioPage::startTraining);
+
+    cancelTrainButton_ = new QPushButton(tr("Cancel"), trainPanel);
+    cancelTrainButton_->setObjectName(QStringLiteral("secondaryButton"));
+    cancelTrainButton_->setCursor(Qt::PointingHandCursor);
+    cancelTrainButton_->setAutoDefault(false);
+    cancelTrainButton_->setVisible(false);
+    connect(cancelTrainButton_, &QPushButton::clicked, this, &NeuroStudioPage::cancelTraining);
+
+    auto *trainActions = new QWidget(trainPanel);
+    makeFlexible(trainActions);
+    auto *trainActionsLayout = new QHBoxLayout(trainActions);
+    trainActionsLayout->setContentsMargins(0, 0, 0, 0);
+    trainActionsLayout->setSpacing(8);
+    trainActionsLayout->addWidget(trainButton_, 0, Qt::AlignLeft);
+    trainActionsLayout->addWidget(cancelTrainButton_, 0, Qt::AlignLeft);
+    trainActionsLayout->addStretch(1);
+
+    trainLayout->addWidget(trainStatus_);
+    trainLayout->addWidget(deviceRow);
+    trainLayout->addWidget(trainSkeleton_);
+    trainLayout->addWidget(liveMetrics_);
+    trainLayout->addWidget(finalMetrics_);
+    trainLayout->addWidget(confusionHost_);
+    trainLayout->addWidget(artifactsLabel_);
+    trainLayout->addWidget(trainLog_);
+    trainLayout->addWidget(trainActions);
+
     layout->addWidget(header);
     layout->addSpacing(16);
     layout->addWidget(datasetLabel);
@@ -303,15 +413,23 @@ NeuroStudioPage::NeuroStudioPage(QWidget *parent)
     layout->addWidget(tuneLabel);
     layout->addSpacing(6);
     layout->addWidget(tunePanel);
+    layout->addSpacing(16);
+    layout->addWidget(trainLabel);
+    layout->addSpacing(6);
+    layout->addWidget(trainPanel);
     layout->addStretch(1);
 
     scroll->setWidget(content);
     rootLayout->addWidget(scroll);
 
     connect(&Theme::instance(), &Theme::changed, this, &NeuroStudioPage::refreshIcons);
+    connect(workerClient_, &WorkerClient::finished, this, &NeuroStudioPage::onTrainFinished);
+    connect(workerClient_, &WorkerClient::eventReceived, this, &NeuroStudioPage::onTrainEvent);
+    connect(workerClient_, &WorkerClient::logMessage, this, &NeuroStudioPage::onTrainLog);
     refreshIcons();
     setDatasetIdle();
     refreshRecommendation();
+    setTrainIdle();
 }
 
 QString NeuroStudioPage::currentDatasetPath() const
@@ -359,6 +477,7 @@ void NeuroStudioPage::chooseDataset()
     }
 
     setDatasetPath(result.path, result.kind);
+    updateTrainActionsEnabled();
 }
 
 void NeuroStudioPage::clearDataset()
@@ -376,6 +495,7 @@ void NeuroStudioPage::clearDataset()
     fileBadge_->setVisible(false);
     setDatasetIdle();
     refreshRecommendation();
+    updateTrainActionsEnabled();
 }
 
 void NeuroStudioPage::setDatasetPath(const QString &path, const QString &kind)
@@ -402,6 +522,7 @@ void NeuroStudioPage::setDatasetPath(const QString &path, const QString &kind)
     refreshIcons();
     updateElidedTexts();
     refreshRecommendation();
+    updateTrainActionsEnabled();
 }
 
 void NeuroStudioPage::setDatasetIdle()
@@ -424,6 +545,7 @@ void NeuroStudioPage::refreshRecommendation()
         }
         rebuildTemplateList();
         rebuildTuneForm();
+        updateTrainActionsEnabled();
         return;
     }
 
@@ -442,6 +564,7 @@ void NeuroStudioPage::refreshRecommendation()
     templatesStatus_->setText(rec.summary);
     rebuildTemplateList();
     rebuildTuneForm();
+    updateTrainActionsEnabled();
 }
 
 void NeuroStudioPage::rebuildTemplateList()
@@ -570,6 +693,7 @@ void NeuroStudioPage::selectTemplate(const QString &templateId)
     }
     rebuildTemplateList();
     rebuildTuneForm();
+    updateTrainActionsEnabled();
 }
 
 void NeuroStudioPage::configureTemplate(const QString &templateId)
@@ -587,6 +711,7 @@ void NeuroStudioPage::configureTemplate(const QString &templateId)
     selectedTemplateId_ = templateId;
     rebuildTemplateList();
     rebuildTuneForm();
+    updateTrainActionsEnabled();
 }
 
 void NeuroStudioPage::rebuildTuneForm()
@@ -778,6 +903,343 @@ void NeuroStudioPage::resetTuneDefaults()
                             TemplateCatalog::defaultConfig(selectedTemplateId_));
     rebuildTuneForm();
     rebuildTemplateList();
+}
+
+void NeuroStudioPage::startTraining()
+{
+    if (ProjectDir::instance().root().isEmpty()) {
+        QMessageBox::warning(this, tr("No project folder"),
+                             tr("Configure a project folder before training."));
+        return;
+    }
+    if (datasetPath_.isEmpty()) {
+        QMessageBox::warning(this, tr("No training data"),
+                             tr("Choose training data before starting a run."));
+        return;
+    }
+    if (!ProjectDir::instance().contains(datasetPath_)) {
+        QMessageBox::warning(this, tr("Invalid data"),
+                             tr("Training data must stay inside the project folder."));
+        return;
+    }
+    if (selectedTemplateId_.isEmpty() || !TemplateCatalog::find(selectedTemplateId_)) {
+        QMessageBox::warning(this, tr("No template"),
+                             tr("Select a template before training."));
+        return;
+    }
+    if (WorkerClient::workersRoot().isEmpty()) {
+        QMessageBox::warning(this, tr("Worker missing"),
+                             tr("NeuroStudio worker not found."));
+        return;
+    }
+    if (workerClient_->isBusy()) {
+        QMessageBox::warning(this, tr("Busy"), tr("A worker is already running."));
+        return;
+    }
+
+    applyTuneFormToConfig();
+
+    QString preferred = QFileInfo(fullFileName_).completeBaseName();
+    if (preferred.isEmpty()) {
+        preferred = selectedTemplateId_;
+    } else {
+        preferred = preferred + QLatin1Char('_') + selectedTemplateId_;
+    }
+
+    const StudioTrainIo::Paths paths = StudioTrainIo::suggestPaths(preferred);
+    if (paths.runDir.isEmpty()) {
+        QMessageBox::warning(this, tr("Train failed"),
+                             tr("Could not create a runs/ folder."));
+        return;
+    }
+    trainRunDir_ = paths.runDir;
+
+    const QString device = deviceCombo_->currentData().toString();
+    setTrainLoading();
+    trainBusy_ = true;
+    updateTrainActionsEnabled();
+
+    workerClient_->startRequest(
+        QStringLiteral("neurostudio"),
+        QStringLiteral("train"),
+        QJsonObject{
+            {QStringLiteral("input_path"), datasetPath_},
+            {QStringLiteral("output_dir"), trainRunDir_},
+            {QStringLiteral("template_id"), selectedTemplateId_},
+            {QStringLiteral("config"), configFor(selectedTemplateId_)},
+            {QStringLiteral("device"), device},
+        },
+        60 * 60 * 1000);
+}
+
+void NeuroStudioPage::cancelTraining()
+{
+    if (workerClient_ != nullptr && workerClient_->isBusy()) {
+        workerClient_->cancel();
+    }
+}
+
+void NeuroStudioPage::onTrainFinished(bool ok,
+                                      const QJsonObject &result,
+                                      const QString &errorCode,
+                                      const QString &errorMessage)
+{
+    trainBusy_ = false;
+    updateTrainActionsEnabled();
+
+    if (errorCode == QLatin1String("cancelled")) {
+        setTrainError(tr("Training cancelled."));
+        return;
+    }
+    if (!ok) {
+        const QString detail = errorMessage.isEmpty() ? errorCode : errorMessage;
+        setTrainError(tr("Training failed: %1").arg(detail));
+        return;
+    }
+
+    const QString outDir = result.value(QStringLiteral("output_dir")).toString(trainRunDir_);
+    if (!outDir.isEmpty() && !ProjectDir::instance().contains(outDir)) {
+        setTrainError(tr("Worker wrote outside the project folder."));
+        return;
+    }
+    setTrainReady(result);
+}
+
+void NeuroStudioPage::onTrainEvent(const QString &requestId,
+                                   const QString &name,
+                                   const QJsonObject &data)
+{
+    Q_UNUSED(requestId);
+    if (!trainBusy_ || name != QLatin1String("metrics")) {
+        return;
+    }
+
+    const QString message = data.value(QStringLiteral("message")).toString();
+    if (!message.isEmpty()) {
+        trainStatus_->setText(message);
+    }
+
+    if (data.contains(QStringLiteral("epoch"))) {
+        liveMetrics_->setVisible(true);
+        liveMetrics_->setText(
+            tr("Epoch %1/%2   loss %3   acc %4   val_loss %5   val_acc %6")
+                .arg(data.value(QStringLiteral("epoch")).toInt())
+                .arg(data.value(QStringLiteral("total_epochs")).toInt())
+                .arg(data.value(QStringLiteral("loss")).toDouble(), 0, 'f', 4)
+                .arg(data.value(QStringLiteral("accuracy")).toDouble(), 0, 'f', 3)
+                .arg(data.value(QStringLiteral("val_loss")).toDouble(), 0, 'f', 4)
+                .arg(data.value(QStringLiteral("val_accuracy")).toDouble(), 0, 'f', 3));
+    }
+}
+
+void NeuroStudioPage::onTrainLog(const QString &redactedLine)
+{
+    if (!trainBusy_ || trainLog_ == nullptr) {
+        return;
+    }
+    if (redactedLine.startsWith(QLatin1String("Starting worker:"))) {
+        trainLog_->setVisible(true);
+        trainLog_->setText(redactedLine);
+        return;
+    }
+    if (redactedLine.startsWith(QLatin1String("Epoch "))
+        || redactedLine.startsWith(QLatin1String("Training "))
+        || redactedLine.startsWith(QLatin1String("Preparing "))
+        || redactedLine.startsWith(QLatin1String("Computing "))
+        || redactedLine.startsWith(QLatin1String("Done."))) {
+        trainStatus_->setText(redactedLine);
+        trainLog_->setVisible(true);
+        const QString existing = trainLog_->text();
+        if (existing.isEmpty()) {
+            trainLog_->setText(redactedLine);
+        } else {
+            // Keep the log from exploding — retain last ~12 lines.
+            QStringList lines = existing.split(QLatin1Char('\n'));
+            lines.append(redactedLine);
+            while (lines.size() > 12) {
+                lines.removeFirst();
+            }
+            trainLog_->setText(lines.join(QLatin1Char('\n')));
+        }
+    }
+}
+
+void NeuroStudioPage::setTrainIdle()
+{
+    trainBusy_ = false;
+    trainStatus_->setText(
+        tr("Train the selected template on local data. Metrics stream live; artifacts land in "
+           "runs/. Uses real trial labels from epoched events or raw annotations/stim when "
+           "present; otherwise falls back to synthetic_demo."));
+    trainSkeleton_->setVisible(false);
+    liveMetrics_->clear();
+    liveMetrics_->setVisible(false);
+    finalMetrics_->clear();
+    finalMetrics_->setVisible(false);
+    artifactsLabel_->clear();
+    artifactsLabel_->setVisible(false);
+    trainLog_->clear();
+    trainLog_->setVisible(false);
+    clearConfusion();
+    cancelTrainButton_->setVisible(false);
+    updateTrainActionsEnabled();
+}
+
+void NeuroStudioPage::setTrainLoading()
+{
+    trainStatus_->setText(tr("Starting training…"));
+    trainSkeleton_->setVisible(true);
+    liveMetrics_->clear();
+    liveMetrics_->setVisible(false);
+    finalMetrics_->clear();
+    finalMetrics_->setVisible(false);
+    artifactsLabel_->clear();
+    artifactsLabel_->setVisible(false);
+    trainLog_->clear();
+    trainLog_->setVisible(false);
+    clearConfusion();
+    cancelTrainButton_->setVisible(true);
+    trainButton_->setEnabled(false);
+}
+
+void NeuroStudioPage::setTrainReady(const QJsonObject &result)
+{
+    trainSkeleton_->setVisible(false);
+    cancelTrainButton_->setVisible(false);
+
+    const QJsonObject metrics = result.value(QStringLiteral("metrics")).toObject();
+    const QString dataMode = result.value(QStringLiteral("data_mode")).toString();
+    const QString device = result.value(QStringLiteral("device")).toString();
+
+    trainStatus_->setText(tr("Training complete (%1 on %2).").arg(dataMode, device));
+
+    liveMetrics_->setVisible(true);
+    liveMetrics_->setText(
+        tr("Final   acc %1   bal_acc %2")
+            .arg(metrics.value(QStringLiteral("accuracy")).toDouble(), 0, 'f', 3)
+            .arg(metrics.value(QStringLiteral("balanced_accuracy")).toDouble(), 0, 'f', 3));
+
+    QStringList finalLines;
+    finalLines << tr("Template: %1").arg(result.value(QStringLiteral("template_id")).toString());
+    finalLines << tr("Primary metric: %1")
+                      .arg(metrics.value(QStringLiteral("primary")).toString(QStringLiteral("accuracy")));
+    finalLines << tr("Accuracy: %1")
+                      .arg(metrics.value(QStringLiteral("accuracy")).toDouble(), 0, 'f', 4);
+    finalLines << tr("Balanced accuracy: %1")
+                      .arg(metrics.value(QStringLiteral("balanced_accuracy")).toDouble(), 0, 'f', 4);
+    finalLines << tr("Classes: %1").arg(metrics.value(QStringLiteral("n_classes")).toInt());
+    const QJsonArray classNames = metrics.value(QStringLiteral("class_names")).toArray();
+    if (!classNames.isEmpty()) {
+        QStringList names;
+        for (const QJsonValue &value : classNames) {
+            names << value.toString();
+        }
+        finalLines << tr("Class names: %1").arg(names.join(QStringLiteral(", ")));
+    }
+    const QJsonObject dataMeta = result.value(QStringLiteral("data")).toObject();
+    const QString labelSource = dataMeta.value(QStringLiteral("label_source")).toString();
+    if (!labelSource.isEmpty()) {
+        finalLines << tr("Label source: %1").arg(labelSource);
+    }
+    if (dataMode == QLatin1String("synthetic_demo")) {
+        finalLines << tr("Note: synthetic_demo — no usable labels in the FIF; not a science result.");
+    } else if (dataMode.startsWith(QLatin1String("labeled_"))) {
+        finalLines << tr("Note: trained on real event/annotation labels from the file.");
+    }
+    finalMetrics_->setText(finalLines.join(QLatin1Char('\n')));
+    finalMetrics_->setVisible(true);
+
+    renderConfusion(metrics.value(QStringLiteral("confusion")).toArray());
+
+    QStringList arts;
+    const QString ckpt = result.value(QStringLiteral("checkpoint_path")).toString();
+    const QString metricsPath = result.value(QStringLiteral("metrics_path")).toString();
+    const QString metaPath = result.value(QStringLiteral("train_meta_path")).toString();
+    const QString outDir = result.value(QStringLiteral("output_dir")).toString(trainRunDir_);
+    if (!outDir.isEmpty()) {
+        arts << tr("Run folder: %1").arg(QDir::toNativeSeparators(outDir));
+    }
+    if (!ckpt.isEmpty()) {
+        arts << tr("Checkpoint: %1").arg(QDir::toNativeSeparators(ckpt));
+    }
+    if (!metricsPath.isEmpty()) {
+        arts << tr("Metrics: %1").arg(QDir::toNativeSeparators(metricsPath));
+    }
+    if (!metaPath.isEmpty()) {
+        arts << tr("Train meta: %1").arg(QDir::toNativeSeparators(metaPath));
+    }
+    artifactsLabel_->setText(arts.join(QLatin1Char('\n')));
+    artifactsLabel_->setVisible(!arts.isEmpty());
+    updateTrainActionsEnabled();
+}
+
+void NeuroStudioPage::setTrainError(const QString &message)
+{
+    trainSkeleton_->setVisible(false);
+    cancelTrainButton_->setVisible(false);
+    trainStatus_->setText(message);
+    updateTrainActionsEnabled();
+}
+
+void NeuroStudioPage::updateTrainActionsEnabled()
+{
+    if (trainButton_ == nullptr) {
+        return;
+    }
+    const bool canTrain = !datasetPath_.isEmpty() && !selectedTemplateId_.isEmpty()
+                          && !trainBusy_
+                          && (workerClient_ == nullptr || !workerClient_->isBusy());
+    trainButton_->setEnabled(canTrain);
+    if (deviceCombo_ != nullptr) {
+        deviceCombo_->setEnabled(!trainBusy_);
+    }
+}
+
+void NeuroStudioPage::renderConfusion(const QJsonArray &matrix)
+{
+    clearConfusion();
+    if (matrix.isEmpty()) {
+        return;
+    }
+
+    auto *title = new QLabel(tr("Confusion matrix (rows=true, cols=pred)"), confusionHost_);
+    title->setObjectName(QStringLiteral("groupLabel"));
+    makeFlexible(title);
+    confusionLayout_->addWidget(title);
+
+    auto *gridHost = new QWidget(confusionHost_);
+    makeFlexible(gridHost);
+    auto *grid = new QGridLayout(gridHost);
+    grid->setContentsMargins(0, 0, 0, 0);
+    grid->setHorizontalSpacing(6);
+    grid->setVerticalSpacing(4);
+
+    for (int r = 0; r < matrix.size(); ++r) {
+        const QJsonArray row = matrix.at(r).toArray();
+        for (int c = 0; c < row.size(); ++c) {
+            auto *cell = new QLabel(QString::number(row.at(c).toInt()), gridHost);
+            cell->setObjectName(QStringLiteral("planStepMeta"));
+            cell->setAlignment(Qt::AlignCenter);
+            cell->setMinimumWidth(28);
+            grid->addWidget(cell, r, c);
+        }
+    }
+    confusionLayout_->addWidget(gridHost);
+    confusionHost_->setVisible(true);
+}
+
+void NeuroStudioPage::clearConfusion()
+{
+    if (confusionLayout_ == nullptr) {
+        return;
+    }
+    while (QLayoutItem *item = confusionLayout_->takeAt(0)) {
+        if (QWidget *widget = item->widget()) {
+            widget->deleteLater();
+        }
+        delete item;
+    }
+    confusionHost_->setVisible(false);
 }
 
 QJsonObject NeuroStudioPage::configFor(const QString &templateId) const
