@@ -11,7 +11,7 @@ from PySide6.QtWidgets import QFileDialog, QMessageBox, QWidget
 ORG = "NeuroTendrils"
 APP = "NeuroTendrils"
 ROOT_KEY = "project/root"
-SUBDIRS = ("plans", "datasets", "models", "runs", "learn")
+SUBDIRS = ("plans", "datasets", "models", "runs")
 
 
 def default_root() -> Path:
@@ -49,8 +49,8 @@ class ProjectDir(QObject):
             box = QMessageBox(dialog_parent)
             box.setWindowTitle("Choose Project Folder")
             box.setText(
-                "NeuroTendrils keeps your plans, datasets, models, runs, and "
-                "lessons together in one project folder."
+                "NeuroTendrils keeps your plans, datasets, models, and runs "
+                "together in one project folder."
             )
             box.setInformativeText(
                 f"Use the default folder {default_root()}, or choose another location."
@@ -111,9 +111,6 @@ class ProjectDir(QObject):
 
     def runs_dir(self) -> Path:
         return Path(self._root) / "runs"
-
-    def learn_dir(self) -> Path:
-        return Path(self._root) / "learn"
 
     def contains(self, path: str | Path) -> bool:
         if not self._root or not path:

@@ -18,7 +18,6 @@ from PySide6.QtWidgets import (
 from neurotendrils.core.theme import Theme
 from neurotendrils.modules.hub.page import HubPage
 from neurotendrils.modules.neuroflow.page import NeuroFlowPage
-from neurotendrils.modules.neurolearn.page import NeuroLearnPage
 from neurotendrils.modules.neurostudio.page import NeuroStudioPage
 from neurotendrils.settingsdialog import SettingsDialog
 
@@ -79,7 +78,7 @@ class MainWindow(QMainWindow):
         self._nav.setAccessibleName("Module navigation")
         self._nav.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self._nav.setIconSize(QSize(18, 18))
-        for name in ("NeuroFlow", "NeuroStudio", "NeuroLearn", "Hub"):
+        for name in ("NeuroFlow", "NeuroStudio", "Hub"):
             self._nav.addItem(QListWidgetItem(name))
 
         user_card = QWidget(sidebar)
@@ -130,7 +129,6 @@ class MainWindow(QMainWindow):
         self._pages = QStackedWidget(root)
         self._pages.addWidget(NeuroFlowPage(self._pages))
         self._pages.addWidget(NeuroStudioPage(self._pages))
-        self._pages.addWidget(NeuroLearnPage(self._pages))
         self._pages.addWidget(HubPage(self._pages))
 
         layout.addWidget(sidebar)
