@@ -208,6 +208,81 @@ QFrame#libraryPanel, QFrame#detailPanel {
     border-radius: 12px;
 }
 QStackedWidget#pageStack { background: transparent; }
+QWidget#modalHost {
+    background-color: rgba(10, 12, 18, 160);
+}
+QFrame#modalPanel {
+    background-color: @background;
+    border: 1px solid @border;
+    border-radius: 14px;
+}
+QWidget#settingsPanel, QWidget#schemaEditPanel, QWidget#modalMessagePanel {
+    background: transparent;
+    border: none;
+}
+QLabel#modalTitle {
+    color: @text;
+    font-size: 18px;
+    font-weight: 700;
+}
+QLabel#modalBody {
+    color: @mutedText;
+    font-size: 13px;
+}
+QListWidget#modalChoiceList {
+    background: @sidebar;
+    border: 1px solid @border;
+    border-radius: 10px;
+    outline: none;
+    padding: 4px;
+}
+QListWidget#modalChoiceList::item {
+    color: @text;
+    border: none;
+    border-radius: 6px;
+    padding: 8px 10px;
+}
+QListWidget#modalChoiceList::item:selected {
+    background: transparent;
+    color: @text;
+    font-weight: 700;
+}
+QListWidget#modalChoiceList::item:hover {
+    color: @text;
+    font-weight: 700;
+}
+QDoubleSpinBox, QSpinBox, QComboBox, QLineEdit {
+    background-color: @sidebar;
+    color: @text;
+    border: 1px solid @border;
+    border-radius: 8px;
+    padding: 6px 10px;
+    min-height: 20px;
+    selection-background-color: @accent;
+    selection-color: @accentText;
+}
+QDoubleSpinBox:focus, QSpinBox:focus, QComboBox:focus, QLineEdit:focus {
+    border: 1px solid @accent;
+    outline: none;
+}
+QComboBox::drop-down {
+    border: none;
+    width: 22px;
+}
+QComboBox QAbstractItemView {
+    background-color: @background;
+    color: @text;
+    border: 1px solid @border;
+    selection-background-color: @selection;
+    selection-color: @text;
+    outline: none;
+}
+QDoubleSpinBox::up-button, QDoubleSpinBox::down-button,
+QSpinBox::up-button, QSpinBox::down-button {
+    background: transparent;
+    border: none;
+    width: 16px;
+}
 QLabel#emptyPanelTitle { color: @text; font-size: 15px; font-weight: 600; }
 QLabel#emptyPanelHint { color: @mutedText; font-size: 12px; }
 QLabel#fileNameLabel { color: @text; font-size: 14px; font-weight: 600; }
@@ -246,6 +321,9 @@ QPushButton#planStepButton, QPushButton#secondaryButton {
     border-radius: 7px;
     padding: 6px 12px;
     font-size: 12px;
+    /* Keep weight constant so hover highlight doesn't resize the label. */
+    font-weight: 700;
+    outline: none;
 }
 QPushButton#planStepButton {
     border-radius: 6px;
@@ -256,6 +334,17 @@ QPushButton#planStepButton {
 }
 QPushButton#planStepButton:hover, QPushButton#secondaryButton:hover {
     background-color: @selection;
+    color: @text;
+}
+QPushButton#planStepButton:focus, QPushButton#secondaryButton:focus,
+QPushButton#planStepButton:pressed, QPushButton#secondaryButton:pressed {
+    background: transparent;
+    border: 1px solid @border;
+    outline: none;
+}
+QPushButton#secondaryButton:hover:focus {
+    background-color: @selection;
+    outline: none;
 }
 QPushButton#planStepButton:disabled, QPushButton#secondaryButton:disabled {
     color: @mutedText;
@@ -271,8 +360,14 @@ QPushButton#primaryButton {
     font-size: 13px;
     font-weight: 600;
     min-width: 110px;
+    outline: none;
 }
 QPushButton#primaryButton:hover { background-color: @accentHover; }
+QPushButton#primaryButton:focus, QPushButton#primaryButton:pressed {
+    background-color: @accent;
+    border: none;
+    outline: none;
+}
 QLabel#fileBadge {
     color: @accent;
     background-color: @selection;

@@ -3,14 +3,12 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
-    QDialog,
     QFileDialog,
     QHBoxLayout,
     QLabel,
     QListWidget,
-    QMessageBox,
     QPushButton,
     QStackedWidget,
     QVBoxLayout,
@@ -20,15 +18,19 @@ from PySide6.QtWidgets import (
 from neurotendrils import __version__
 from neurotendrils.core.projectdir import ProjectDir
 from neurotendrils.core.theme import Theme, ThemeMode
+from neurotendrils.widgets.modals import confirm
 from neurotendrils.widgets.theme_preview_card import Preview, ThemePreviewCard
 
 
-class SettingsDialog(QDialog):
+class SettingsPanel(QWidget):
+    """Settings UI presented inside ModalHost (not a separate window)."""
+
+    closed = Signal()
+
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Settings")
-        self.setModal(True)
-        self.resize(720, 480)
+        self.setObjectName("settingsPanel")
+        self.setMinimumSize(680, 420)
         self._light_card: ThemePreviewCard | None = None
         self._dark_card: ThemePreviewCard | None = None
         self._auto_card: ThemePreviewCard | None = None
@@ -59,7 +61,7 @@ class SettingsDialog(QDialog):
         self._stack.addWidget(self._project_pane())
         done = QPushButton("Done", content)
         done.setObjectName("primaryButton")
-        done.clicked.connect(self.accept)
+        done.clicked.connect(self.closed.emit)
         content_l.addWidget(self._stack, 1)
         content_l.addWidget(done, alignment=Qt.AlignmentFlag.AlignRight)
 
@@ -97,6 +99,7 @@ class SettingsDialog(QDialog):
         def _select(mode: ThemeMode):
             def _on(_checked: bool = False) -> None:
                 Theme.instance().set_mode(mode)
+                # Force checked state even if Qt toggled the same card off.
                 self._sync_theme_cards()
 
             return _on
@@ -104,6 +107,8 @@ class SettingsDialog(QDialog):
         self._light_card.clicked.connect(_select(ThemeMode.LIGHT))
         self._dark_card.clicked.connect(_select(ThemeMode.DARK))
         self._auto_card.clicked.connect(_select(ThemeMode.SYSTEM))
+        # Ensure initial paint reflects persisted theme.
+        self._sync_theme_cards()
 
         layout.addWidget(title)
         layout.addSpacing(20)
@@ -180,12 +185,14 @@ class SettingsDialog(QDialog):
         picked = QFileDialog.getExistingDirectory(self, "Choose Project Folder", start)
         if not picked:
             return
-        reply = QMessageBox.question(
+        if confirm(
             self,
             "Change project folder",
             f"Use {picked} as the project folder?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.Yes,
-        )
-        if reply == QMessageBox.StandardButton.Yes:
+            default_yes=True,
+        ):
             ProjectDir.instance().set_root(picked, persist=True, dialog_parent=self)
+
+
+# Back-compat alias for older imports.
+SettingsDialog = SettingsPanel

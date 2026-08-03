@@ -5,9 +5,10 @@ from PySide6.QtWidgets import QHBoxLayout, QMainWindow, QStackedWidget, QWidget
 from neurotendrils.modules.hub.page import HubPage
 from neurotendrils.modules.neuroflow.page import NeuroFlowPage
 from neurotendrils.modules.neurostudio.page import NeuroStudioPage
-from neurotendrils.settingsdialog import SettingsDialog
+from neurotendrils.settingsdialog import SettingsPanel
 from neurotendrils.widgets.icon_rail import IconRail, RailItem
 from neurotendrils.widgets.icons import Glyph
+from neurotendrils.widgets.modal_host import ModalHost
 from neurotendrils.widgets.motion import crossfade_stack
 
 
@@ -26,7 +27,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("NeuroTendrils")
         self.resize(1024, 720)
         self.setMinimumSize(720, 480)
-        self._settings: SettingsDialog | None = None
+        self._settings: SettingsPanel | None = None
 
         root = QWidget(self)
         root.setObjectName("appRoot")
@@ -47,6 +48,10 @@ class MainWindow(QMainWindow):
         layout.addWidget(self._pages, 1)
         self.setCentralWidget(root)
 
+        self.modal_host = ModalHost(root)
+        root.setProperty("_ntModalHost", self.modal_host)
+        self.setProperty("_ntModalHost", self.modal_host)
+
         self._pages.setCurrentIndex(_HUB_INDEX)
         self._rail.blockSignals(True)
         self._rail.set_current(_HUB_INDEX)
@@ -58,5 +63,12 @@ class MainWindow(QMainWindow):
 
     def open_settings(self) -> None:
         if self._settings is None:
-            self._settings = SettingsDialog(self)
-        self._settings.open()
+            self._settings = SettingsPanel()
+            self._settings.closed.connect(self.modal_host.dismiss)
+        self.modal_host.present(
+            self._settings,
+            dismissible=True,
+            own=False,
+            max_width=780,
+            max_height=560,
+        )

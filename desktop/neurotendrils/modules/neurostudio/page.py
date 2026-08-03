@@ -12,7 +12,6 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
-    QMessageBox,
     QPushButton,
     QStackedWidget,
     QVBoxLayout,
@@ -42,7 +41,8 @@ from neurotendrils.core.studio_io import (
 )
 from neurotendrils.widgets.layoututil import clear_layout
 from neurotendrils.widgets.pageheader import PageHeader
-from neurotendrils.widgets.schema_form import SchemaEditDialog, SchemaFormWidget
+from neurotendrils.widgets.modals import alert, edit_schema
+from neurotendrils.widgets.schema_form import SchemaFormWidget
 from neurotendrils.widgets.scroll_page import ScrollPage
 from neurotendrils.widgets.skeleton import SkeletonLoader
 
@@ -237,12 +237,12 @@ class NeuroStudioPage(ScrollPage):
         if not path:
             return
         if self._job is not None and self._job.is_running():
-            QMessageBox.information(self, "Busy", "Wait for the current job to finish.")
+            alert(self, "Busy", "Wait for the current job to finish.")
             return
         try:
             resolved, kind = select_studio_path(path)
         except (OSError, ValueError, PermissionError) as exc:
-            QMessageBox.warning(self, "Invalid data", str(exc))
+            alert(self, "Invalid data", str(exc))
             return
         self._dataset_path = resolved
         p = Path(resolved)
@@ -260,7 +260,7 @@ class NeuroStudioPage(ScrollPage):
 
     def clear_dataset(self) -> None:
         if self._job is not None and self._job.is_running():
-            QMessageBox.information(self, "Busy", "Wait for the current job to finish.")
+            alert(self, "Busy", "Wait for the current job to finish.")
             return
         self.cancel_job()
         self._dataset_path = ""
@@ -347,18 +347,18 @@ class NeuroStudioPage(ScrollPage):
         if template_id not in self._configs:
             self._configs[template_id] = default_config(template_id)
         schemas = list(tmpl.get("hyperparams", [])) + list(tmpl.get("train", []))
-        dialog = SchemaEditDialog(
+        values = edit_schema(
+            self,
             f"Configure {tmpl['title']}",
             tmpl.get("description") or "",
             schemas,
             self._configs[template_id],
-            lambda values: validate_config(template_id, values),
-            self,
+            lambda vals: validate_config(template_id, vals),
             decimals=6,
             single_step=0.0001,
         )
-        if dialog.exec():
-            self._configs[template_id] = dialog.values()
+        if values is not None:
+            self._configs[template_id] = values
             self.select_template(template_id)
 
     def _on_tune_changed(self, values: dict[str, Any]) -> None:
@@ -388,12 +388,12 @@ class NeuroStudioPage(ScrollPage):
         )
         err = validate_config(self._selected_template, config)
         if err:
-            QMessageBox.warning(self, "Invalid config", err)
+            alert(self, "Invalid config", err)
             return
         try:
             out_dir = suggest_train_dir(self._dataset_path, self._selected_template)
         except OSError as exc:
-            QMessageBox.warning(self, "Train failed", str(exc))
+            alert(self, "Train failed", str(exc))
             return
         self._train_log = ""
         self._train_status.setText("Training…")
@@ -456,7 +456,7 @@ class NeuroStudioPage(ScrollPage):
         else:
             self._train_status.setText(f"Train failed ({code}): {message}")
             if code == "no_labels":
-                QMessageBox.warning(self, "No labels", message)
+                alert(self, "No labels", message)
         self._refresh()
 
     def start_export(self) -> None:
@@ -466,7 +466,7 @@ class NeuroStudioPage(ScrollPage):
         if self._job and self._job.is_running():
             return
         if self._last_train.get("data_mode") == "synthetic_demo":
-            QMessageBox.warning(
+            alert(
                 self,
                 "Export blocked",
                 "This checkpoint was trained on synthetic demo data and cannot be exported.",

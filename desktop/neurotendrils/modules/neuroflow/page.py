@@ -11,9 +11,7 @@ from PySide6.QtWidgets import (
     QFrame,
     QGridLayout,
     QHBoxLayout,
-    QInputDialog,
     QLabel,
-    QMessageBox,
     QPushButton,
     QStackedWidget,
     QVBoxLayout,
@@ -50,7 +48,7 @@ from neurotendrils.core.plans import (
 from neurotendrils.core.projectdir import ProjectDir
 from neurotendrils.widgets.layoututil import clear_layout
 from neurotendrils.widgets.pageheader import PageHeader
-from neurotendrils.widgets.schema_form import SchemaEditDialog
+from neurotendrils.widgets.modals import alert, confirm, edit_schema, prompt_choice
 from neurotendrils.widgets.scroll_page import ScrollPage
 from neurotendrils.widgets.skeleton import SkeletonLoader
 
@@ -232,7 +230,7 @@ class NeuroFlowPage(ScrollPage):
     def import_recording(self) -> None:
         project = ProjectDir.instance()
         if not project.root:
-            QMessageBox.warning(self, "Project required", "Choose a project folder first.")
+            alert(self, "Project required", "Choose a project folder first.")
             return
         path, _ = QFileDialog.getOpenFileName(
             self,
@@ -243,7 +241,7 @@ class NeuroFlowPage(ScrollPage):
         if not path:
             return
         if self._busy():
-            QMessageBox.information(self, "Busy", "Wait for the current job to finish.")
+            alert(self, "Busy", "Wait for the current job to finish.")
             return
         self._fp_status.setText("Importing recording…")
         self._fp_skeleton.show()
@@ -263,7 +261,7 @@ class NeuroFlowPage(ScrollPage):
     def _on_import_fail(self, code: str, message: str) -> None:
         self._fp_skeleton.hide()
         self._fp_status.setText(f"Import failed ({code}): {message}")
-        QMessageBox.warning(self, "Import failed", message)
+        alert(self, "Import failed", message)
 
     def set_dataset_path(self, path: str, copied: bool) -> None:
         if not path:
@@ -289,7 +287,7 @@ class NeuroFlowPage(ScrollPage):
 
     def clear_all(self) -> None:
         if self._busy():
-            QMessageBox.information(self, "Busy", "Wait for the current job to finish.")
+            alert(self, "Busy", "Wait for the current job to finish.")
             return
         self.cancel_job()
         self._dataset_path = ""
@@ -421,7 +419,7 @@ class NeuroFlowPage(ScrollPage):
             return
         catalog = step_catalog()
         labels = [f"{s['title']} ({s['id']})" for s in catalog]
-        choice, ok = QInputDialog.getItem(self, "Add step", "Step:", labels, 0, False)
+        choice, ok = prompt_choice(self, "Add step", "Step:", labels)
         if not ok or not choice:
             return
         step_id = choice.rsplit("(", 1)[-1].rstrip(")")
@@ -442,16 +440,16 @@ class NeuroFlowPage(ScrollPage):
         defn = find_step(step_id)
         if defn is None:
             return
-        dialog = SchemaEditDialog(
+        values = edit_schema(
+            self,
             f"Edit {defn['title']}",
             defn.get("description") or "",
             defn.get("params") or [],
             step.get("params") or {},
-            lambda values: validate_step_params(step_id, values),
-            self,
+            lambda vals: validate_step_params(step_id, vals),
         )
-        if dialog.exec():
-            step["params"] = dialog.values()
+        if values is not None:
+            step["params"] = values
             self._plan_user_owned = True
             self.render_plan()
 
@@ -469,14 +467,7 @@ class NeuroFlowPage(ScrollPage):
     def remove_step(self, index: int) -> None:
         if self._busy():
             return
-        reply = QMessageBox.question(
-            self,
-            "Remove step",
-            "Remove this step from the plan?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
-        )
-        if reply != QMessageBox.StandardButton.Yes:
+        if not confirm(self, "Remove step", "Remove this step from the plan?"):
             return
         steps = self._plan.get("steps") or []
         if 0 <= index < len(steps):
@@ -488,7 +479,7 @@ class NeuroFlowPage(ScrollPage):
     def save_plan_clicked(self) -> None:
         err = validate_plan(self._plan)
         if err:
-            QMessageBox.warning(self, "Invalid plan", err)
+            alert(self, "Invalid plan", err)
             return
         base = Path(self._dataset_path).stem if self._dataset_path else "plan"
         payload = dict(self._plan)
@@ -498,11 +489,11 @@ class NeuroFlowPage(ScrollPage):
         try:
             path = save_plan(payload, base)
         except (OSError, ValueError) as exc:
-            QMessageBox.warning(self, "Save failed", str(exc))
+            alert(self, "Save failed", str(exc))
             return
         self._plan_path = str(path)
         self._plan_status.setText(f"Saved {path.name}")
-        QMessageBox.information(self, "Plan saved", str(path))
+        alert(self, "Plan saved", str(path))
 
     def load_plan_clicked(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
@@ -516,7 +507,7 @@ class NeuroFlowPage(ScrollPage):
         try:
             plan = load_plan(path)
         except (OSError, ValueError, PermissionError) as exc:
-            QMessageBox.warning(self, "Load failed", str(exc))
+            alert(self, "Load failed", str(exc))
             return
         self._plan = plan
         self._plan_path = path
@@ -531,12 +522,12 @@ class NeuroFlowPage(ScrollPage):
             return
         err = validate_plan(self._plan)
         if err:
-            QMessageBox.warning(self, "Invalid plan", err)
+            alert(self, "Invalid plan", err)
             return
         try:
             out_path, meta_path = suggest_run_paths(Path(self._dataset_path).stem)
         except OSError as exc:
-            QMessageBox.warning(self, "Run failed", str(exc))
+            alert(self, "Run failed", str(exc))
             return
         self._run_input = self._dataset_path
         self._run_output = str(out_path)

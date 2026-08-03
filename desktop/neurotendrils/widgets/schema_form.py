@@ -4,16 +4,16 @@ from __future__ import annotations
 
 from typing import Any
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
-    QDialog,
-    QDialogButtonBox,
     QDoubleSpinBox,
     QFormLayout,
+    QHBoxLayout,
     QLabel,
     QLineEdit,
+    QPushButton,
     QVBoxLayout,
     QWidget,
 )
@@ -84,8 +84,11 @@ def collect_values(
     return values
 
 
-class SchemaEditDialog(QDialog):
-    """Modal editor for a list of param schemas."""
+class SchemaEditPanel(QWidget):
+    """In-app schema editor panel (presented via ModalHost)."""
+
+    accepted = Signal(dict)
+    rejected = Signal()
 
     def __init__(
         self,
@@ -100,14 +103,23 @@ class SchemaEditDialog(QDialog):
         single_step: float = 0.1,
     ) -> None:
         super().__init__(parent)
-        self.setWindowTitle(title)
+        self.setObjectName("schemaEditPanel")
         self.setMinimumWidth(380)
         self._schemas = schemas
         self._validator = validator
-        self._values = dict(values)
 
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel(intro, self))
+        layout.setContentsMargins(28, 24, 28, 20)
+        layout.setSpacing(12)
+
+        heading = QLabel(title, self)
+        heading.setObjectName("modalTitle")
+        layout.addWidget(heading)
+        if intro:
+            blurb = QLabel(intro, self)
+            blurb.setObjectName("modalBody")
+            blurb.setWordWrap(True)
+            layout.addWidget(blurb)
 
         form_host = QWidget(self)
         form = QFormLayout(form_host)
@@ -123,12 +135,22 @@ class SchemaEditDialog(QDialog):
         self._error.hide()
         layout.addWidget(self._error)
 
-        buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
-        )
-        buttons.accepted.connect(self._accept)
-        buttons.rejected.connect(self.reject)
-        layout.addWidget(buttons)
+        buttons = QHBoxLayout()
+        buttons.addStretch(1)
+        cancel = QPushButton("Cancel", self)
+        cancel.setObjectName("secondaryButton")
+        cancel.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        cancel.setAutoDefault(False)
+        cancel.setDefault(False)
+        cancel.clicked.connect(self.rejected.emit)
+        ok = QPushButton("OK", self)
+        ok.setObjectName("primaryButton")
+        ok.setAutoDefault(True)
+        ok.setDefault(True)
+        ok.clicked.connect(self._accept)
+        buttons.addWidget(cancel)
+        buttons.addWidget(ok)
+        layout.addLayout(buttons)
 
     def _accept(self) -> None:
         values = collect_values(self._schemas, self._editors)
@@ -137,11 +159,7 @@ class SchemaEditDialog(QDialog):
             self._error.setText(err)
             self._error.show()
             return
-        self._values = values
-        self.accept()
-
-    def values(self) -> dict[str, Any]:
-        return dict(self._values)
+        self.accepted.emit(values)
 
 
 class SchemaFormWidget(QWidget):

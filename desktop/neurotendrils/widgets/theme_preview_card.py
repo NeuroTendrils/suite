@@ -34,8 +34,10 @@ class ThemePreviewCard(QAbstractButton):
         self._preview = preview
         self.setText(caption)
         self.setCheckable(True)
+        self.setAutoExclusive(False)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setFixedSize(self.sizeHint())
+        self.toggled.connect(lambda *_: self.update())
         Theme.instance().changed.connect(self.update)
 
     def sizeHint(self) -> QSize:  # noqa: N802
@@ -47,10 +49,15 @@ class ThemePreviewCard(QAbstractButton):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         theme = Theme.instance()
 
-        card = QRectF(self.rect()).adjusted(1.0, 1.0, -1.0, -1.0)
-        # Minimal chrome: quiet border only, selection is expressed in the caption.
-        painter.setBrush(Qt.BrushStyle.NoBrush)
-        painter.setPen(QPen(theme.border_color(), 1.0))
+        card = QRectF(self.rect()).adjusted(1.5, 1.5, -1.5, -1.5)
+        if self.isChecked():
+            tint = theme.accent_color()
+            tint.setAlpha(36 if theme.is_dark() else 22)
+            painter.setBrush(tint)
+            painter.setPen(QPen(theme.accent_color(), 2.0))
+        else:
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.setPen(QPen(theme.border_color(), 1.0))
         painter.drawRoundedRect(card, 10.0, 10.0)
 
         preview = card.adjusted(14.0, 14.0, -14.0, -38.0)
@@ -99,5 +106,8 @@ class ThemePreviewCard(QAbstractButton):
         font = painter.font()
         font.setBold(self.isChecked())
         painter.setFont(font)
-        painter.setPen(theme.text_color() if self.isChecked() else theme.muted_text_color())
+        if self.isChecked():
+            painter.setPen(theme.accent_color())
+        else:
+            painter.setPen(theme.muted_text_color())
         painter.drawText(caption, int(Qt.AlignmentFlag.AlignCenter), self.text())

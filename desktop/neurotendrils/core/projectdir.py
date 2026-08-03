@@ -8,6 +8,8 @@ from pathlib import Path
 from PySide6.QtCore import QObject, QSettings, Signal
 from PySide6.QtWidgets import QFileDialog, QMessageBox, QWidget
 
+# QMessageBox kept for first-run before MainWindow/ModalHost exists.
+
 ORG = "NeuroTendrils"
 APP = "NeuroTendrils"
 ROOT_KEY = "project/root"
@@ -86,12 +88,18 @@ class ProjectDir(QObject):
                 (root_path / name).mkdir(parents=True, exist_ok=True)
         except OSError:
             if dialog_parent is not None:
-                QMessageBox.warning(
-                    dialog_parent,
-                    "Project Folder Unavailable",
+                from neurotendrils.widgets.modals import alert, find_host
+
+                message = (
                     f"The project folder {root} could not be created. "
-                    "Please choose a different location in Settings.",
+                    "Please choose a different location in Settings."
                 )
+                if find_host(dialog_parent) is not None:
+                    alert(dialog_parent, "Project Folder Unavailable", message)
+                else:
+                    QMessageBox.warning(
+                        dialog_parent, "Project Folder Unavailable", message
+                    )
         if persist:
             QSettings(ORG, APP).setValue(ROOT_KEY, root)
         self.root_changed.emit(self._root)
