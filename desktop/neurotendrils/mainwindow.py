@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import QSize, Qt
-from PySide6.QtGui import QColor, QPainter, QPixmap
+from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
@@ -20,24 +20,7 @@ from neurotendrils.modules.hub.page import HubPage
 from neurotendrils.modules.neuroflow.page import NeuroFlowPage
 from neurotendrils.modules.neurostudio.page import NeuroStudioPage
 from neurotendrils.settingsdialog import SettingsDialog
-
-
-def _avatar_pixmap(size: int, background: QColor, foreground: QColor) -> QPixmap:
-    pm = QPixmap(size, size)
-    pm.fill(Qt.GlobalColor.transparent)
-    painter = QPainter(pm)
-    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-    painter.setBrush(background)
-    painter.setPen(Qt.PenStyle.NoPen)
-    painter.drawEllipse(0, 0, size, size)
-    painter.setPen(foreground)
-    font = painter.font()
-    font.setBold(True)
-    font.setPointSize(11)
-    painter.setFont(font)
-    painter.drawText(pm.rect(), Qt.AlignmentFlag.AlignCenter, "G")
-    painter.end()
-    return pm
+from neurotendrils.widgets.icons import Glyph, avatar, icon
 
 
 class MainWindow(QMainWindow):
@@ -115,7 +98,8 @@ class MainWindow(QMainWindow):
         self._settings_btn.setAccessibleName("Open settings")
         self._settings_btn.setToolTip("Settings")
         self._settings_btn.setAutoRaise(True)
-        self._settings_btn.setText("⚙")
+        self._settings_btn.setText("")
+        self._settings_btn.setIconSize(QSize(18, 18))
         self._settings_btn.clicked.connect(self.open_settings)
 
         user_l.addWidget(self._avatar)
@@ -142,9 +126,22 @@ class MainWindow(QMainWindow):
 
     def apply_chrome(self) -> None:
         theme = Theme.instance()
+        normal = theme.muted_text_color()
+        selected = theme.text_color()
+
+        glyphs = (Glyph.FLOW, Glyph.STUDIO, Glyph.HUB)
+        for row, glyph in enumerate(glyphs):
+            item = self._nav.item(row)
+            if item is not None:
+                item.setIcon(icon(glyph, normal, selected))
+
+        self._settings_btn.setIcon(icon(Glyph.SETTINGS, normal, selected))
+
         bg = theme.muted_text_color()
         bg.setAlpha(60)
-        self._avatar.setPixmap(_avatar_pixmap(32, bg, theme.muted_text_color()))
+        screen = self.screen() or QGuiApplication.primaryScreen()
+        dpr = screen.devicePixelRatio() if screen is not None else 1.0
+        self._avatar.setPixmap(avatar(32, bg, theme.muted_text_color(), dpr))
 
     def open_settings(self) -> None:
         if self._settings is None:

@@ -287,6 +287,9 @@ class Theme(QObject):
     def is_dark(self) -> bool:
         return self._dark
 
+    def text_color(self) -> QColor:
+        return QColor(self._colors.text)
+
     def muted_text_color(self) -> QColor:
         return QColor(self._colors.muted_text)
 
