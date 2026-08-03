@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any
 
@@ -14,6 +13,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QSizePolicy,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
@@ -24,7 +24,7 @@ from neurotendrils.core.eeg_formats import (
     import_file_filter,
     import_format_hint,
 )
-from neurotendrils.core.formatting import format_bytes, format_relative
+from neurotendrils.core.formatting import format_bytes, format_number, format_relative
 from neurotendrils.core.jobs import (
     WorkerJob,
     cancel_bound_job,
@@ -33,7 +33,14 @@ from neurotendrils.core.jobs import (
     run_plan_job,
     start_bound_job,
 )
-from neurotendrils.core.library import scan_datasets, scan_runs
+from neurotendrils.core.library import (
+    LibraryBus,
+    LibraryEntry,
+    notify_library_changed,
+    scan_datasets,
+    scan_runs,
+)
+from neurotendrils.core.notifications import notify
 from neurotendrils.core.plans import (
     default_params,
     find_step,
@@ -190,7 +197,8 @@ class NeuroFlowPage(QWidget):
 
         self.flow = StageFlow(
             "NeuroFlow",
-            "Import a recording, read its fingerprint, shape a plan, then run it.",
+            "Import a recording, shape a plan, then run it. "
+            "Each run saves cleaned output under runs/.",
             self,
         )
         self.flow.add_stage(
@@ -207,6 +215,7 @@ class NeuroFlowPage(QWidget):
         layout.addWidget(self.flow)
 
         ProjectDir.instance().root_changed.connect(lambda *_: self._refresh_pickers())
+        LibraryBus.instance().changed.connect(self._refresh_pickers)
         self.render_plan()
         self._refresh_actions()
 
@@ -296,12 +305,18 @@ class NeuroFlowPage(QWidget):
 
         self._fp_panel = QFrame(host)
         self._fp_panel.setObjectName("fingerprintPanel")
-        self._fp_panel.setMaximumWidth(640)
+        self._fp_panel.setMaximumWidth(720)
         self._fp_panel.hide()
-        grid = QGridLayout(self._fp_panel)
-        grid.setContentsMargins(20, 16, 20, 16)
+        panel_l = QVBoxLayout(self._fp_panel)
+        panel_l.setContentsMargins(20, 16, 20, 16)
+        panel_l.setSpacing(14)
+
+        grid_host = QWidget(self._fp_panel)
+        grid = QGridLayout(grid_host)
+        grid.setContentsMargins(0, 0, 0, 0)
         grid.setHorizontalSpacing(24)
-        grid.setVerticalSpacing(10)
+        grid.setVerticalSpacing(12)
+        grid.setColumnStretch(1, 1)
         self._fp_values: dict[str, QLabel] = {}
         fields = [
             ("channels", "Channels"),
@@ -311,28 +326,44 @@ class NeuroFlowPage(QWidget):
             ("filters", "Filters"),
         ]
         for row, (key, label) in enumerate(fields):
-            k = QLabel(label, self._fp_panel)
+            k = QLabel(label, grid_host)
             k.setObjectName("fingerprintKey")
-            v = QLabel("—", self._fp_panel)
+            k.setAlignment(
+                Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+            )
+            v = QLabel("—", grid_host)
             v.setObjectName("fingerprintValue")
-            grid.addWidget(k, row, 0)
+            v.setWordWrap(True)
+            v.setAlignment(
+                Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+            )
+            grid.addWidget(k, row, 0, Qt.AlignmentFlag.AlignTop)
             grid.addWidget(v, row, 1)
             self._fp_values[key] = v
+        panel_l.addWidget(grid_host)
+
         self._fp_channels = QLabel("", self._fp_panel)
         self._fp_channels.setObjectName("fingerprintChannels")
         self._fp_channels.setWordWrap(True)
-        grid.addWidget(self._fp_channels, len(fields), 0, 1, 2)
+        self._fp_channels.setAlignment(
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop
+        )
+        self._fp_channels.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum
+        )
+        self._fp_channels.hide()
+        panel_l.addWidget(self._fp_channels)
 
-        reread = QPushButton("Re-read metadata", host)
+        reread = QPushButton("Re-read metadata", self._fp_panel)
         reread.setObjectName("secondaryButton")
         reread.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         reread.clicked.connect(self.request_fingerprint)
         self._fp_reread = reread
+        panel_l.addWidget(reread, alignment=Qt.AlignmentFlag.AlignLeft)
 
         layout.addWidget(self._fp_status)
         layout.addWidget(self._fp_skeleton)
         layout.addWidget(self._fp_panel)
-        layout.addWidget(reread, alignment=Qt.AlignmentFlag.AlignLeft)
         return host
 
     def _build_plan(self) -> QWidget:
@@ -407,7 +438,7 @@ class NeuroFlowPage(QWidget):
         layout.addWidget(self._cancel_btn, alignment=Qt.AlignmentFlag.AlignLeft)
 
         layout.addSpacing(16)
-        runs_header = SectionHeader("Run outputs", "Refresh", host)
+        runs_header = SectionHeader("Previous runs", "Refresh", host)
         runs_header.actionTriggered.connect(self._refresh_pickers)
         layout.addWidget(runs_header)
         self._run_rows = RowList(host)
@@ -469,7 +500,9 @@ class NeuroFlowPage(QWidget):
         self._run_rows.clear()
         runs = scan_runs()[:_RECENT_LIMIT]
         if not runs:
-            self._run_rows.add_placeholder("Run outputs will be listed here.")
+            self._run_rows.add_placeholder(
+                "No runs yet. A run is one plan execution — output lands in runs/."
+            )
             return
         for entry in runs:
             row = ListRow(
@@ -479,13 +512,20 @@ class NeuroFlowPage(QWidget):
                 Glyph.RUNS,
                 self._run_rows,
             )
-            row.activated.connect(lambda path=entry.path: self._show_run(path))
+            row.activated.connect(lambda e=entry: self._show_run(e))
             self._run_rows.add_row(row)
         stagger_in(self._run_rows.rows())
 
-    def _show_run(self, path: str) -> None:
-        _set_text(self._run_result, path)
-        self._run_status.setText(f"Selected {Path(path).name}")
+    def _show_run(self, entry: LibraryEntry) -> None:
+        output = str(entry.extra.get("output_path") or entry.path)
+        meta = str(entry.extra.get("meta_path") or "")
+        lines = [f"Run {entry.title}", f"Output: {output}"]
+        if meta:
+            lines.append(f"Metadata: {meta}")
+        if entry.subtitle:
+            lines.append(entry.subtitle)
+        _set_text(self._run_result, "\n".join(lines))
+        self._run_status.setText(f"Selected {entry.title}")
 
     def _context_items(self) -> list[tuple[str, str]]:
         items: list[tuple[str, str]] = []
@@ -608,6 +648,8 @@ class NeuroFlowPage(QWidget):
         self._file_path.setText(path)
         self._file_path.setToolTip(path)
         self._recording_stack.setCurrentIndex(1)
+        if copied:
+            notify_library_changed()
         self._refresh_pickers()
         # Move to the fingerprint stage and read metadata once the import thread is done.
         self.flow.go_to(FINGERPRINT)
@@ -673,16 +715,23 @@ class NeuroFlowPage(QWidget):
         self._fp_values["montage"].setText(str(result.get("montage_hint") or "—"))
         hp = result.get("highpass")
         lp = result.get("lowpass")
-        self._fp_values["filters"].setText(f"HP {hp} · LP {lp}")
-        names = result.get("ch_names") or []
-        shown = ", ".join(names[:12])
-        if len(names) > 12:
-            shown += f"  (+{len(names) - 12} more)"
-        self._fp_channels.setText(shown)
-        self._fp_channels.setToolTip(", ".join(names))
+        hp_text = format_number(hp) if hp is not None else "—"
+        lp_text = format_number(lp) if lp is not None else "—"
+        self._fp_values["filters"].setText(f"HP {hp_text} · LP {lp_text}")
+        names = [str(n) for n in (result.get("ch_names") or [])]
+        if names:
+            shown = ", ".join(names[:12])
+            if len(names) > 12:
+                shown += f"  (+{len(names) - 12} more)"
+            self._fp_channels.setText(shown)
+            self._fp_channels.setToolTip(", ".join(names))
+            self._fp_channels.show()
+        else:
+            self._fp_channels.clear()
+            self._fp_channels.hide()
         self._fp_status.setText("Fingerprint ready.")
         self._fp_panel.show()
-        stagger_in([self._fp_panel])
+        # Avoid opacity fades on the panel — they clip wrapped channel labels.
         if not self._plan_user_owned:
             self._plan = from_fingerprint(result)
             self.render_plan()
@@ -708,12 +757,10 @@ class NeuroFlowPage(QWidget):
                 "No steps yet. Fingerprint a recording or add steps."
             )
             self._plan_status.show()
-            self.setToolTip("")
             return
 
         self._plan_status.setText("")
         self._plan_status.hide()
-        self.setToolTip(json.dumps(self._plan, indent=2))
         rows: list[QWidget] = []
         for index, step in enumerate(steps):
             row = _PlanStepRow(
@@ -810,6 +857,7 @@ class NeuroFlowPage(QWidget):
         self._plan_path = str(path)
         self._plan_status.setText(f"Saved {path.name}")
         self._plan_status.show()
+        notify_library_changed()
         self._refresh_actions()
         alert(self, "Plan saved", str(path))
 
@@ -891,6 +939,11 @@ class NeuroFlowPage(QWidget):
         meta = result.get("meta_path") or self._run_meta
         if not project.contains(out):
             self._run_status.setText("Run finished but output left the project sandbox.")
+            notify(
+                "Run finished",
+                "Output left the project sandbox.",
+                level="error",
+            )
             self._refresh_actions()
             return
         kind = result.get("output_kind", "?")
@@ -909,6 +962,12 @@ class NeuroFlowPage(QWidget):
         stagger_in([self._run_result])
         self._run_status.setText("Run complete.")
         self._run_done = True
+        notify_library_changed()
+        notify(
+            "Run complete",
+            f"{result.get('n_steps')} steps · {Path(str(out)).name}",
+            level="success",
+        )
         self._refresh_pickers()
         self._refresh_actions()
 
@@ -917,8 +976,10 @@ class NeuroFlowPage(QWidget):
         self._cancel_btn.setVisible(False)
         if code == "cancelled":
             self._run_status.setText("Run cancelled.")
+            notify("Run cancelled", level="info")
         else:
             self._run_status.setText(f"Run failed ({code}): {message}")
+            notify("Run failed", message, level="error")
         self._refresh_actions()
 
     def _busy(self) -> bool:

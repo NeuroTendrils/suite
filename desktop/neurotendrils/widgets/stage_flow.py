@@ -26,7 +26,7 @@ from neurotendrils.widgets.rows import hairline
 from neurotendrils.widgets.section import eyebrow_font
 from neurotendrils.widgets.stage_rail import StageRail
 
-MAX_STAGE_WIDTH = 1160
+MAX_STAGE_WIDTH = 0  # 0 = fill the viewport
 
 
 @dataclass
@@ -84,6 +84,9 @@ class ContextStrip(QWidget):
         value_label = QLabel(value, cell)
         value_label.setObjectName("contextValue")
         value_label.setToolTip(value)
+        metrics = value_label.fontMetrics()
+        value_label.setMaximumWidth(160)
+        value_label.setText(metrics.elidedText(value, Qt.TextElideMode.ElideMiddle, 160))
         layout.addWidget(key_label)
         layout.addWidget(value_label)
         return cell
@@ -108,16 +111,24 @@ class StageFlow(QWidget):
 
         header = QWidget(self)
         self._header_layout = QVBoxLayout(header)
-        self._header_layout.setContentsMargins(32, 24, 32, 0)
-        self._header_layout.setSpacing(4)
+        self._header_layout.setContentsMargins(32, 28, 32, 0)
+        self._header_layout.setSpacing(8)
 
         title_label = QLabel(title, header)
         title_label.setObjectName("pageTitle")
         description_label = QLabel(description, header)
         description_label.setObjectName("pageDescription")
+        description_label.setWordWrap(True)
+        description_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+        )
+        # Keep the blurb from colliding with the rail / stage body.
+        description_label.setMinimumHeight(
+            description_label.fontMetrics().lineSpacing() * 2
+        )
         self._header_layout.addWidget(title_label)
         self._header_layout.addWidget(description_label)
-        self._header_layout.addSpacing(20)
+        self._header_layout.addSpacing(16)
 
         self.context = ContextStrip(header)
         self._header_layout.addWidget(self.context)
@@ -189,7 +200,8 @@ class StageFlow(QWidget):
         column_layout = QVBoxLayout(column)
         column_layout.setContentsMargins(0, 0, 0, 0)
         column_layout.setSpacing(0)
-        widget.setMaximumWidth(MAX_STAGE_WIDTH)
+        if MAX_STAGE_WIDTH > 0:
+            widget.setMaximumWidth(MAX_STAGE_WIDTH)
         column_layout.addWidget(widget)
         column_layout.addStretch(1)
         viewport_layout.addWidget(column, 1)
@@ -258,8 +270,13 @@ class StageFlow(QWidget):
             self._rail.set_unlocked(index, unlocked)
 
     def set_status(self, text: str) -> None:
-        self._status.setText(text)
         self._status.setToolTip(text)
+        # Keep the footer from shoving Back/Continue off-screen on long status.
+        metrics = self._status.fontMetrics()
+        width = max(120, self._status.width() or 280)
+        self._status.setText(
+            metrics.elidedText(text, Qt.TextElideMode.ElideRight, width)
+        )
 
     def set_primary(
         self, label: str = "", *, enabled: bool = True, visible: bool = True

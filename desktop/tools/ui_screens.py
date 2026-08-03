@@ -142,15 +142,15 @@ def main() -> int:
         capture(f"home-{suffix}")
 
         window.navigate("projects")
-        settle()
-        rows = window.projects._rows.rows()
-        if rows:
-            rows[0].activated.emit()
-        capture(f"projects-inspector-{suffix}")
-        window.projects.clear_selection()
+        capture(f"projects-{suffix}")
 
         window.navigate("datasets")
+        settle()
+        rows = window.datasets._rows.rows()
+        if rows:
+            rows[0].activated.emit()
         capture(f"datasets-{suffix}")
+        window.datasets.clear_selection()
 
         window.navigate("models")
         window._rail.toggle_expanded()

@@ -8,10 +8,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal
 
+from PySide6.QtCore import QObject, Signal
+
 from neurotendrils.core.eeg_formats import IMPORT_SUFFIXES, extension_badge, matches_suffix
 from neurotendrils.core.projectdir import ProjectDir, resolve_path
 
-Kind = Literal["plan", "dataset", "model", "run"]
+Kind = Literal["plan", "dataset", "model", "run", "template"]
 
 
 @dataclass
@@ -24,6 +26,24 @@ class LibraryEntry:
     size_bytes: int
     modified: float
     extra: dict[str, Any]
+
+
+class LibraryBus(QObject):
+    """Broadcast when project contents change so pages can rescan."""
+
+    changed = Signal()
+
+    _instance: LibraryBus | None = None
+
+    @classmethod
+    def instance(cls) -> LibraryBus:
+        if cls._instance is None:
+            cls._instance = LibraryBus()
+        return cls._instance
+
+
+def notify_library_changed() -> None:
+    LibraryBus.instance().changed.emit()
 
 
 def _stat_size_mtime(path: Path) -> tuple[int, float]:
@@ -154,27 +174,131 @@ def scan_models() -> list[LibraryEntry]:
     return entries
 
 
+def _run_entry_from_dir(run_dir: Path) -> LibraryEntry | None:
+    """One NeuroFlow execution: a folder with run.json (+ cleaned.fif)."""
+    meta_path = run_dir / "run.json"
+    if meta_path.is_symlink() or not meta_path.is_file():
+        return None
+    try:
+        data = json.loads(meta_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        data = {}
+
+    output_path = Path(str(data.get("output_path") or run_dir / "cleaned.fif"))
+    if not output_path.is_file():
+        for candidate in sorted(run_dir.glob("*.fif")):
+            if not candidate.is_symlink():
+                output_path = candidate
+                break
+        else:
+            output_path = meta_path
+
+    size_bytes, modified = _stat_size_mtime(output_path)
+    if not modified:
+        _, modified = _stat_size_mtime(meta_path)
+
+    result = data.get("result") or {}
+    n_steps = result.get("n_steps")
+    if n_steps is None:
+        plan = data.get("plan") or {}
+        n_steps = len(plan.get("steps") or [])
+    kind = str(result.get("output_kind") or extension_badge(str(output_path)))
+    input_name = Path(str(data.get("input_path") or "")).name
+    subtitle_parts = [f"{n_steps} steps" if n_steps else "run"]
+    if kind:
+        subtitle_parts.append(str(kind))
+    if input_name:
+        subtitle_parts.append(input_name)
+
+    return LibraryEntry(
+        kind="run",
+        id=run_dir.name,
+        title=run_dir.name,
+        subtitle=" · ".join(subtitle_parts),
+        path=str(run_dir),
+        size_bytes=size_bytes,
+        modified=modified,
+        extra={
+            "output_path": str(output_path),
+            "meta_path": str(meta_path),
+            "input_path": str(data.get("input_path") or ""),
+            "n_steps": n_steps,
+            "output_kind": kind,
+        },
+    )
+
+
+def scan_templates() -> list[LibraryEntry]:
+    """Saved NeuroStudio template configs under ``templates/*.json``."""
+    from neurotendrils.core.studio_io import CONFIG_KIND, find_template
+
+    entries: list[LibraryEntry] = []
+    templates_dir = ProjectDir.instance().templates_dir()
+    if not templates_dir.is_dir():
+        return entries
+    for path in templates_dir.glob("*.json"):
+        if path.is_symlink() or not path.is_file():
+            continue
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(data, dict):
+            continue
+        if data.get("kind") not in {CONFIG_KIND, None}:
+            continue
+        template_id = str(data.get("template_id") or "")
+        config = data.get("config")
+        if not template_id or not isinstance(config, dict):
+            continue
+        tmpl = find_template(template_id)
+        title = str(data.get("name") or (tmpl or {}).get("title") or path.stem)
+        size_bytes, modified = _stat_size_mtime(path)
+        saved = str(data.get("saved_at") or "")
+        if saved:
+            try:
+                modified = datetime.fromisoformat(saved.replace("Z", "+00:00")).timestamp()
+            except ValueError:
+                pass
+        family = str((tmpl or {}).get("model_family") or "")
+        subtitle = f"{template_id}" + (f" · {family}" if family else "")
+        entries.append(
+            LibraryEntry(
+                kind="template",
+                id=path.stem,
+                title=title,
+                subtitle=subtitle,
+                path=str(path),
+                size_bytes=size_bytes,
+                modified=modified,
+                extra={
+                    "template_id": template_id,
+                    "config": config,
+                    "dataset_path": data.get("dataset_path", ""),
+                },
+            )
+        )
+    entries.sort(key=lambda e: e.modified, reverse=True)
+    return entries
+
+
 def scan_runs() -> list[LibraryEntry]:
+    """Scan NeuroFlow run folders under ``runs/<name>_<stamp>/``.
+
+    A run is one plan execution: metadata in ``run.json`` and the cleaned
+    recording beside it. Flat ``*.json`` files left from older seeds are
+    ignored so they do not masquerade as real runs.
+    """
     entries: list[LibraryEntry] = []
     runs_dir = ProjectDir.instance().runs_dir()
     if not runs_dir.is_dir():
         return entries
     for path in runs_dir.iterdir():
-        if path.is_symlink() or not path.is_file():
+        if path.is_symlink() or not path.is_dir():
             continue
-        size_bytes, modified = _stat_size_mtime(path)
-        entries.append(
-            LibraryEntry(
-                kind="run",
-                id=path.name,
-                title=path.name,
-                subtitle=path.suffix.lstrip(".").upper() or "OUTPUT",
-                path=str(path),
-                size_bytes=size_bytes,
-                modified=modified,
-                extra={},
-            )
-        )
+        entry = _run_entry_from_dir(path)
+        if entry is not None:
+            entries.append(entry)
     entries.sort(key=lambda e: e.modified, reverse=True)
     return entries
 
@@ -185,4 +309,5 @@ def scan_all() -> dict[str, list[LibraryEntry]]:
         "datasets": scan_datasets(),
         "models": scan_models(),
         "runs": scan_runs(),
+        "templates": scan_templates(),
     }

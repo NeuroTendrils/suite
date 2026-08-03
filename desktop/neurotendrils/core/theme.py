@@ -77,7 +77,13 @@ QStackedWidget#pageStack { background: transparent; }
 /* ---------- left navigation ---------- */
 QWidget#navRail {
     background-color: @sidebar;
-    border-right: 1px solid @border;
+    border: none;
+}
+QFrame#shellDivider {
+    background-color: @border;
+    border: none;
+    max-width: 1px;
+    min-width: 1px;
 }
 QLabel#navBrand {
     color: @text;
@@ -85,9 +91,8 @@ QLabel#navBrand {
     font-weight: 700;
 }
 QLabel#navBrandMark {
-    color: @accent;
-    font-size: 14px;
-    font-weight: 700;
+    background: transparent;
+    border: none;
 }
 QLabel#navSectionLabel {
     color: @mutedText;
@@ -131,21 +136,43 @@ QLabel#topBarTitle {
     font-size: 13px;
     font-weight: 600;
 }
-QLineEdit#searchField {
-    background-color: @sidebar;
+QToolButton#projectSwitcher {
     color: @text;
+    font-size: 13px;
+    font-weight: 600;
+    border: none;
+    background: transparent;
+    padding: 4px 2px;
+}
+QToolButton#projectSwitcher:hover { color: @mutedText; }
+QToolButton#projectSwitcher::menu-indicator { image: none; width: 0; }
+QWidget#stageToolbar { background: transparent; }
+/* Top-bar search: chrome on the shell; the line edit stays borderless so
+   macOS QSS padding does not clip glyph ascenders. */
+QFrame#searchShell {
+    background-color: @sidebar;
     border: 1px solid @border;
-    border-radius: 6px;
-    padding: 5px 44px 5px 10px;
-    font-size: 12px;
+    border-radius: 8px;
+}
+QFrame#searchShell[focused="true"] { border: 1px solid @accent; }
+QLineEdit#searchInput {
+    background: transparent;
+    color: @text;
+    border: none;
+    border-radius: 0;
+    padding: 0;
+    margin: 0;
+    min-height: 0;
+    font-size: 13px;
     selection-background-color: @accent;
     selection-color: @accentText;
 }
-QLineEdit#searchField:focus { border: 1px solid @accent; }
+QLineEdit#searchInput:focus { border: none; outline: none; }
 QLabel#searchHint {
     color: @mutedText;
     font-size: 11px;
     font-weight: 500;
+    padding: 0 2px;
 }
 QToolButton#iconButton {
     background: transparent;
@@ -172,6 +199,8 @@ QLabel#pageTitle {
 QLabel#pageDescription {
     color: @mutedText;
     font-size: 13px;
+    line-height: 1.4;
+    padding-right: 8px;
 }
 QLabel#sectionLabel, QLabel#groupLabel {
     color: @mutedText;
@@ -225,50 +254,154 @@ QLabel#statLabel {
     font-weight: 500;
 }
 
-/* ---------- staged workspace ---------- */
+/* ---------- staged workspace (quiet, text-first) ---------- */
 QWidget#stageChip { background: transparent; border: none; }
 QLabel#stageIndex, QLabel#stageIndexCurrent, QLabel#stageIndexLocked,
 QLabel#stageIndexDone {
-    border-radius: 9px;
-    font-size: 10px;
-    font-weight: 700;
-}
-QLabel#stageIndex {
-    background-color: @selection;
-    color: @mutedText;
-}
-QLabel#stageIndexCurrent {
-    background-color: @selection;
-    color: @text;
-}
-QLabel#stageIndexLocked {
     background: transparent;
-    border: 1px solid @border;
-    color: @mutedText;
+    border: none;
+    font-size: 11px;
+    font-weight: 600;
 }
-QLabel#stageIndexDone {
-    background-color: @accent;
-    color: @accentText;
-}
+QLabel#stageIndex { color: @mutedText; }
+QLabel#stageIndexCurrent { color: @text; }
+QLabel#stageIndexLocked { color: @mutedText; }
+QLabel#stageIndexDone { color: @accent; }
 QLabel#stageLabel, QLabel#stageLabelCurrent, QLabel#stageLabelLocked {
     font-size: 13px;
 }
 QLabel#stageLabel { color: @mutedText; font-weight: 500; }
-QLabel#stageLabelCurrent { color: @text; font-weight: 700; }
+QLabel#stageLabelCurrent { color: @text; font-weight: 600; }
 QLabel#stageLabelLocked { color: @mutedText; font-weight: 500; }
 QWidget#stageChip:hover QLabel#stageLabel { color: @text; }
-QFrame#stageConnector { background-color: @border; border: none; }
-QFrame#stageConnectorDone { background-color: @accent; border: none; }
+QFrame#stageConnector, QFrame#stageConnectorDone {
+    background-color: @border;
+    border: none;
+}
 QFrame#stageIndicator {
     background-color: @accent;
     border: none;
     border-radius: 1px;
 }
 QWidget#stageFooter { background-color: @background; }
-QLabel#stageStatus { color: @mutedText; font-size: 12px; }
+QLabel#stageStatus {
+    color: @mutedText;
+    font-size: 12px;
+}
 QWidget#contextStrip { background: transparent; }
 QLabel#contextKey { color: @mutedText; font-size: 10px; font-weight: 700; }
-QLabel#contextValue { color: @text; font-size: 12px; font-weight: 500; }
+QLabel#contextValue {
+    color: @text;
+    font-size: 12px;
+    font-weight: 500;
+}
+QWidget#trainChart {
+    background: transparent;
+    border: none;
+}
+
+/* ---------- project grid ---------- */
+QFrame#projectCard {
+    background-color: @sidebar;
+    border: 1px solid @border;
+    border-radius: 10px;
+}
+QFrame#projectCard:hover { border-color: @mutedText; }
+QLabel#projectCardTitle {
+    color: @text;
+    font-size: 15px;
+    font-weight: 600;
+}
+QLabel#projectCardMeta, QLabel#projectCardAge {
+    color: @mutedText;
+    font-size: 12px;
+}
+
+/* ---------- notifications / search popovers ---------- */
+/* Borders are painted in code — QSS border-radius leaves a gap on one edge. */
+QFrame#notificationPanel, QFrame#searchPopup {
+    background: transparent;
+    border: none;
+}
+QWidget#notificationChrome { background: transparent; }
+QLabel#notificationTitle {
+    color: @text;
+    font-size: 13px;
+    font-weight: 700;
+}
+QFrame#notificationRow {
+    background: transparent;
+    border: none;
+    border-bottom: 1px solid @border;
+}
+QFrame#notificationRowLast {
+    background: transparent;
+    border: none;
+}
+QLabel#notificationRowTitle {
+    color: @text;
+    font-size: 12px;
+    font-weight: 600;
+}
+QLabel#notificationRowBody {
+    color: @mutedText;
+    font-size: 12px;
+}
+QLabel#notificationBadge {
+    color: @accentText;
+    background-color: @accent;
+    border-radius: 7px;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 0 4px;
+    min-width: 14px;
+}
+QMenu#projectMenu {
+    background-color: @background;
+    border: 1px solid @border;
+    border-radius: 8px;
+    padding: 4px;
+}
+QMenu#projectMenu::item {
+    color: @text;
+    padding: 6px 12px;
+    border-radius: 4px;
+}
+QMenu#projectMenu::item:selected {
+    background-color: @selection;
+}
+QMenu#projectMenu::separator {
+    height: 1px;
+    background: @border;
+    margin: 4px 8px;
+}
+QLabel#searchPopupHeader {
+    color: @mutedText;
+    font-size: 11px;
+    font-weight: 600;
+    background: transparent;
+    border-bottom: 1px solid @border;
+}
+QFrame#searchHitRow {
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+}
+QFrame#searchHitRow:hover { background-color: @selection; }
+QLabel#searchHitTitle {
+    color: @text;
+    font-size: 12px;
+    font-weight: 600;
+}
+QLabel#searchHitMeta {
+    color: @mutedText;
+    font-size: 11px;
+}
+QLabel#searchHitKind {
+    color: @mutedText;
+    font-size: 10px;
+    font-weight: 600;
+}
 
 /* ---------- inspector ---------- */
 QWidget#inspector {
@@ -288,6 +421,12 @@ QLabel#inspectorKey {
 QLabel#inspectorValue {
     color: @text;
     font-size: 12px;
+    padding-top: 1px;
+    line-height: 1.35;
+}
+QWidget#inspector QPushButton#ghostButton {
+    text-align: left;
+    padding: 6px 8px;
 }
 
 /* ---------- buttons ---------- */
@@ -355,7 +494,7 @@ QPushButton#ghostButton:hover { color: @text; }
 QPushButton#ghostButton:disabled { color: @mutedText; }
 
 /* ---------- inputs ---------- */
-QDoubleSpinBox, QSpinBox, QComboBox, QLineEdit {
+QDoubleSpinBox, QSpinBox, QLineEdit {
     background-color: @sidebar;
     color: @text;
     border: 1px solid @border;
@@ -366,17 +505,29 @@ QDoubleSpinBox, QSpinBox, QComboBox, QLineEdit {
     selection-background-color: @accent;
     selection-color: @accentText;
 }
-QDoubleSpinBox:focus, QSpinBox:focus, QComboBox:focus, QLineEdit:focus {
+QDoubleSpinBox:focus, QSpinBox:focus, QLineEdit:focus {
     border: 1px solid @accent;
     outline: none;
 }
-QComboBox QAbstractItemView {
-    background-color: @background;
+/* Project-grid search and other plain search fields. */
+QLineEdit#searchField {
+    background-color: @sidebar;
     color: @text;
     border: 1px solid @border;
-    selection-background-color: @selection;
-    selection-color: @text;
-    outline: none;
+    border-radius: 8px;
+    padding: 0 28px 0 12px;
+    min-height: 0;
+    font-size: 13px;
+    selection-background-color: @accent;
+    selection-color: @accentText;
+}
+QLineEdit#searchField:focus { border: 1px solid @accent; outline: none; }
+/* Combos stay closer to the platform control so Studio feels native. */
+QComboBox {
+    color: @text;
+    font-size: 12px;
+    min-height: 22px;
+    padding: 2px 6px;
 }
 QCheckBox { color: @text; font-size: 12px; spacing: 8px; }
 QCheckBox::indicator {
@@ -414,8 +565,18 @@ QLabel#filePathLabel {
     font-family: @mono;
 }
 QLabel#fingerprintKey { color: @mutedText; font-size: 11px; }
-QLabel#fingerprintValue { color: @text; font-size: 13px; font-weight: 600; }
-QLabel#fingerprintChannels { color: @mutedText; font-size: 12px; }
+QLabel#fingerprintValue {
+    color: @text;
+    font-size: 13px;
+    font-weight: 600;
+    padding-top: 1px;
+}
+QLabel#fingerprintChannels {
+    color: @mutedText;
+    font-size: 12px;
+    padding-top: 2px;
+    line-height: 1.35;
+}
 QFrame#planStepRow, QFrame#templateRow, QFrame#templateRowSelected,
 QFrame#libraryRow {
     background: transparent;
@@ -672,9 +833,21 @@ class Theme(QObject):
     def apply(self) -> None:
         if self._app is None:
             return
-        self._dark = (
-            self.system_uses_dark() if self._mode is ThemeMode.SYSTEM else self._mode is ThemeMode.DARK
-        )
+
+        hints = QGuiApplication.styleHints()
+        # Drive the native title bar / window chrome (macOS, Windows 11) so it
+        # matches the in-app theme instead of staying stuck on the OS light bar.
+        if self._mode is ThemeMode.SYSTEM:
+            if hasattr(hints, "setColorScheme"):
+                hints.setColorScheme(Qt.ColorScheme.Unknown)
+            self._dark = self.system_uses_dark()
+        else:
+            self._dark = self._mode is ThemeMode.DARK
+            if hasattr(hints, "setColorScheme"):
+                hints.setColorScheme(
+                    Qt.ColorScheme.Dark if self._dark else Qt.ColorScheme.Light
+                )
+
         self._colors = colors_for(self._dark)
         sheet = _STYLE
         for key, value in {

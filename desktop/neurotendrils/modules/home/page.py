@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from PySide6.QtCore import QUrl, Qt, Signal
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
@@ -14,7 +16,7 @@ from PySide6.QtWidgets import (
 )
 
 from neurotendrils.core.formatting import format_bytes, format_relative
-from neurotendrils.core.library import LibraryEntry, scan_all
+from neurotendrils.core.library import LibraryBus, LibraryEntry, scan_all
 from neurotendrils.core.projectdir import ProjectDir
 from neurotendrils.widgets.icons import Glyph
 from neurotendrils.widgets.rows import ListRow, RowList
@@ -64,6 +66,10 @@ class HomePage(ScrollPage):
         title.setObjectName("pageTitle")
         self._project_label = QLabel("", self)
         self._project_label.setObjectName("pageDescription")
+        self._project_label.setWordWrap(True)
+        self._project_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+        )
         heading.addWidget(title)
         heading.addWidget(self._project_label)
         header.addLayout(heading, 1)
@@ -81,7 +87,7 @@ class HomePage(ScrollPage):
         train_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         train_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         train_btn.clicked.connect(self.trainRequested.emit)
-        folder_btn = QPushButton("Open folder", self)
+        folder_btn = QPushButton("Browse folder", self)
         folder_btn.setObjectName("secondaryButton")
         folder_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         folder_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
@@ -113,7 +119,8 @@ class HomePage(ScrollPage):
 
         project = ProjectDir.instance()
         project.root_changed.connect(lambda *_: self.refresh(force=True))
-        self._project_label.setText(project.root or "No project folder selected")
+        LibraryBus.instance().changed.connect(lambda: self.refresh(force=True))
+        self._sync_project_label()
 
     # ---------- construction ----------
 
@@ -168,16 +175,22 @@ class HomePage(ScrollPage):
 
     def showEvent(self, event) -> None:  # noqa: ANN001, N802
         super().showEvent(event)
-        if self._index is None:
-            self.refresh(force=True)
+        self.refresh(force=True)
 
     def refresh(self, *, force: bool = False) -> None:
         if force or self._index is None:
             self._index = scan_all()
-        self._project_label.setText(
-            ProjectDir.instance().root or "No project folder selected"
-        )
+        self._sync_project_label()
         self._render()
+
+    def _sync_project_label(self) -> None:
+        root = ProjectDir.instance().root
+        if not root:
+            self._project_label.setText("No project open. Create one under Projects.")
+            return
+        name = Path(root).name
+        self._project_label.setText(f"{name}  ·  {root}")
+        self._project_label.setToolTip(root)
 
     def _render(self) -> None:
         index = self._index or {"plans": [], "datasets": [], "models": [], "runs": []}
@@ -218,14 +231,14 @@ class HomePage(ScrollPage):
 
 
 _EMPTY_TEXT = {
-    "plans": "No pipelines yet. Import a recording to build one.",
+    "plans": "No pipelines yet. Build one in NeuroFlow and save it.",
     "datasets": "No datasets yet. Import a recording to get started.",
     "models": "No models yet. Train one from a prepared dataset.",
-    "runs": "No runs yet. Runs appear here once a pipeline executes.",
+    "runs": "No runs yet. A run is one NeuroFlow plan execution.",
 }
 
 _NAV_FOR_INDEX = {
-    "plans": "projects",
+    "plans": "flow",
     "datasets": "datasets",
     "models": "models",
     "runs": "flow",

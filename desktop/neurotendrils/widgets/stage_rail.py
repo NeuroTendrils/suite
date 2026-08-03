@@ -32,10 +32,10 @@ class _StageChip(QWidget):
         layout.setContentsMargins(0, 0, 0, 6)
         layout.setSpacing(8)
 
-        self._index = QLabel(str(number), self)
+        self._number = number
+        self._index = QLabel(f"{number}.", self)
         self._index.setObjectName("stageIndex")
         self._index.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._index.setFixedSize(18, 18)
         self._index.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
 
         self._label = QLabel(label, self)
@@ -55,6 +55,7 @@ class _StageChip(QWidget):
             if unlocked
             else Qt.CursorShape.ForbiddenCursor
         )
+        self._index.setText("✓" if complete else f"{self._number}.")
         if complete:
             index_name = "stageIndexDone"
         elif current:

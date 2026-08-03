@@ -5,7 +5,7 @@ from __future__ import annotations
 from enum import Enum, auto
 
 from PySide6.QtCore import QPointF, QRectF, Qt
-from PySide6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPen, QPixmap
+from PySide6.QtGui import QColor, QFont, QIcon, QPainter, QPainterPath, QPen, QPixmap
 
 _STROKE_WIDTH = 1.6
 
@@ -230,6 +230,36 @@ def single_icon(glyph: Glyph, color: QColor, size: int = 18, dpr: float = 2.0) -
     result = QIcon()
     result.addPixmap(render_glyph(glyph, color, size, dpr))
     return result
+
+
+def brand_mark(
+    size: int,
+    background: QColor,
+    foreground: QColor,
+    device_pixel_ratio: float = 1.0,
+) -> QPixmap:
+    """Rounded NT badge. *background* is the plate; *foreground* is the letters."""
+    pixmap = QPixmap(int(size * device_pixel_ratio), int(size * device_pixel_ratio))
+    pixmap.setDevicePixelRatio(device_pixel_ratio)
+    pixmap.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    painter.setRenderHint(QPainter.RenderHint.TextAntialiasing)
+
+    rect = QRectF(0.5, 0.5, size - 1.0, size - 1.0)
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.setBrush(background)
+    painter.drawRoundedRect(rect, size * 0.22, size * 0.22)
+
+    font = painter.font()
+    font.setPixelSize(max(8, int(size * 0.42)))
+    font.setBold(True)
+    font.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, -0.5)
+    painter.setFont(font)
+    painter.setPen(foreground)
+    painter.drawText(rect, int(Qt.AlignmentFlag.AlignCenter), "NT")
+    painter.end()
+    return pixmap
 
 
 def avatar(

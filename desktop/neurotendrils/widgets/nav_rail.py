@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from PySide6.QtCore import QSize, Qt, Signal
+from PySide6.QtGui import QColor, QGuiApplication
 from PySide6.QtWidgets import (
     QButtonGroup,
     QHBoxLayout,
@@ -15,7 +16,7 @@ from PySide6.QtWidgets import (
 )
 
 from neurotendrils.core.theme import Theme
-from neurotendrils.widgets.icons import Glyph, single_icon
+from neurotendrils.widgets.icons import Glyph, brand_mark, single_icon
 from neurotendrils.widgets.motion import DURATION_NORMAL, animate_width
 
 COLLAPSED_WIDTH = 56
@@ -99,15 +100,17 @@ class NavRail(QWidget):
     def _build_brand(self) -> QWidget:
         brand = QWidget(self)
         layout = QHBoxLayout(brand)
-        layout.setContentsMargins(8, 0, 4, 0)
-        layout.setSpacing(0)
-        self._brand_mark = QLabel("N", brand)
+        layout.setContentsMargins(6, 0, 4, 0)
+        layout.setSpacing(8)
+        self._brand_mark = QLabel(brand)
         self._brand_mark.setObjectName("navBrandMark")
+        self._brand_mark.setFixedSize(26, 26)
+        self._brand_mark.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._brand_word = QLabel("NeuroTendrils", brand)
         self._brand_word.setObjectName("navBrand")
         self._brand_word.hide()
-        layout.addWidget(self._brand_mark)
-        layout.addWidget(self._brand_word)
+        layout.addWidget(self._brand_mark, 0, Qt.AlignmentFlag.AlignVCenter)
+        layout.addWidget(self._brand_word, 0, Qt.AlignmentFlag.AlignVCenter)
         layout.addStretch(1)
         return brand
 
@@ -198,4 +201,15 @@ class NavRail(QWidget):
                 continue
             color = accent if item.key == self._current else muted
             button.setIcon(single_icon(item.glyph, color, _ICON))
+        self._sync_brand()
         self._sync_toggle()
+
+    def _sync_brand(self) -> None:
+        """NT plate: accent fill with light letters in both themes."""
+        theme = Theme.instance()
+        screen = self.screen() or QGuiApplication.primaryScreen()
+        dpr = screen.devicePixelRatio() if screen is not None else 1.0
+        # Always light ink — dark accentText on the dark-theme blue plate looked
+        # like a light-mode badge dropped into a dark chrome.
+        ink = QColor("#ffffff")
+        self._brand_mark.setPixmap(brand_mark(26, theme.accent_color(), ink, dpr))

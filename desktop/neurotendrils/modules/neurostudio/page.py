@@ -29,13 +29,16 @@ from neurotendrils.core.jobs import (
     start_bound_job,
     train_job,
 )
-from neurotendrils.core.library import scan_runs
+from neurotendrils.core.library import LibraryBus, notify_library_changed, scan_runs
 from neurotendrils.core.projectdir import ProjectDir
 from neurotendrils.core.studio_io import (
     default_config,
     ensure_model_hub_fields,
     find_template,
+    latest_config_for,
+    load_template_config,
     recommend,
+    save_template_config,
     suggest_export_dir,
     suggest_train_dir,
     template_catalog,
@@ -48,8 +51,9 @@ from neurotendrils.widgets.motion import stagger_in
 from neurotendrils.widgets.rows import ListRow, RowList
 from neurotendrils.widgets.schema_form import SchemaFormWidget
 from neurotendrils.widgets.section import SectionHeader
-from neurotendrils.widgets.skeleton import SkeletonLoader
 from neurotendrils.widgets.stage_flow import StageFlow
+from neurotendrils.widgets.train_chart import TrainChart
+from neurotendrils.core.notifications import notify
 
 DATA = "data"
 TEMPLATE = "template"
@@ -195,6 +199,7 @@ class NeuroStudioPage(QWidget):
         layout.addWidget(self.flow)
 
         ProjectDir.instance().root_changed.connect(lambda *_: self._refresh_pickers())
+        LibraryBus.instance().changed.connect(self._refresh_pickers)
         self._render_templates()
         self._refresh()
 
@@ -266,7 +271,6 @@ class NeuroStudioPage(QWidget):
 
         self._data_stack.addWidget(empty)
         self._data_stack.addWidget(selected)
-        self._data_stack.setMaximumWidth(640)
         layout.addWidget(self._data_stack)
 
         layout.addSpacing(16)
@@ -293,67 +297,110 @@ class NeuroStudioPage(QWidget):
 
     def _build_tune(self) -> QWidget:
         host, layout = _stage_widget(self)
-        self._tune_hint = QLabel("Select a template to tune it.", host)
+
+        toolbar = QWidget(host)
+        toolbar.setObjectName("stageToolbar")
+        row = QHBoxLayout(toolbar)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(4)
+        self._tune_hint = QLabel("Select a template to tune it.", toolbar)
         self._tune_hint.setObjectName("fileMetaLabel")
-        self._tune_form = SchemaFormWidget(host)
-        self._tune_form.setMaximumWidth(640)
+        self._tune_save = QPushButton("Save", toolbar)
+        self._tune_save.setObjectName("ghostButton")
+        self._tune_save.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._tune_save.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._tune_save.clicked.connect(self.save_template_clicked)
+        self._tune_load = QPushButton("Load", toolbar)
+        self._tune_load.setObjectName("ghostButton")
+        self._tune_load.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._tune_load.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._tune_load.clicked.connect(self.load_template_clicked)
+        self._tune_reset = QPushButton("Reset", toolbar)
+        self._tune_reset.setObjectName("ghostButton")
+        self._tune_reset.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._tune_reset.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._tune_reset.clicked.connect(self.reset_tune)
+        row.addWidget(self._tune_hint, 1)
+        row.addWidget(self._tune_save)
+        row.addWidget(self._tune_load)
+        row.addWidget(self._tune_reset)
+
+        self._tune_form = SchemaFormWidget(host, columns=2)
         self._tune_form.values_changed.connect(self._on_tune_changed)
         self._tune_error = QLabel("", host)
         self._tune_error.setObjectName("stepEditError")
         self._tune_error.hide()
-        reset = QPushButton("Reset to defaults", host)
-        reset.setObjectName("secondaryButton")
-        reset.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        reset.clicked.connect(self.reset_tune)
-        self._tune_reset = reset
-        layout.addWidget(self._tune_hint)
+
+        layout.addWidget(toolbar)
         layout.addWidget(self._tune_form)
         layout.addWidget(self._tune_error)
-        layout.addWidget(reset, alignment=Qt.AlignmentFlag.AlignLeft)
         return host
 
     def _build_train(self) -> QWidget:
         host, layout = _stage_widget(self)
 
+        split = QHBoxLayout()
+        split.setSpacing(28)
+
+        chart_col = QVBoxLayout()
+        chart_col.setSpacing(12)
+        self._train_chart = TrainChart(host)
+        self._train_chart.setMinimumHeight(300)
+        chart_col.addWidget(self._train_chart, 1)
+
+        side = QWidget(host)
+        side.setMinimumWidth(260)
+        side.setMaximumWidth(360)
+        side_l = QVBoxLayout(side)
+        side_l.setContentsMargins(0, 0, 0, 0)
+        side_l.setSpacing(12)
+
         device_row = QHBoxLayout()
         device_row.setSpacing(8)
-        device_label = QLabel("Device", host)
+        device_label = QLabel("Device", side)
         device_label.setObjectName("fileMetaLabel")
-        self._device = QComboBox(host)
+        self._device = QComboBox(side)
         self._device.addItems(["auto", "cpu", "cuda", "mps"])
-        self._device.setFixedWidth(140)
+        self._device.setMinimumWidth(120)
         device_row.addWidget(device_label)
-        device_row.addWidget(self._device)
-        device_row.addStretch(1)
+        device_row.addWidget(self._device, 1)
 
-        self._train_status = QLabel("Select a template to train.", host)
+        self._train_status = QLabel(
+            "Ready to train when data and a template are set.", side
+        )
         self._train_status.setObjectName("fileMetaLabel")
-        self._train_skeleton = SkeletonLoader(host)
-        self._train_skeleton.hide()
-        self._train_result = QLabel("", host)
-        self._train_result.setObjectName("filePathLabel")
+        self._train_status.setWordWrap(True)
+
+        self._train_result = QLabel("", side)
+        self._train_result.setObjectName("fileMetaLabel")
         self._train_result.setWordWrap(True)
         self._train_result.setTextInteractionFlags(
             Qt.TextInteractionFlag.TextSelectableByMouse
         )
-        self._train_log_label = QLabel("", host)
+        self._train_result.hide()
+
+        self._train_log_label = QLabel("", side)
         self._train_log_label.setObjectName("fileMetaLabel")
         self._train_log_label.setWordWrap(True)
-        self._train_result.hide()
         self._train_log_label.hide()
 
-        self._train_cancel = QPushButton("Cancel training", host)
-        self._train_cancel.setObjectName("secondaryButton")
+        self._train_cancel = QPushButton("Cancel training", side)
+        self._train_cancel.setObjectName("ghostButton")
         self._train_cancel.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._train_cancel.setCursor(Qt.CursorShape.PointingHandCursor)
         self._train_cancel.clicked.connect(self.cancel_job)
         self._train_cancel.hide()
 
-        layout.addLayout(device_row)
-        layout.addWidget(self._train_status)
-        layout.addWidget(self._train_skeleton)
-        layout.addWidget(self._train_result)
-        layout.addWidget(self._train_log_label)
-        layout.addWidget(self._train_cancel, alignment=Qt.AlignmentFlag.AlignLeft)
+        side_l.addLayout(device_row)
+        side_l.addWidget(self._train_status)
+        side_l.addWidget(self._train_result)
+        side_l.addWidget(self._train_cancel, 0, Qt.AlignmentFlag.AlignLeft)
+        side_l.addStretch(1)
+        side_l.addWidget(self._train_log_label)
+
+        split.addLayout(chart_col, 3)
+        split.addWidget(side, 1)
+        layout.addLayout(split, 1)
         return host
 
     def _build_export(self) -> QWidget:
@@ -398,10 +445,11 @@ class NeuroStudioPage(QWidget):
         runs = scan_runs()[:_RECENT_LIMIT]
         if not runs:
             self._run_rows.add_placeholder(
-                "No run outputs yet. Run a plan in NeuroFlow first."
+                "No runs yet. Run a plan in NeuroFlow first — cleaned.fif appears here."
             )
             return
         for entry in runs:
+            output = str(entry.extra.get("output_path") or entry.path)
             row = ListRow(
                 entry.title,
                 entry.subtitle,
@@ -409,7 +457,7 @@ class NeuroStudioPage(QWidget):
                 Glyph.RUNS,
                 self._run_rows,
             )
-            row.activated.connect(lambda path=entry.path: self.set_dataset(path))
+            row.activated.connect(lambda path=output: self.set_dataset(path))
             self._run_rows.add_row(row)
         stagger_in(self._run_rows.rows())
 
@@ -601,7 +649,11 @@ class NeuroStudioPage(QWidget):
         self._selected_template = template_id
         self._template_pinned = pinned
         if template_id not in self._configs:
-            self._configs[template_id] = default_config(template_id)
+            saved = latest_config_for(template_id)
+            if saved and isinstance(saved.get("config"), dict):
+                self._configs[template_id] = dict(saved["config"])
+            else:
+                self._configs[template_id] = default_config(template_id)
         tmpl = find_template(template_id)
         if tmpl:
             schemas = list(tmpl.get("hyperparams", [])) + list(tmpl.get("train", []))
@@ -654,6 +706,65 @@ class NeuroStudioPage(QWidget):
         self._configs[self._selected_template] = default_config(self._selected_template)
         self.select_template(self._selected_template)
 
+    def save_template_clicked(self) -> None:
+        if not self._selected_template:
+            return
+        config = self._configs.get(self._selected_template) or default_config(
+            self._selected_template
+        )
+        err = validate_config(self._selected_template, config)
+        if err:
+            alert(self, "Invalid config", err)
+            return
+        tmpl = find_template(self._selected_template)
+        title = str(tmpl.get("title") if tmpl else self._selected_template)
+        try:
+            path = save_template_config(
+                self._selected_template,
+                config,
+                name=title,
+                dataset_path=self._dataset_path,
+            )
+        except (OSError, ValueError) as exc:
+            alert(self, "Save failed", str(exc))
+            return
+        self._tune_hint.setText(f"Saved {path.name}")
+        notify_library_changed()
+        alert(self, "Template saved", str(path))
+
+    def load_template_clicked(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Load template",
+            str(ProjectDir.instance().templates_dir()),
+            "Templates (*.json)",
+        )
+        if not path:
+            return
+        try:
+            payload = load_template_config(path)
+        except (OSError, ValueError, PermissionError) as exc:
+            alert(self, "Load failed", str(exc))
+            return
+        template_id = str(payload["template_id"])
+        self._configs[template_id] = dict(payload["config"])
+        self.select_template(template_id)
+        name = str(payload.get("name") or Path(path).stem)
+        self._tune_hint.setText(f"Loaded {name}")
+        self.flow.go_to(TUNE)
+
+    def apply_saved_template(self, path: str) -> None:
+        """Open a project-saved template config (from Projects / Home)."""
+        try:
+            payload = load_template_config(path)
+        except (OSError, ValueError, PermissionError) as exc:
+            alert(self, "Load failed", str(exc))
+            return
+        template_id = str(payload["template_id"])
+        self._configs[template_id] = dict(payload["config"])
+        self.select_template(template_id)
+        self.flow.go_to(TUNE)
+
     # ---------- train ----------
 
     def start_training(self) -> None:
@@ -673,10 +784,22 @@ class NeuroStudioPage(QWidget):
         except OSError as exc:
             alert(self, "Train failed", str(exc))
             return
+        # Persist the recipe used for this train so it survives app restarts.
+        try:
+            tmpl = find_template(self._selected_template)
+            save_template_config(
+                self._selected_template,
+                config,
+                name=str(tmpl.get("title") if tmpl else self._selected_template),
+                dataset_path=self._dataset_path,
+            )
+            notify_library_changed()
+        except (OSError, ValueError):
+            pass
         self.flow.go_to(TRAIN)
         self._train_log = ""
         self._train_status.setText("Training…")
-        self._train_skeleton.show()
+        self._train_chart.clear()
         _set_text(self._train_result, "")
         self._job_kind = "train"
         job = train_job(
@@ -695,48 +818,79 @@ class NeuroStudioPage(QWidget):
         message = str(payload.get("message") or payload)
         if "epoch" in payload:
             total = payload.get("total_epochs", payload.get("epochs", "?"))
-            message = (
-                f"epoch {payload.get('epoch')}/{total}  "
-                f"loss={payload.get('loss')}  acc={payload.get('accuracy')}"
-            )
+            loss = payload.get("loss")
+            acc = payload.get("accuracy")
+            val_loss = payload.get("val_loss")
+            val_acc = payload.get("val_accuracy")
+            message = f"Epoch {payload.get('epoch')}/{total}"
+            extras = []
+            if loss is not None:
+                extras.append(f"loss {loss}")
+            if acc is not None:
+                extras.append(f"acc {acc}")
+            if val_acc is not None:
+                extras.append(f"val {val_acc}")
+            if extras:
+                message = f"{message}  ·  " + "  ·  ".join(str(x) for x in extras)
+            try:
+                self._train_chart.add_epoch(
+                    int(payload.get("epoch") or 0),
+                    loss=float(loss) if loss is not None else None,
+                    accuracy=float(acc) if acc is not None else None,
+                    val_loss=float(val_loss) if val_loss is not None else None,
+                    val_accuracy=float(val_acc) if val_acc is not None else None,
+                )
+            except (TypeError, ValueError):
+                pass
         self._train_status.setText(message)
         self.flow.set_status(message)
-        self._train_log = (self._train_log + message + "\n")[-4000:]
-        _set_text(self._train_log_label, self._train_log.strip())
+        # Keep a short rolling log for debugging; the chart is the primary view.
+        self._train_log = (self._train_log + message + "\n")[-1200:]
+        lines = [ln for ln in self._train_log.strip().splitlines() if ln][-6:]
+        _set_text(self._train_log_label, "\n".join(lines))
 
     def _on_train_ok(self, result: dict[str, Any]) -> None:
-        self._train_skeleton.hide()
         self._last_train = result
         ckpt = result.get("checkpoint_path", "")
         if ckpt and not ProjectDir.instance().contains(ckpt):
             self._train_status.setText("Train finished but checkpoint left the sandbox.")
+            notify("Training finished", "Checkpoint left the project sandbox.", level="error")
             self._refresh()
             return
         metrics = result.get("metrics") or {}
         mode = result.get("data_mode", "?")
+        ckpt_name = Path(str(ckpt)).name if ckpt else "—"
+        run_dir = Path(str(ckpt)).parent.name if ckpt else ""
         _set_text(
             self._train_result,
             "\n".join(
                 [
-                    f"data_mode={mode}",
-                    f"accuracy={metrics.get('accuracy')}  "
-                    f"balanced={metrics.get('balanced_accuracy')}",
-                    f"checkpoint: {ckpt}",
-                    f"metrics: {result.get('metrics_path')}",
-                    f"train meta: {result.get('train_meta_path')}",
+                    f"Mode  ·  {mode}",
+                    f"Accuracy  ·  {metrics.get('accuracy')}",
+                    f"Balanced  ·  {metrics.get('balanced_accuracy')}",
+                    f"Checkpoint  ·  {ckpt_name}",
+                    f"Run  ·  {run_dir}" if run_dir else "",
                 ]
-            ),
+            ).strip(),
         )
+        self._train_result.setToolTip(str(ckpt or ""))
         self._train_status.setText("Training complete.")
         stagger_in([self._train_result])
+        notify_library_changed()
+        notify(
+            "Training complete",
+            f"accuracy={metrics.get('accuracy')}  balanced={metrics.get('balanced_accuracy')}",
+            level="success",
+        )
         self._refresh()
 
     def _on_train_fail(self, code: str, message: str) -> None:
-        self._train_skeleton.hide()
         if code == "cancelled":
             self._train_status.setText("Training cancelled.")
+            notify("Training cancelled", level="info")
         else:
             self._train_status.setText(f"Train failed ({code}): {message}")
+            notify("Training failed", message, level="error")
             if code == "no_labels":
                 alert(self, "No labels", message)
         self._refresh()
@@ -780,24 +934,34 @@ class NeuroStudioPage(QWidget):
         artifact = result.get("artifact_path") or result.get("output_path") or ""
         if artifact and not ProjectDir.instance().contains(artifact):
             self._export_status.setText("Export left the project sandbox.")
+            notify("Export finished", "Artifact left the project sandbox.", level="error")
             return
         try:
             ensure_model_hub_fields(out_dir)
         except (OSError, PermissionError) as exc:
             self._export_status.setText(f"Export ok, Hub fields failed: {exc}")
             _set_text(self._export_result, f"Exported to {out_dir}\n{artifact}")
+            notify("Export complete", str(exc), level="info")
             return
         _set_text(self._export_result, f"Exported to {out_dir}\n{artifact}")
         self._export_status.setText("Export complete.")
         self._export_done = True
         stagger_in([self._export_result])
+        notify_library_changed()
+        notify(
+            "Export complete",
+            Path(str(artifact or out_dir)).name,
+            level="success",
+        )
         self._refresh()
 
     def _on_export_fail(self, code: str, message: str) -> None:
         if code == "cancelled":
             self._export_status.setText("Export cancelled.")
+            notify("Export cancelled", level="info")
         else:
             self._export_status.setText(f"Export failed ({code}): {message}")
+            notify("Export failed", message, level="error")
         self._refresh()
 
     # ---------- shared ----------
@@ -813,12 +977,14 @@ class NeuroStudioPage(QWidget):
             if kind == "export":
                 self._export_status.setText("Cancelling…")
             else:
-                self._train_skeleton.hide()
                 self._train_status.setText("Cancelling…")
             self._refresh()
 
     def _refresh(self) -> None:
         busy = self._busy()
         self._train_cancel.setVisible(busy and self._job_kind == "train")
-        self._tune_reset.setEnabled(bool(self._selected_template) and not busy)
+        has_template = bool(self._selected_template)
+        self._tune_reset.setEnabled(has_template and not busy)
+        self._tune_save.setEnabled(has_template and not busy)
+        self._tune_load.setEnabled(not busy)
         self._sync_flow()

@@ -14,17 +14,29 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from neurotendrils.core.formatting import format_bytes, format_relative, format_timestamp
+from neurotendrils.core.formatting import (
+    format_bytes,
+    format_number,
+    format_path,
+    format_relative,
+    format_timestamp,
+)
 from neurotendrils.core.library import (
+    LibraryBus,
     LibraryEntry,
+    notify_library_changed,
     scan_datasets,
     scan_models,
     scan_plans,
     scan_runs,
+    scan_templates,
 )
+from neurotendrils.core.library_ops import delete_entry, rename_entry
+from neurotendrils.core.notifications import notify
 from neurotendrils.core.projectdir import ProjectDir
 from neurotendrils.widgets.icons import Glyph
 from neurotendrils.widgets.inspector import INSPECTOR_WIDTH, Inspector
+from neurotendrils.widgets.modals import alert, confirm, prompt_text
 from neurotendrils.widgets.motion import DURATION_FAST, animate_width
 from neurotendrils.widgets.rows import ListRow, RowList
 from neurotendrils.widgets.scroll_page import ScrollPage
@@ -35,6 +47,7 @@ _SCANNERS = {
     "dataset": scan_datasets,
     "model": scan_models,
     "run": scan_runs,
+    "template": scan_templates,
 }
 
 _GLYPHS = {
@@ -42,6 +55,7 @@ _GLYPHS = {
     "dataset": Glyph.DATASETS,
     "model": Glyph.MODELS,
     "run": Glyph.RUNS,
+    "template": Glyph.STUDIO,
 }
 
 _NOUNS = {
@@ -49,6 +63,7 @@ _NOUNS = {
     "dataset": ("dataset", "datasets"),
     "model": ("model", "models"),
     "run": ("run", "runs"),
+    "template": ("template", "templates"),
 }
 
 
@@ -123,13 +138,13 @@ class LibraryPage(QWidget):
         root.addWidget(self._inspector, 0)
 
         ProjectDir.instance().root_changed.connect(lambda *_: self.refresh(force=True))
+        LibraryBus.instance().changed.connect(lambda: self.refresh(force=True))
 
     # ---------- data ----------
 
     def showEvent(self, event) -> None:  # noqa: ANN001, N802
         super().showEvent(event)
-        if not self._loaded:
-            self.refresh(force=True)
+        self.refresh(force=True)
 
     def refresh(self, *, force: bool = False) -> None:
         if force or not self._loaded:
@@ -198,23 +213,33 @@ class LibraryPage(QWidget):
     def _select(self, entry: LibraryEntry, row: ListRow) -> None:
         self._selected = entry
         self._rows.select(row)
+        fields, tips = self._fields(entry)
         self._inspector.set_record(
             self._kind,
             entry.title,
-            self._fields(entry),
-            [("reveal", "Show in file manager"), ("copy", "Copy path")],
+            fields,
+            [
+                ("rename", "Rename…"),
+                ("reveal", "Browse folder"),
+                ("copy", "Copy path"),
+                ("delete", "Delete…"),
+            ],
+            tooltips=tips,
         )
         if not self._inspector.isVisible():
             self._inspector.setFixedWidth(0)
             self._inspector.show()
             animate_width(self._inspector, INSPECTOR_WIDTH, duration=DURATION_FAST)
 
-    def _fields(self, entry: LibraryEntry) -> list[tuple[str, str]]:
+    def _fields(
+        self, entry: LibraryEntry
+    ) -> tuple[list[tuple[str, str]], dict[str, str]]:
+        tips: dict[str, str] = {"Path": entry.path}
         fields: list[tuple[str, str]] = [
             ("Type", entry.subtitle or self._kind.title()),
             ("Size", format_bytes(entry.size_bytes)),
             ("Modified", format_timestamp(entry.modified)),
-            ("Path", entry.path),
+            ("Path", format_path(entry.path, keep=2)),
         ]
         if self._kind == "plan":
             fields.insert(1, ("Steps", str(entry.extra.get("steps", "—"))))
@@ -222,22 +247,46 @@ class LibraryPage(QWidget):
             if dataset_path:
                 inside = ProjectDir.instance().contains(dataset_path)
                 fields.append(
-                    ("Dataset", dataset_path if inside else "Outside project folder")
+                    (
+                        "Dataset",
+                        format_path(dataset_path, keep=2)
+                        if inside
+                        else "Outside project folder",
+                    )
                 )
+                if inside:
+                    tips["Dataset"] = dataset_path
         if self._kind == "model":
             fields.insert(1, ("Template", str(entry.extra.get("template_id") or "—")))
             fields.insert(2, ("Format", str(entry.extra.get("format") or "—")))
             metrics = entry.extra.get("metrics") or {}
             if metrics:
-                fields.append(("Accuracy", str(metrics.get("accuracy", "—"))))
+                fields.append(("Accuracy", format_number(metrics.get("accuracy"))))
                 fields.append(
-                    ("Balanced accuracy", str(metrics.get("balanced_accuracy", "—")))
+                    ("Balanced accuracy", format_number(metrics.get("balanced_accuracy")))
                 )
             publish = entry.extra.get("publish") or {}
             fields.append(("Publish", str(publish.get("status", "local"))))
+        if self._kind == "run":
+            fields.insert(1, ("Steps", str(entry.extra.get("n_steps", "—"))))
+            fields.insert(2, ("Kind", str(entry.extra.get("output_kind") or "—")))
+            output = str(entry.extra.get("output_path") or "")
+            if output:
+                fields.append(("Output", format_path(output, keep=2)))
+                tips["Output"] = output
+            input_path = str(entry.extra.get("input_path") or "")
+            if input_path:
+                fields.append(("Input", format_path(input_path, keep=2)))
+                tips["Input"] = input_path
+        if self._kind == "template":
+            fields.insert(1, ("Template", str(entry.extra.get("template_id") or "—")))
+            dataset_path = str(entry.extra.get("dataset_path") or "")
+            if dataset_path:
+                fields.append(("Dataset", format_path(dataset_path, keep=2)))
+                tips["Dataset"] = dataset_path
         if not Path(entry.path).exists():
             fields.append(("Status", "Missing on disk"))
-        return fields
+        return fields, tips
 
     def _on_inspector_action(self, key: str) -> None:
         if self._selected is None:
@@ -251,3 +300,36 @@ class LibraryPage(QWidget):
         if key == "reveal":
             target = path if path.is_dir() else path.parent
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(target)))
+            return
+        if key == "rename":
+            name, ok = prompt_text(self, "Rename", "New name:", self._selected.title)
+            if not ok or not (name or "").strip():
+                return
+            try:
+                rename_entry(self._selected, name.strip())
+            except (OSError, PermissionError, FileNotFoundError, ValueError) as exc:
+                alert(self, "Rename failed", str(exc))
+                return
+            notify_library_changed()
+            notify("Renamed", name.strip(), level="info")
+            self.clear_selection()
+            self.refresh(force=True)
+            return
+        if key == "delete":
+            title = self._selected.title
+            if not confirm(
+                self,
+                "Delete",
+                f"Delete “{title}”? This cannot be undone.",
+                default_yes=False,
+            ):
+                return
+            try:
+                delete_entry(self._selected)
+            except (OSError, PermissionError, FileNotFoundError) as exc:
+                alert(self, "Delete failed", str(exc))
+                return
+            notify_library_changed()
+            notify("Deleted", title, level="info")
+            self.clear_selection()
+            self.refresh(force=True)

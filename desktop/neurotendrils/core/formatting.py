@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import time
 from datetime import datetime
+from pathlib import Path
 
 
 def format_bytes(nbytes: int) -> str:
@@ -35,3 +36,28 @@ def format_timestamp(timestamp: float) -> str:
     if timestamp <= 0:
         return "—"
     return datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M")
+
+
+def format_number(value: object, *, digits: int = 3) -> str:
+    """Compact float display — avoids ``0.100000000149…`` noise."""
+    if value is None or value == "":
+        return "—"
+    try:
+        number = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return str(value)
+    if number != number:  # NaN
+        return "—"
+    text = f"{number:.{digits}f}".rstrip("0").rstrip(".")
+    return text if text else "0"
+
+
+def format_path(path: str | Path, *, keep: int = 2) -> str:
+    """Shorten a path for UI; full path belongs in a tooltip."""
+    raw = str(path or "").strip()
+    if not raw:
+        return "—"
+    parts = Path(raw).parts
+    if len(parts) <= keep + 1:
+        return raw
+    return "…/" + "/".join(parts[-keep:])

@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
 from neurotendrils.core.theme import Theme
 from neurotendrils.widgets.icons import Glyph, single_icon
 
-ROW_HEIGHT = 44
+ROW_HEIGHT = 52
 
 
 def hairline(parent: QWidget | None = None) -> QFrame:
@@ -50,6 +50,9 @@ class ListRow(QWidget):
 
         self._glyph = glyph
         self._selected = False
+        self._title_full = title
+        self._subtitle_full = subtitle
+        self._meta_full = meta
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(8, 0, 8, 0)
@@ -80,10 +83,12 @@ class ListRow(QWidget):
         self._meta.setObjectName("rowMeta")
         self._meta.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         self._meta.setVisible(bool(meta))
+        self._meta.setMaximumWidth(180)
         layout.addWidget(self._meta, 0, Qt.AlignmentFlag.AlignVCenter)
 
         Theme.instance().changed.connect(self._sync_icon)
         self._sync_icon()
+        self.setToolTip("\n".join(p for p in (title, subtitle, meta) if p))
 
     def set_selected(self, selected: bool) -> None:
         if selected == self._selected:
@@ -105,6 +110,41 @@ class ListRow(QWidget):
             return
         super().mousePressEvent(event)
 
+    def resizeEvent(self, event) -> None:  # noqa: ANN001, N802
+        super().resizeEvent(event)
+        self._elide()
+
+    def showEvent(self, event) -> None:  # noqa: ANN001, N802
+        super().showEvent(event)
+        self._elide()
+
+    def _elide(self) -> None:
+        # Wait until layout has a real width — eliding against 0/40px looks "cut off".
+        if self.width() < 80:
+            self._title.setText(self._title_full)
+            self._subtitle.setText(self._subtitle_full)
+            self._meta.setText(self._meta_full)
+            return
+        meta_w = min(180, max(64, self._meta.width() or 120))
+        title_w = max(80, self.width() - meta_w - 56)
+        self._title.setText(
+            self._title.fontMetrics().elidedText(
+                self._title_full, Qt.TextElideMode.ElideRight, title_w
+            )
+        )
+        if self._subtitle_full:
+            self._subtitle.setText(
+                self._subtitle.fontMetrics().elidedText(
+                    self._subtitle_full, Qt.TextElideMode.ElideRight, title_w
+                )
+            )
+        if self._meta_full:
+            self._meta.setText(
+                self._meta.fontMetrics().elidedText(
+                    self._meta_full, Qt.TextElideMode.ElideRight, meta_w
+                )
+            )
+
     def _sync_icon(self) -> None:
         if self._glyph is None:
             return
@@ -121,7 +161,7 @@ class RowList(QWidget):
         self.setObjectName("rowList")
         self._layout = QVBoxLayout(self)
         self._layout.setContentsMargins(0, 0, 0, 0)
-        self._layout.setSpacing(0)
+        self._layout.setSpacing(4)
         self._rows: list[ListRow] = []
 
     def rows(self) -> list[ListRow]:
@@ -138,7 +178,13 @@ class RowList(QWidget):
 
     def add_row(self, row: ListRow) -> ListRow:
         if self._rows:
+            gap = QWidget(self)
+            gap.setFixedHeight(2)
+            self._layout.addWidget(gap)
             self._layout.addWidget(hairline(self))
+            gap2 = QWidget(self)
+            gap2.setFixedHeight(2)
+            self._layout.addWidget(gap2)
         row.setParent(self)
         self._layout.addWidget(row)
         self._rows.append(row)

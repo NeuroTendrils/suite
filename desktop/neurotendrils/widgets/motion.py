@@ -15,6 +15,7 @@ from PySide6.QtCore import (
     QTimer,
 )
 from PySide6.QtWidgets import QGraphicsOpacityEffect, QStackedWidget, QWidget
+from shiboken6 import isValid
 
 DURATION_FAST = 180
 DURATION_NORMAL = 220
@@ -25,6 +26,10 @@ _EASING = QEasingCurve.Type.OutCubic
 # Widgets carrying a motion-owned opacity effect keep the driving animation here,
 # so a container fade can stop it before deleting the effect underneath it.
 _EFFECT_ANIM = "_ntEffectAnim"
+
+
+def _alive(widget: QWidget | None) -> bool:
+    return widget is not None and isValid(widget)
 
 
 def _has_live_target(anim: QAbstractAnimation) -> bool:
@@ -172,6 +177,8 @@ def stagger_in(
 ) -> None:
     """Fade widgets in one after another so lists feel like they arrive."""
     for position, widget in enumerate(widgets):
+        if not _alive(widget):
+            continue
         if widget.graphicsEffect() is not None or _has_effect_ancestor(widget):
             continue
         effect = QGraphicsOpacityEffect(widget)
@@ -183,10 +190,14 @@ def stagger_in(
         anim.setStartValue(0.0)
         anim.setEndValue(1.0)
         anim.setEasingCurve(_EASING)
-        anim.finished.connect(lambda w=widget: w.setGraphicsEffect(None))
+        anim.finished.connect(
+            lambda w=widget: w.setGraphicsEffect(None) if _alive(w) else None
+        )
         widget.setProperty(_EFFECT_ANIM, anim)
 
         def _start(anim=anim, widget=widget, effect=effect) -> None:
+            if not _alive(widget) or not isValid(effect):
+                return
             if widget.graphicsEffect() is effect:
                 anim.start()
 

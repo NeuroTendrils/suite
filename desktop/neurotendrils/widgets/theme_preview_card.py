@@ -66,29 +66,50 @@ class ThemePreviewCard(QAbstractButton):
         painter.save()
         painter.setClipPath(clip)
 
-        light_base = self._preview is not Preview.DARK
-        painter.fillRect(preview, _LIGHT_BG if light_base else _DARK_BG)
+        is_dark_preview = self._preview is Preview.DARK
+        painter.fillRect(preview, _DARK_BG if is_dark_preview else _LIGHT_BG)
 
         if self._preview is Preview.AUTO:
             dark_half = QRectF(preview)
             dark_half.setLeft(preview.center().x())
             painter.fillRect(dark_half, _DARK_BG)
+            ink = QColor(0xFF, 0xFF, 0xFF)
+            self._paint_nt(
+                painter,
+                QRectF(preview.left() + 10, preview.top() + 12, 22, 22),
+                _LIGHT_BAR,
+                ink,
+            )
+            self._paint_nt(
+                painter,
+                QRectF(preview.center().x() + 10, preview.top() + 12, 22, 22),
+                _DARK_BAR,
+                ink,
+            )
         else:
-            bar = _LIGHT_BAR if light_base else _DARK_BAR
-            line = _LIGHT_LINE if light_base else _DARK_LINE
+            bar = _DARK_BAR if is_dark_preview else _LIGHT_BAR
+            line = _DARK_LINE if is_dark_preview else _LIGHT_LINE
+            ink = QColor(0xFF, 0xFF, 0xFF)
             x = preview.left() + 12.0
             width = preview.width() - 24.0
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(bar)
-            painter.drawRoundedRect(
-                QRectF(x, preview.top() + 14.0, width, 7.0), 3.5, 3.5
+            self._paint_nt(
+                painter,
+                QRectF(x, preview.top() + 12.0, 22.0, 22.0),
+                bar,
+                ink,
             )
+            painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(line)
             painter.drawRoundedRect(
-                QRectF(x, preview.top() + 29.0, width, 5.0), 2.5, 2.5
+                QRectF(x + 30.0, preview.top() + 16.0, width - 30.0, 5.0), 2.5, 2.5
             )
             painter.drawRoundedRect(
-                QRectF(x, preview.top() + 42.0, width * 0.6, 5.0), 2.5, 2.5
+                QRectF(x + 30.0, preview.top() + 28.0, (width - 30.0) * 0.7, 5.0),
+                2.5,
+                2.5,
+            )
+            painter.drawRoundedRect(
+                QRectF(x, preview.top() + 44.0, width * 0.55, 5.0), 2.5, 2.5
             )
 
         painter.restore()
@@ -111,3 +132,17 @@ class ThemePreviewCard(QAbstractButton):
         else:
             painter.setPen(theme.muted_text_color())
         painter.drawText(caption, int(Qt.AlignmentFlag.AlignCenter), self.text())
+
+    @staticmethod
+    def _paint_nt(
+        painter: QPainter, rect: QRectF, plate: QColor, ink: QColor
+    ) -> None:
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(plate)
+        painter.drawRoundedRect(rect, 5.0, 5.0)
+        font = painter.font()
+        font.setBold(True)
+        font.setPixelSize(max(8, int(rect.height() * 0.48)))
+        painter.setFont(font)
+        painter.setPen(ink)
+        painter.drawText(rect, int(Qt.AlignmentFlag.AlignCenter), "NT")
