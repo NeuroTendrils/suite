@@ -47,23 +47,35 @@ def _companion_sources(source: Path, primary_suffix: str) -> list[Path]:
     return unique
 
 
-def import_recording(source_path: str) -> tuple[str, bool]:
-    """Copy into datasets/ if needed. Returns (path, copied)."""
-    project = ProjectDir.instance()
+def import_recording(
+    source_path: str, *, project_root: str | None = None
+) -> tuple[str, bool]:
+    """Copy into datasets/ if needed. Returns (path, copied).
+
+    *project_root* should be passed from the GUI thread when called from a
+    worker so we do not touch the ProjectDir QObject off-thread.
+    """
+    root = project_root if project_root is not None else ProjectDir.instance().root
+    if not root:
+        raise RuntimeError("Project folder is not set")
+    datasets_dir = Path(root) / "datasets"
     source = Path(source_path).expanduser().resolve()
     if not source.is_file():
         raise FileNotFoundError(f"Recording not found: {source}")
     if not matches_suffix(str(source), IMPORT_SUFFIXES):
         raise ValueError("Unsupported EEG format")
 
-    if project.contains(source):
+    try:
+        source.relative_to(Path(root).resolve())
         return str(source), False
+    except ValueError:
+        pass
 
     stem = sanitize_base_name(source.stem, "recording")
     matched = matched_suffix(str(source), IMPORT_SUFFIXES) or source.suffix.lstrip(".")
     suffix = f".{matched}" if matched else source.suffix
 
-    dest = unique_path(project.datasets_dir(), stem, suffix)
+    dest = unique_path(datasets_dir, stem, suffix)
     dest.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(source, dest)
 

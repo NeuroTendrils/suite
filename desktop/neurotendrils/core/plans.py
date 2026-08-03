@@ -244,9 +244,23 @@ def write_run_metadata(
     plan: dict[str, Any],
     result: dict[str, Any],
     plan_path: str | None = None,
+    project_root: str | None = None,
 ) -> None:
-    project = ProjectDir.instance()
-    safe_meta = project.require_contains(meta_path, "run metadata")
+    from neurotendrils.core.projectdir import resolve_path
+
+    if project_root is not None:
+        resolved = resolve_path(meta_path)
+        root_resolved = resolve_path(project_root)
+        try:
+            resolved.relative_to(root_resolved)
+        except ValueError as exc:
+            if resolved != root_resolved:
+                raise PermissionError(
+                    "run metadata must be inside the project folder"
+                ) from exc
+        safe_meta = resolved
+    else:
+        safe_meta = ProjectDir.instance().require_contains(meta_path, "run metadata")
     payload: dict[str, Any] = {
         "v": 1,
         "saved_at": datetime.now(timezone.utc).isoformat(),

@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
     QFrame,
     QGridLayout,
@@ -283,7 +283,8 @@ class NeuroFlowPage(ScrollPage):
         self._file_path.setText(path)
         self._file_path.setToolTip(path)
         self._recording_stack.setCurrentIndex(1)
-        self.request_fingerprint()
+        # Defer fingerprint so the import QThread can finish cleanly first.
+        QTimer.singleShot(0, self.request_fingerprint)
         self._refresh_actions()
 
     def clear_all(self) -> None:
