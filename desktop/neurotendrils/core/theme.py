@@ -67,39 +67,94 @@ QMainWindow, QWidget#appRoot {
     background-color: @background;
     color: @text;
 }
-QWidget#sidebar {
+QWidget#sidebar, QWidget#iconRail {
     background-color: @sidebar;
     border-right: 1px solid @border;
 }
 QLabel#brandNeuro, QLabel#brandTendrils {
-    font-size: 17px;
+    font-size: 15px;
     font-weight: 700;
 }
 QLabel#brandNeuro { color: @accent; }
 QLabel#brandTendrils { color: @text; }
-QListWidget#moduleNavigation {
+QPushButton#railExpandButton {
+    background: transparent;
+    color: @mutedText;
+    border: none;
+    border-radius: 0;
+    outline: none;
+    font-size: 12px;
+    font-weight: 500;
+    padding: 4px 0;
+    text-align: left;
+    min-width: 0;
+    min-height: 0;
+}
+QPushButton#railExpandButton:hover,
+QPushButton#railExpandButton:pressed,
+QPushButton#railExpandButton:focus {
     background: transparent;
     border: none;
     outline: none;
-    font-size: 13px;
+    color: @text;
+    font-weight: 700;
 }
-QListWidget#moduleNavigation::item {
+QPushButton#railExpandChevron {
+    background: transparent;
     color: @mutedText;
     border: none;
-    border-radius: 6px;
-    margin: 2px 0;
-    padding: 9px 10px;
+    border-radius: 0;
+    outline: none;
+    font-size: 22px;
+    font-weight: 500;
+    padding: 0;
+    min-width: 0;
+    min-height: 0;
 }
-QListWidget#moduleNavigation::item:hover {
-    background-color: @selection;
+QPushButton#railExpandChevron:hover,
+QPushButton#railExpandChevron:pressed,
+QPushButton#railExpandChevron:focus {
+    background: transparent;
+    border: none;
+    outline: none;
     color: @text;
+    font-weight: 700;
 }
-QListWidget#moduleNavigation::item:selected {
-    background-color: @selection;
+QToolButton#railNavButton {
+    background: transparent;
+    border: none;
+    border-radius: 0;
+    outline: none;
+    padding: 0;
+}
+QToolButton#railNavButton:hover,
+QToolButton#railNavButton:checked,
+QToolButton#railNavButton:pressed {
+    background: transparent;
+    border: none;
+}
+QLabel#railNavLabel {
+    color: @mutedText;
+    font-size: 13px;
+    font-weight: 500;
+}
+QLabel#railNavLabelSelected {
     color: @text;
-    font-weight: 600;
+    font-size: 13px;
+    font-weight: 700;
 }
-QWidget#userCard { border-top: 1px solid @border; }
+QWidget#railFooter { border-top: 1px solid @border; }
+QToolButton#railAvatarButton {
+    background: transparent;
+    border: none;
+    border-radius: 16px;
+    outline: none;
+    padding: 0;
+}
+QToolButton#railAvatarButton:hover,
+QToolButton#railAvatarButton:pressed {
+    background: transparent;
+}
 QLabel#userName { color: @text; font-size: 13px; font-weight: 600; }
 QLabel#userStorage { color: @mutedText; font-size: 11px; }
 QProgressBar#storageBar {
@@ -111,13 +166,6 @@ QProgressBar#storageBar::chunk {
     background-color: @accent;
     border-radius: 2px;
 }
-QToolButton#settingsButton {
-    background: transparent;
-    border: none;
-    border-radius: 5px;
-    padding: 5px;
-}
-QToolButton#settingsButton:hover { background-color: @selection; }
 QLabel#pageTitle { color: @text; font-size: 22px; font-weight: 700; }
 QLabel#pageDescription { color: @mutedText; font-size: 13px; }
 QWidget#settingsSidebar {
@@ -151,14 +199,15 @@ QWidget#pageContent { background: transparent; }
 QFrame#emptyPanel {
     background-color: @sidebar;
     border: 1px dashed @border;
-    border-radius: 10px;
+    border-radius: 12px;
 }
 QFrame#filePanel, QFrame#fingerprintPanel,
 QFrame#libraryPanel, QFrame#detailPanel {
     background-color: @sidebar;
     border: 1px solid @border;
-    border-radius: 10px;
+    border-radius: 12px;
 }
+QStackedWidget#pageStack { background: transparent; }
 QLabel#emptyPanelTitle { color: @text; font-size: 15px; font-weight: 600; }
 QLabel#emptyPanelHint { color: @mutedText; font-size: 12px; }
 QLabel#fileNameLabel { color: @text; font-size: 14px; font-weight: 600; }
@@ -217,7 +266,7 @@ QPushButton#primaryButton {
     background-color: @accent;
     color: @accentText;
     border: none;
-    border-radius: 7px;
+    border-radius: 8px;
     padding: 8px 14px;
     font-size: 13px;
     font-weight: 600;
@@ -262,7 +311,7 @@ class Theme(QObject):
     def initialize(self, application: QApplication) -> None:
         self._app = application
         font = QFont()
-        font.setFamilies(["Inter", "Segoe UI", "Helvetica Neue", "Arial"])
+        font.setFamilies(["Helvetica Neue", "Segoe UI", "Arial"])
         font.setPointSize(13)
         application.setFont(font)
 
@@ -292,6 +341,12 @@ class Theme(QObject):
 
     def muted_text_color(self) -> QColor:
         return QColor(self._colors.muted_text)
+
+    def accent_color(self) -> QColor:
+        return QColor(self._colors.accent)
+
+    def border_color(self) -> QColor:
+        return QColor(self._colors.border)
 
     def set_mode(self, mode: ThemeMode) -> None:
         if self._mode is mode:

@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
 from neurotendrils import __version__
 from neurotendrils.core.projectdir import ProjectDir
 from neurotendrils.core.theme import Theme, ThemeMode
+from neurotendrils.widgets.theme_preview_card import Preview, ThemePreviewCard
 
 
 class SettingsDialog(QDialog):
@@ -27,7 +28,10 @@ class SettingsDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Settings")
         self.setModal(True)
-        self.resize(640, 420)
+        self.resize(720, 480)
+        self._light_card: ThemePreviewCard | None = None
+        self._dark_card: ThemePreviewCard | None = None
+        self._auto_card: ThemePreviewCard | None = None
 
         root = QHBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -63,30 +67,59 @@ class SettingsDialog(QDialog):
         root.addWidget(content, 1)
         self._nav.currentRowChanged.connect(self._stack.setCurrentIndex)
         self._nav.setCurrentRow(0)
+        Theme.instance().changed.connect(self._sync_theme_cards)
+        self._sync_theme_cards()
 
     def _appearance_pane(self) -> QWidget:
         pane = QWidget(self)
         layout = QVBoxLayout(pane)
+        layout.setContentsMargins(8, 4, 8, 4)
+        layout.setSpacing(0)
+
         title = QLabel("Appearance", pane)
-        title.setObjectName("settingTitle")
-        desc = QLabel("Choose light, dark, or follow the system.", pane)
-        desc.setObjectName("settingDescription")
-        layout.addWidget(title)
-        layout.addWidget(desc)
-        row = QHBoxLayout()
-        for mode, label in (
-            (ThemeMode.LIGHT, "Light"),
-            (ThemeMode.DARK, "Dark"),
-            (ThemeMode.SYSTEM, "Auto"),
-        ):
-            btn = QPushButton(label, pane)
-            btn.setObjectName("secondaryButton")
-            btn.clicked.connect(lambda _=False, m=mode: Theme.instance().set_mode(m))
-            row.addWidget(btn)
+        title.setObjectName("pageTitle")
+        theme_label = QLabel("Theme", pane)
+        theme_label.setObjectName("groupLabel")
+
+        self._light_card = ThemePreviewCard(Preview.LIGHT, "Light", pane)
+        self._dark_card = ThemePreviewCard(Preview.DARK, "Dark", pane)
+        self._auto_card = ThemePreviewCard(Preview.AUTO, "Auto", pane)
+
+        cards = QWidget(pane)
+        row = QHBoxLayout(cards)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(14)
+        row.addWidget(self._light_card)
+        row.addWidget(self._dark_card)
+        row.addWidget(self._auto_card)
         row.addStretch(1)
-        layout.addLayout(row)
+
+        def _select(mode: ThemeMode):
+            def _on(_checked: bool = False) -> None:
+                Theme.instance().set_mode(mode)
+                self._sync_theme_cards()
+
+            return _on
+
+        self._light_card.clicked.connect(_select(ThemeMode.LIGHT))
+        self._dark_card.clicked.connect(_select(ThemeMode.DARK))
+        self._auto_card.clicked.connect(_select(ThemeMode.SYSTEM))
+
+        layout.addWidget(title)
+        layout.addSpacing(20)
+        layout.addWidget(theme_label)
+        layout.addSpacing(10)
+        layout.addWidget(cards)
         layout.addStretch(1)
         return pane
+
+    def _sync_theme_cards(self) -> None:
+        mode = Theme.instance().mode
+        if self._light_card is None or self._dark_card is None or self._auto_card is None:
+            return
+        self._light_card.setChecked(mode is ThemeMode.LIGHT)
+        self._dark_card.setChecked(mode is ThemeMode.DARK)
+        self._auto_card.setChecked(mode is ThemeMode.SYSTEM)
 
     def _info_pane(self) -> QWidget:
         pane = QWidget(self)
