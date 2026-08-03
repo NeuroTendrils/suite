@@ -123,6 +123,11 @@ class SchemaEditPanel(QWidget):
 
         form_host = QWidget(self)
         form = QFormLayout(form_host)
+        form.setContentsMargins(0, 8, 0, 0)
+        form.setHorizontalSpacing(16)
+        form.setVerticalSpacing(10)
+        form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        form.setFormAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
         self._editors = build_editors(
             schemas, values, form_host, decimals=decimals, single_step=single_step
         )

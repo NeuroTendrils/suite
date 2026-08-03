@@ -11,13 +11,13 @@ from PySide6.QtWidgets import QAbstractButton, QWidget
 from neurotendrils.core.theme import Theme
 
 _LIGHT_BG = QColor(0xFF, 0xFF, 0xFF)
-_LIGHT_BORDER = QColor(0xE3, 0xE5, 0xEA)
-_LIGHT_LINE = QColor(0xD9, 0xDC, 0xE3)
-_LIGHT_BAR = QColor(0x37, 0x58, 0xBC)
-_DARK_BG = QColor(0x10, 0x13, 0x1C)
-_DARK_BORDER = QColor(0x2A, 0x2F, 0x3C)
-_DARK_LINE = QColor(0x23, 0x29, 0x38)
-_DARK_BAR = QColor(0x77, 0x95, 0xF8)
+_LIGHT_BORDER = QColor(0xE8, 0xE9, 0xEC)
+_LIGHT_LINE = QColor(0xDE, 0xE0, 0xE4)
+_LIGHT_BAR = QColor(0x2F, 0x6F, 0xEB)
+_DARK_BG = QColor(0x0F, 0x10, 0x13)
+_DARK_BORDER = QColor(0x23, 0x26, 0x2D)
+_DARK_LINE = QColor(0x2B, 0x2F, 0x36)
+_DARK_BAR = QColor(0x6F, 0x8D, 0xFF)
 
 
 class Preview(Enum):
@@ -41,7 +41,7 @@ class ThemePreviewCard(QAbstractButton):
         Theme.instance().changed.connect(self.update)
 
     def sizeHint(self) -> QSize:  # noqa: N802
-        return QSize(176, 148)
+        return QSize(168, 140)
 
     def paintEvent(self, event: QPaintEvent) -> None:  # noqa: N802
         del event
@@ -52,13 +52,13 @@ class ThemePreviewCard(QAbstractButton):
         card = QRectF(self.rect()).adjusted(1.5, 1.5, -1.5, -1.5)
         if self.isChecked():
             tint = theme.accent_color()
-            tint.setAlpha(36 if theme.is_dark() else 22)
+            tint.setAlpha(28 if theme.is_dark() else 18)
             painter.setBrush(tint)
-            painter.setPen(QPen(theme.accent_color(), 2.0))
+            painter.setPen(QPen(theme.accent_color(), 1.6))
         else:
             painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.setPen(QPen(theme.border_color(), 1.0))
-        painter.drawRoundedRect(card, 10.0, 10.0)
+        painter.drawRoundedRect(card, 8.0, 8.0)
 
         preview = card.adjusted(14.0, 14.0, -14.0, -38.0)
         clip = QPainterPath()

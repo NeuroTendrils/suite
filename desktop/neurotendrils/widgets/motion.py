@@ -2,11 +2,17 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 from PySide6.QtCore import (
-    QEasingCurve,
     QAbstractAnimation,
-    QPropertyAnimation,
+    QAnimationGroup,
     QByteArray,
+    QEasingCurve,
+    QParallelAnimationGroup,
+    QPoint,
+    QPropertyAnimation,
+    QTimer,
 )
 from PySide6.QtWidgets import QGraphicsOpacityEffect, QStackedWidget, QWidget
 
@@ -16,10 +22,29 @@ DURATION_SLOW = 280
 
 _EASING = QEasingCurve.Type.OutCubic
 
+# Widgets carrying a motion-owned opacity effect keep the driving animation here,
+# so a container fade can stop it before deleting the effect underneath it.
+_EFFECT_ANIM = "_ntEffectAnim"
+
+
+def _has_live_target(anim: QAbstractAnimation) -> bool:
+    """An animation outlives its target object; touching it then would warn."""
+    if isinstance(anim, QPropertyAnimation):
+        return anim.targetObject() is not None
+    if isinstance(anim, QAnimationGroup):
+        return all(
+            _has_live_target(anim.animationAt(index))
+            for index in range(anim.animationCount())
+        )
+    return True
+
 
 def _stop(anim: QAbstractAnimation | None) -> None:
-    if anim is not None and anim.state() == QAbstractAnimation.State.Running:
-        anim.stop()
+    if anim is None or anim.state() != QAbstractAnimation.State.Running:
+        return
+    if not _has_live_target(anim):
+        return
+    anim.stop()
 
 
 def animate_width(
@@ -62,35 +87,110 @@ def animate_width(
     return anim
 
 
-def animate_opacity(
-    widget: QWidget,
-    end: float,
-    *,
-    duration: int = DURATION_FAST,
-    easing: QEasingCurve.Type = _EASING,
-    ensure_effect: bool = True,
-) -> QPropertyAnimation | None:
-    """Animate opacity via ``QGraphicsOpacityEffect``."""
-    effect = widget.graphicsEffect()
-    if not isinstance(effect, QGraphicsOpacityEffect):
-        if not ensure_effect:
-            return None
-        effect = QGraphicsOpacityEffect(widget)
-        effect.setOpacity(1.0)
-        widget.setGraphicsEffect(effect)
+def _has_effect_ancestor(widget: QWidget) -> bool:
+    """Nested opacity effects make Qt paint twice into one device, so avoid them."""
+    parent = widget.parentWidget()
+    while parent is not None:
+        if parent.graphicsEffect() is not None:
+            return True
+        parent = parent.parentWidget()
+    return False
 
-    existing = widget.property("_ntOpacityAnim")
-    if isinstance(existing, QPropertyAnimation):
+
+def _cancel_child_effects(widget: QWidget) -> None:
+    """Drop in-flight child fades before fading their container."""
+    for child in widget.findChildren(QWidget):
+        if child.graphicsEffect() is None:
+            continue
+        anim = child.property(_EFFECT_ANIM)
+        if isinstance(anim, QAbstractAnimation):
+            _stop(anim)
+        child.setGraphicsEffect(None)
+
+
+def slide_stack(
+    stack: QStackedWidget,
+    index: int,
+    *,
+    forward: bool = True,
+    duration: int = DURATION_NORMAL,
+    distance: int = 28,
+) -> None:
+    """Switch pages with a short lateral slide, so direction reads as progress."""
+    if index < 0 or index >= stack.count() or index == stack.currentIndex():
+        return
+
+    existing = stack.property("_ntSlide")
+    if isinstance(existing, QAbstractAnimation):
         _stop(existing)
 
-    anim = QPropertyAnimation(effect, QByteArray(b"opacity"), widget)
-    anim.setDuration(duration)
-    anim.setStartValue(effect.opacity())
-    anim.setEndValue(end)
-    anim.setEasingCurve(easing)
-    widget.setProperty("_ntOpacityAnim", anim)
-    anim.start()
-    return anim
+    stack.setCurrentIndex(index)
+    page = stack.currentWidget()
+    if page is None:
+        return
+
+    target = page.pos()
+    page.move(QPoint(target.x() + (distance if forward else -distance), target.y()))
+
+    slide = QPropertyAnimation(page, QByteArray(b"pos"), stack)
+    slide.setDuration(duration)
+    slide.setEndValue(target)
+    slide.setEasingCurve(_EASING)
+
+    group = QParallelAnimationGroup(stack)
+    group.addAnimation(slide)
+
+    faded = page.graphicsEffect() is None and not _has_effect_ancestor(page)
+    if faded:
+        _cancel_child_effects(page)
+        effect = QGraphicsOpacityEffect(page)
+        page.setGraphicsEffect(effect)
+        effect.setOpacity(0.0)
+        fade = QPropertyAnimation(effect, QByteArray(b"opacity"), stack)
+        fade.setDuration(duration)
+        fade.setStartValue(0.0)
+        fade.setEndValue(1.0)
+        fade.setEasingCurve(_EASING)
+        group.addAnimation(fade)
+
+    def _settle() -> None:
+        page.move(target)
+        if faded:
+            page.setGraphicsEffect(None)
+
+    group.finished.connect(_settle)
+    stack.setProperty("_ntSlide", group)
+    page.setProperty(_EFFECT_ANIM, group)
+    group.start()
+
+
+def stagger_in(
+    widgets: Sequence[QWidget],
+    *,
+    duration: int = DURATION_FAST,
+    gap: int = 45,
+) -> None:
+    """Fade widgets in one after another so lists feel like they arrive."""
+    for position, widget in enumerate(widgets):
+        if widget.graphicsEffect() is not None or _has_effect_ancestor(widget):
+            continue
+        effect = QGraphicsOpacityEffect(widget)
+        widget.setGraphicsEffect(effect)
+        effect.setOpacity(0.0)
+
+        anim = QPropertyAnimation(effect, QByteArray(b"opacity"), widget)
+        anim.setDuration(duration)
+        anim.setStartValue(0.0)
+        anim.setEndValue(1.0)
+        anim.setEasingCurve(_EASING)
+        anim.finished.connect(lambda w=widget: w.setGraphicsEffect(None))
+        widget.setProperty(_EFFECT_ANIM, anim)
+
+        def _start(anim=anim, widget=widget, effect=effect) -> None:
+            if widget.graphicsEffect() is effect:
+                anim.start()
+
+        QTimer.singleShot(position * gap, _start)
 
 
 def crossfade_stack(
@@ -110,6 +210,7 @@ def crossfade_stack(
 
     effect = current.graphicsEffect()
     if not isinstance(effect, QGraphicsOpacityEffect):
+        _cancel_child_effects(current)
         effect = QGraphicsOpacityEffect(current)
         current.setGraphicsEffect(effect)
     effect.setOpacity(1.0)
@@ -122,21 +223,27 @@ def crossfade_stack(
     out_anim.setEasingCurve(_EASING)
 
     def _swap() -> None:
-        stack.setCurrentIndex(index)
-        nxt = stack.currentWidget()
+        current.setGraphicsEffect(None)
+        nxt = stack.widget(index)
         if nxt is None:
+            stack.setCurrentIndex(index)
             return
-        nxt_effect = nxt.graphicsEffect()
-        if not isinstance(nxt_effect, QGraphicsOpacityEffect):
-            nxt_effect = QGraphicsOpacityEffect(nxt)
-            nxt.setGraphicsEffect(nxt_effect)
+        # Install the effect before the page is shown: work triggered by
+        # showEvent can then see it and skip its own (nesting) fades.
+        _cancel_child_effects(nxt)
+        nxt_effect = QGraphicsOpacityEffect(nxt)
+        nxt.setGraphicsEffect(nxt_effect)
         nxt_effect.setOpacity(0.0)
+        stack.setCurrentIndex(index)
         in_anim = QPropertyAnimation(nxt_effect, QByteArray(b"opacity"), stack)
         in_anim.setDuration(half)
         in_anim.setStartValue(0.0)
         in_anim.setEndValue(1.0)
         in_anim.setEasingCurve(_EASING)
+        # Effects are costly to keep alive; drop it once the page is opaque.
+        in_anim.finished.connect(lambda: nxt.setGraphicsEffect(None))
         stack.setProperty("_ntCrossfade", in_anim)
+        nxt.setProperty(_EFFECT_ANIM, in_anim)
         in_anim.start()
 
     existing = stack.property("_ntCrossfade")
@@ -144,4 +251,5 @@ def crossfade_stack(
         _stop(existing)
     out_anim.finished.connect(_swap)
     stack.setProperty("_ntCrossfade", out_anim)
+    current.setProperty(_EFFECT_ANIM, out_anim)
     out_anim.start()

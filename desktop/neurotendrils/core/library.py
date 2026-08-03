@@ -11,7 +11,7 @@ from typing import Any, Literal
 from neurotendrils.core.eeg_formats import IMPORT_SUFFIXES, extension_badge, matches_suffix
 from neurotendrils.core.projectdir import ProjectDir, resolve_path
 
-Kind = Literal["plan", "dataset", "model"]
+Kind = Literal["plan", "dataset", "model", "run"]
 
 
 @dataclass
@@ -154,9 +154,35 @@ def scan_models() -> list[LibraryEntry]:
     return entries
 
 
+def scan_runs() -> list[LibraryEntry]:
+    entries: list[LibraryEntry] = []
+    runs_dir = ProjectDir.instance().runs_dir()
+    if not runs_dir.is_dir():
+        return entries
+    for path in runs_dir.iterdir():
+        if path.is_symlink() or not path.is_file():
+            continue
+        size_bytes, modified = _stat_size_mtime(path)
+        entries.append(
+            LibraryEntry(
+                kind="run",
+                id=path.name,
+                title=path.name,
+                subtitle=path.suffix.lstrip(".").upper() or "OUTPUT",
+                path=str(path),
+                size_bytes=size_bytes,
+                modified=modified,
+                extra={},
+            )
+        )
+    entries.sort(key=lambda e: e.modified, reverse=True)
+    return entries
+
+
 def scan_all() -> dict[str, list[LibraryEntry]]:
     return {
         "plans": scan_plans(),
         "datasets": scan_datasets(),
         "models": scan_models(),
+        "runs": scan_runs(),
     }

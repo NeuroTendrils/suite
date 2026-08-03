@@ -10,6 +10,9 @@ __pycache__/
 *.egg-info/
 .venv-setup.log
 
+# Dev-only UI screenshot harness (tools/ui_screens.py)
+desktop/.ui-screens/
+
 # PyInstaller output
 dist/
 build/
