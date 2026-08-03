@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -36,8 +35,15 @@ def validate_config(template_id: str, config: dict[str, Any]) -> str | None:
     return _validate(template_id, config)
 
 
+def _path_tokens(path: str) -> set[str]:
+    import re
+
+    return {tok for tok in re.split(r"[^a-z0-9]+", Path(path).name.lower()) if tok}
+
+
 def recommend(dataset_path: str, dataset_kind: str) -> tuple[str, dict[str, str]]:
     """Return (suggested_id, rationales_by_id)."""
+    tokens = _path_tokens(dataset_path)
     path_lower = dataset_path.lower()
     erp_hints = ("erp", "p300", "oddball", "n400")
     mi_hints = ("mi", "motor", "imagery", "bci")
@@ -53,10 +59,10 @@ def recommend(dataset_path: str, dataset_kind: str) -> tuple[str, dict[str, str]
         "eegnet_erp_v1": "EEGNet tuned for ERP / P300-style tasks.",
     }
 
-    if any(h in path_lower for h in erp_hints):
+    if tokens & set(erp_hints) or any(f"_{h}" in path_lower or f"-{h}" in path_lower for h in erp_hints):
         scores["eegnet_erp_v1"] += 2.0
         rationales["eegnet_erp_v1"] = "Path hints suggest an ERP / P300 dataset."
-    if any(h in path_lower for h in mi_hints):
+    if tokens & set(mi_hints):
         scores["eegnet_mi_v1"] += 1.5
         scores["shallow_mi_v1"] += 1.2
         rationales["eegnet_mi_v1"] = "Path hints suggest motor imagery."
@@ -89,7 +95,7 @@ def suggest_train_dir(dataset_path: str, template_id: str) -> Path:
     base = sanitize_base_name(Path(dataset_path).stem, "dataset")
     tmpl = sanitize_base_name(template_id, "template")
     stem = f"studio_{base}_{tmpl}_{stamp}"
-    path = project.runs_dir() / stem
+    path = unique_dir(project.runs_dir(), stem)
     path.mkdir(parents=True, exist_ok=False)
     return path
 
@@ -101,33 +107,28 @@ def suggest_export_dir(template_id: str, fmt: str) -> Path:
     return unique_dir(project.models_dir(), stem)
 
 
-def write_model_sidecar(
-    model_dir: Path,
-    *,
-    template_id: str,
-    fmt: str,
-    artifact_name: str,
-    metrics: dict[str, Any] | None = None,
-    title: str | None = None,
-) -> Path:
-    payload = {
-        "kind": "neurostudio_model",
-        "v": 1,
-        "title": title or f"{template_id} ({fmt})",
-        "template_id": template_id,
-        "format": fmt,
-        "artifact": artifact_name,
-        "exported_at": datetime.now(timezone.utc).isoformat(),
-        "publish": {"status": "local"},
-    }
-    if metrics:
-        (model_dir / "metrics.json").write_text(
-            json.dumps(metrics, indent=2), encoding="utf-8"
-        )
-        payload["metrics"] = {
-            "accuracy": metrics.get("accuracy"),
-            "balanced_accuracy": metrics.get("balanced_accuracy"),
-        }
-    path = model_dir / "model.json"
+def ensure_model_hub_fields(model_dir: Path) -> Path:
+    """Merge Hub-facing fields into an existing export sidecar without wiping it."""
+    project = ProjectDir.instance()
+    safe_dir = project.require_contains(model_dir, "model directory")
+    path = safe_dir / "model.json"
+    payload: dict[str, Any] = {}
+    if path.is_file():
+        try:
+            loaded = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                payload = loaded
+        except (OSError, json.JSONDecodeError):
+            payload = {}
+    payload.setdefault("kind", "neurostudio_model")
+    if "v" not in payload and "version" in payload:
+        payload["v"] = payload["version"]
+    payload.setdefault("v", 1)
+    publish = payload.get("publish")
+    if not isinstance(publish, dict):
+        payload["publish"] = {"status": "local"}
+    else:
+        publish.setdefault("status", "local")
+    payload.setdefault("exported_at", datetime.now(timezone.utc).isoformat())
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     return path

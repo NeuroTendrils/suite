@@ -33,10 +33,4 @@ def unique_path(directory: Path, stem: str, suffix: str) -> Path:
 
 
 def unique_dir(directory: Path, stem: str) -> Path:
-    directory.mkdir(parents=True, exist_ok=True)
-    candidate = directory / stem
-    index = 1
-    while candidate.exists():
-        candidate = directory / f"{stem}_{index}"
-        index += 1
-    return candidate
+    return unique_path(directory, stem, "")

@@ -21,11 +21,23 @@ from PySide6.QtWidgets import (
     QFileDialog,
 )
 
-from neurotendrils.core.dataset_io import import_recording
-from neurotendrils.core.eeg_formats import extension_badge, import_file_filter
-from neurotendrils.core.jobs import WorkerJob, fingerprint_job, run_plan_job
+from neurotendrils.core.eeg_formats import (
+    extension_badge,
+    import_file_filter,
+    import_format_hint,
+)
+from neurotendrils.core.formatting import format_bytes
+from neurotendrils.core.jobs import (
+    WorkerJob,
+    cancel_bound_job,
+    fingerprint_job,
+    import_recording_job,
+    run_plan_job,
+    start_bound_job,
+)
 from neurotendrils.core.plans import (
     default_params,
+    find_step,
     from_fingerprint,
     load_plan,
     make_step,
@@ -34,21 +46,13 @@ from neurotendrils.core.plans import (
     suggest_run_paths,
     validate_plan,
     validate_step_params,
-    write_run_metadata,
 )
 from neurotendrils.core.projectdir import ProjectDir
+from neurotendrils.widgets.layoututil import clear_layout
 from neurotendrils.widgets.pageheader import PageHeader
 from neurotendrils.widgets.schema_form import SchemaEditDialog
 from neurotendrils.widgets.scroll_page import ScrollPage
 from neurotendrils.widgets.skeleton import SkeletonLoader
-
-
-def _fmt_size(nbytes: int) -> str:
-    if nbytes < 1024:
-        return f"{nbytes} B"
-    if nbytes < 1024**2:
-        return f"{nbytes / 1024:.1f} KB"
-    return f"{nbytes / 1024**2:.1f} MB"
 
 
 def _summarize_params(params: dict[str, Any]) -> str:
@@ -65,9 +69,11 @@ class NeuroFlowPage(ScrollPage):
         self._plan_user_owned = False
         self._plan_path: str | None = None
         self._job: WorkerJob | None = None
+        self._job_token = 0
+        self._job_kind = ""
+        self._run_input = ""
         self._run_output = ""
         self._run_meta = ""
-        self._run_log = ""
 
         self.content_layout.addWidget(
             PageHeader("NeuroFlow", "Build and run reproducible EEG preprocessing plans.")
@@ -80,17 +86,14 @@ class NeuroFlowPage(ScrollPage):
         self._refresh_actions()
 
     def _build_recording(self) -> None:
-        self.content_layout.addWidget(self._section_label("Recording"))
+        self.content_layout.addWidget(self.section_label("Recording"))
         self._recording_stack = QStackedWidget(self)
         empty = QFrame(self)
         empty.setObjectName("emptyPanel")
         empty_l = QVBoxLayout(empty)
         title = QLabel("No recording selected", empty)
         title.setObjectName("emptyPanelTitle")
-        hint = QLabel(
-            "Supported: EDF, BDF, FIF, EEGLAB SET, BrainVision, CNT, MFF, GDF.",
-            empty,
-        )
+        hint = QLabel(import_format_hint(), empty)
         hint.setObjectName("emptyPanelHint")
         hint.setWordWrap(True)
         choose = QPushButton("Choose file", empty)
@@ -135,7 +138,7 @@ class NeuroFlowPage(ScrollPage):
         self.content_layout.addWidget(self._recording_stack)
 
     def _build_fingerprint(self) -> None:
-        self.content_layout.addWidget(self._section_label("Fingerprint"))
+        self.content_layout.addWidget(self.section_label("Fingerprint"))
         self._fp_status = QLabel("Select a recording to read metadata.", self)
         self._fp_status.setObjectName("fileMetaLabel")
         self._fp_skeleton = SkeletonLoader(self)
@@ -169,7 +172,7 @@ class NeuroFlowPage(ScrollPage):
         self.content_layout.addWidget(self._fp_panel)
 
     def _build_plan(self) -> None:
-        self.content_layout.addWidget(self._section_label("Plan"))
+        self.content_layout.addWidget(self.section_label("Plan"))
         self._plan_status = QLabel("A recommended plan appears after fingerprinting.", self)
         self._plan_status.setObjectName("fileMetaLabel")
         self._plan_list = QVBoxLayout()
@@ -196,7 +199,7 @@ class NeuroFlowPage(ScrollPage):
         self.content_layout.addLayout(row)
 
     def _build_run(self) -> None:
-        self.content_layout.addWidget(self._section_label("Run"))
+        self.content_layout.addWidget(self.section_label("Run"))
         self._run_status = QLabel("Ready when a recording and plan are available.", self)
         self._run_status.setObjectName("fileMetaLabel")
         self._run_skeleton = SkeletonLoader(self)
@@ -226,11 +229,6 @@ class NeuroFlowPage(ScrollPage):
         self.content_layout.addWidget(self._run_log_label)
         self.content_layout.addLayout(row)
 
-    def _section_label(self, text: str) -> QLabel:
-        label = QLabel(text, self)
-        label.setObjectName("groupLabel")
-        return label
-
     def import_recording(self) -> None:
         project = ProjectDir.instance()
         if not project.root:
@@ -244,20 +242,42 @@ class NeuroFlowPage(ScrollPage):
         )
         if not path:
             return
-        try:
-            dest, copied = import_recording(path)
-        except (OSError, ValueError) as exc:
-            QMessageBox.warning(self, "Import failed", str(exc))
+        if self._busy():
+            QMessageBox.information(self, "Busy", "Wait for the current job to finish.")
             return
-        self.set_dataset_path(dest, copied)
+        self._fp_status.setText("Importing recording…")
+        self._fp_skeleton.show()
+        job = import_recording_job(path)
+        self._job_kind = "import"
+        start_bound_job(
+            self,
+            "_job",
+            job,
+            lambda result: self.set_dataset_path(
+                str(result.get("path") or ""), bool(result.get("copied"))
+            ),
+            self._on_import_fail,
+            self._refresh_actions,
+        )
+
+    def _on_import_fail(self, code: str, message: str) -> None:
+        self._fp_skeleton.hide()
+        self._fp_status.setText(f"Import failed ({code}): {message}")
+        QMessageBox.warning(self, "Import failed", message)
 
     def set_dataset_path(self, path: str, copied: bool) -> None:
+        if not path:
+            return
         self._dataset_path = path
+        self._fingerprint = {}
+        if not self._plan_user_owned:
+            self._plan = {"v": 1, "steps": []}
+            self.render_plan()
         p = Path(path)
         self._file_name.setText(p.name)
         self._file_name.setToolTip(p.name)
         self._file_badge.setText(extension_badge(path))
-        size = _fmt_size(p.stat().st_size) if p.is_file() else ""
+        size = format_bytes(p.stat().st_size) if p.is_file() else ""
         status = "Copied into project" if copied else "Using project file"
         self._file_meta.setText(f"{size} · {status}" if size else status)
         self._file_path.setText(path)
@@ -267,6 +287,9 @@ class NeuroFlowPage(ScrollPage):
         self._refresh_actions()
 
     def clear_all(self) -> None:
+        if self._busy():
+            QMessageBox.information(self, "Busy", "Wait for the current job to finish.")
+            return
         self.cancel_job()
         self._dataset_path = ""
         self._fingerprint = {}
@@ -274,7 +297,6 @@ class NeuroFlowPage(ScrollPage):
             self._plan = {"v": 1, "steps": []}
         self._run_output = ""
         self._run_meta = ""
-        self._run_log = ""
         self._recording_stack.setCurrentIndex(0)
         self._fp_panel.hide()
         self._fp_skeleton.hide()
@@ -294,8 +316,16 @@ class NeuroFlowPage(ScrollPage):
         self._fp_status.setText("Reading metadata…")
         self._fp_panel.hide()
         self._fp_skeleton.show()
+        self._job_kind = "fingerprint"
         job = fingerprint_job(self._dataset_path)
-        self._bind_job(job, self._on_fingerprint_ok, self._on_fingerprint_fail)
+        start_bound_job(
+            self,
+            "_job",
+            job,
+            self._on_fingerprint_ok,
+            self._on_fingerprint_fail,
+            self._refresh_actions,
+        )
 
     def _on_fingerprint_ok(self, result: dict[str, Any]) -> None:
         self._fp_skeleton.hide()
@@ -327,14 +357,14 @@ class NeuroFlowPage(ScrollPage):
 
     def _on_fingerprint_fail(self, code: str, message: str) -> None:
         self._fp_skeleton.hide()
+        self._fingerprint = {}
+        if not self._plan_user_owned:
+            self._plan = {"v": 1, "steps": []}
+            self.render_plan()
         self._fp_status.setText(f"Fingerprint failed ({code}): {message}")
 
     def render_plan(self) -> None:
-        while self._plan_list.count():
-            item = self._plan_list.takeAt(0)
-            w = item.widget()
-            if w is not None:
-                w.deleteLater()
+        clear_layout(self._plan_list)
 
         steps = self._plan.get("steps") or []
         if not steps:
@@ -386,6 +416,8 @@ class NeuroFlowPage(ScrollPage):
             self._plan_list.addWidget(row)
 
     def add_step(self) -> None:
+        if self._busy():
+            return
         catalog = step_catalog()
         labels = [f"{s['title']} ({s['id']})" for s in catalog]
         choice, ok = QInputDialog.getItem(self, "Add step", "Step:", labels, 0, False)
@@ -399,13 +431,13 @@ class NeuroFlowPage(ScrollPage):
         self._refresh_actions()
 
     def edit_step(self, index: int) -> None:
+        if self._busy():
+            return
         steps = self._plan.get("steps") or []
         if index < 0 or index >= len(steps):
             return
         step = steps[index]
         step_id = step["step_id"]
-        from neuroflow.steps import find_step
-
         defn = find_step(step_id)
         if defn is None:
             return
@@ -423,6 +455,8 @@ class NeuroFlowPage(ScrollPage):
             self.render_plan()
 
     def move_step(self, index: int, delta: int) -> None:
+        if self._busy():
+            return
         steps = self._plan.get("steps") or []
         j = index + delta
         if j < 0 or j >= len(steps):
@@ -432,6 +466,8 @@ class NeuroFlowPage(ScrollPage):
         self.render_plan()
 
     def remove_step(self, index: int) -> None:
+        if self._busy():
+            return
         reply = QMessageBox.question(
             self,
             "Remove step",
@@ -501,50 +537,55 @@ class NeuroFlowPage(ScrollPage):
         except OSError as exc:
             QMessageBox.warning(self, "Run failed", str(exc))
             return
+        self._run_input = self._dataset_path
         self._run_output = str(out_path)
         self._run_meta = str(meta_path)
-        self._run_log = ""
         self._run_status.setText("Running plan…")
         self._run_skeleton.show()
         self._run_result.clear()
+        self._run_log_label.clear()
         self._cancel_btn.setEnabled(True)
         self._run_btn.setEnabled(False)
+        self._job_kind = "run"
 
-        job = run_plan_job(self._dataset_path, self._run_output, self._plan)
+        job = run_plan_job(
+            self._run_input,
+            self._run_output,
+            self._plan,
+            meta_path=self._run_meta,
+        )
         job.progress.connect(self._on_run_progress)
-        self._bind_job(job, self._on_run_ok, self._on_run_fail)
+        start_bound_job(
+            self,
+            "_job",
+            job,
+            self._on_run_ok,
+            self._on_run_fail,
+            self._refresh_actions,
+        )
 
     def _on_run_progress(self, payload: dict[str, Any]) -> None:
         message = str(payload.get("message") or payload.get("stage") or "Working…")
         self._run_status.setText(message)
-        self._run_log += message + "\n"
-        self._run_log_label.setText(self._run_log.strip())
+        log = (self._run_log_label.text() + "\n" + message).strip()
+        self._run_log_label.setText(log[-4000:])
 
     def _on_run_ok(self, result: dict[str, Any]) -> None:
         self._run_skeleton.hide()
         self._cancel_btn.setEnabled(False)
         project = ProjectDir.instance()
         out = result.get("output_path") or self._run_output
+        meta = result.get("meta_path") or self._run_meta
         if not project.contains(out):
             self._run_status.setText("Run finished but output left the project sandbox.")
             self._refresh_actions()
             return
-        try:
-            write_run_metadata(
-                Path(self._run_meta),
-                input_path=self._dataset_path,
-                output_path=out,
-                plan=self._plan,
-                result=result,
-                plan_path=self._plan_path,
-            )
-        except OSError as exc:
-            self._run_status.setText(f"Run ok, metadata failed: {exc}")
         kind = result.get("output_kind", "?")
         lines = [
             f"Finished · {result.get('n_steps')} steps · {kind}",
+            f"Input: {self._run_input}",
             f"Output: {out}",
-            f"Metadata: {self._run_meta}",
+            f"Metadata: {meta}",
             f"sfreq={result.get('sfreq')}  mne={result.get('mne_version')}",
         ]
         if "n_epochs" in result:
@@ -558,44 +599,32 @@ class NeuroFlowPage(ScrollPage):
     def _on_run_fail(self, code: str, message: str) -> None:
         self._run_skeleton.hide()
         self._cancel_btn.setEnabled(False)
-        self._run_status.setText(f"Run failed ({code}): {message}")
+        if code == "cancelled":
+            self._run_status.setText("Run cancelled.")
+        else:
+            self._run_status.setText(f"Run failed ({code}): {message}")
         self._refresh_actions()
+
+    def _busy(self) -> bool:
+        return self._job is not None and self._job.is_running()
 
     def cancel_job(self) -> None:
-        if self._job and self._job.is_running():
-            self._job.request_interruption()
-            self._run_status.setText("Cancelling…")
-            # QThread interruption is cooperative; terminate as last resort for long MNE work.
-            thread = self._job._thread  # noqa: SLF001
-            thread.quit()
-            if not thread.wait(500):
-                thread.terminate()
-                thread.wait(1000)
-            self._run_status.setText("Run cancelled.")
-            self._run_skeleton.hide()
+        if not self._busy():
+            return
+        kind = self._job_kind or "job"
+        if cancel_bound_job(self, "_job"):
+            if kind == "run":
+                self._run_status.setText("Cancelling…")
+                self._run_skeleton.hide()
+            elif kind in {"fingerprint", "import"}:
+                self._fp_skeleton.hide()
+                self._fp_status.setText("Cancelled.")
             self._cancel_btn.setEnabled(False)
-            self._job = None
             self._refresh_actions()
 
-    def _bind_job(self, job: WorkerJob, on_ok, on_fail) -> None:
-        self._job = job
-
-        def ok(result: dict[str, Any]) -> None:
-            self._job = None
-            on_ok(result)
-
-        def fail(code: str, message: str) -> None:
-            self._job = None
-            on_fail(code, message)
-
-        job.finished.connect(ok)
-        job.failed.connect(fail)
-        job.start()
-        self._refresh_actions()
-
     def _refresh_actions(self) -> None:
-        busy = self._job is not None and self._job.is_running()
+        busy = self._busy()
         has_plan = bool(self._plan.get("steps"))
         self._run_btn.setEnabled(bool(self._dataset_path) and has_plan and not busy)
-        self._save_plan_btn.setEnabled(has_plan)
+        self._save_plan_btn.setEnabled(has_plan and not busy)
         self._cancel_btn.setEnabled(busy)

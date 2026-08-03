@@ -47,6 +47,8 @@ def train(
     config: dict[str, Any] | None = None,
     device: str = "cpu",
     on_progress: ProgressCb | None = None,
+    should_cancel: Callable[[], bool] | None = None,
+    allow_synthetic: bool = False,
 ) -> dict[str, Any]:
     """Train a template and write artifacts into *output_dir*."""
     in_path = Path(input_path).expanduser()
@@ -58,6 +60,8 @@ def train(
         raise TrainError("invalid_args", "output_dir is required")
     if not in_path.is_file():
         raise TrainError("file_not_found", f"input file not found: {in_path}")
+    if out_dir.exists() and out_dir.is_symlink():
+        raise TrainError("invalid_args", "output_dir must not be a symlink")
 
     template = find_template(template_id)
     if template is None:
@@ -96,6 +100,15 @@ def train(
     progress({"stage": "load", "message": "Preparing training data…"})
     x, y, data_mode, data_meta = _prepare_arrays(in_path, seed=seed)
 
+    if data_mode == "synthetic_demo" and not allow_synthetic:
+        note = data_meta.get("note") or data_meta.get("epochs_label_warning") or ""
+        raise TrainError(
+            "no_labels",
+            "No usable trial labels found in this file. "
+            "Train on labeled epochs/annotations (or a Flow run with real events), "
+            f"not unlabeled windows. {note}".strip(),
+        )
+
     n_classes = int(len(np.unique(y)))
     if n_classes < 2:
         raise TrainError(
@@ -105,14 +118,7 @@ def train(
     n_channels = int(x.shape[2])
     n_times = int(x.shape[3])
 
-    # Stratified-ish shuffle split (fallback to plain shuffle).
-    idx = np.arange(len(y))
-    rng = np.random.default_rng(seed)
-    rng.shuffle(idx)
-    split = max(1, int(0.8 * len(idx)))
-    train_idx, val_idx = idx[:split], idx[split:]
-    if len(val_idx) == 0:
-        val_idx = train_idx[: max(1, len(train_idx) // 5)]
+    train_idx, val_idx = _stratified_split(y, seed=seed)
 
     x_train = torch.tensor(x[train_idx], dtype=torch.float32)
     y_train = torch.tensor(y[train_idx], dtype=torch.long)
@@ -170,6 +176,8 @@ def train(
     )
 
     for epoch in range(1, epochs + 1):
+        if should_cancel and should_cancel():
+            raise TrainError("cancelled", "Training cancelled")
         model.train()
         running_loss = 0.0
         correct = 0
@@ -539,6 +547,37 @@ def _pack_trials(
     return x, y.astype(np.int64), data_mode, meta
 
 
+def _stratified_split(y: np.ndarray, *, seed: int, train_frac: float = 0.8) -> tuple[np.ndarray, np.ndarray]:
+    """Per-class shuffle split; falls back to a plain shuffle if needed."""
+    rng = np.random.default_rng(seed)
+    y = np.asarray(y)
+    train_parts: list[np.ndarray] = []
+    val_parts: list[np.ndarray] = []
+    for label in np.unique(y):
+        idx = np.flatnonzero(y == label)
+        rng.shuffle(idx)
+        if len(idx) == 1:
+            train_parts.append(idx)
+            continue
+        split = max(1, int(round(train_frac * len(idx))))
+        split = min(split, len(idx) - 1)
+        train_parts.append(idx[:split])
+        val_parts.append(idx[split:])
+    if not train_parts:
+        idx = np.arange(len(y))
+        rng.shuffle(idx)
+        split = max(1, int(train_frac * len(idx)))
+        return idx[:split], idx[split:] if split < len(idx) else idx[:1]
+    train_idx = np.concatenate(train_parts)
+    rng.shuffle(train_idx)
+    if val_parts:
+        val_idx = np.concatenate(val_parts)
+        rng.shuffle(val_idx)
+    else:
+        val_idx = train_idx[: max(1, len(train_idx) // 5)]
+    return train_idx, val_idx
+
+
 def _synthetic_demo(
     *, seed: int, meta: dict[str, Any]
 ) -> tuple[np.ndarray, np.ndarray, str, dict[str, Any]]:
@@ -584,14 +623,18 @@ def _build_model(
     import torch
     import torch.nn as nn
 
-    family = str(template.get("model_family", "eegnet"))
+    family = str(template.get("model_family", "eegnet")).lower()
     drop = float(config.get("drop_prob", 0.25))
     f1 = int(config.get("F1", config.get("n_filters_time", 8)))
-    k_time = max(8, min(32, max(8, n_times // 4)))
+    depth = int(config.get("D", config.get("depth_multiplier", 2)))
+    k_cfg = int(config.get("kernel_length", config.get("filter_time_length", 0)) or 0)
+    k_time = k_cfg if k_cfg >= 8 else max(8, min(32, max(8, n_times // 4)))
+    k_time = max(8, min(64, k_time))
 
     class TinyEEGNet(nn.Module):
         def __init__(self) -> None:
             super().__init__()
+            spatial_out = max(f1, f1 * max(1, depth))
             self.temporal = nn.Sequential(
                 nn.Conv2d(1, f1, kernel_size=(1, k_time), padding=(0, k_time // 2)),
                 nn.BatchNorm2d(f1),
@@ -600,8 +643,8 @@ def _build_model(
                 nn.Dropout(drop),
             )
             self.spatial = nn.Sequential(
-                nn.Conv2d(f1, f1 * 2, kernel_size=(n_channels, 1)),
-                nn.BatchNorm2d(f1 * 2),
+                nn.Conv2d(f1, spatial_out, kernel_size=(n_channels, 1)),
+                nn.BatchNorm2d(spatial_out),
                 nn.ELU(),
                 nn.AdaptiveAvgPool2d((1, 8)),
                 nn.Flatten(),
@@ -614,7 +657,28 @@ def _build_model(
         def forward(self, x):
             return self.classifier(self.spatial(self.temporal(x)))
 
-    _ = family
+    class TinyShallow(nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.features = nn.Sequential(
+                nn.Conv2d(1, f1, kernel_size=(1, k_time), padding=(0, k_time // 2)),
+                nn.Conv2d(f1, f1, kernel_size=(n_channels, 1)),
+                nn.BatchNorm2d(f1),
+                nn.ELU(),
+                nn.AvgPool2d(kernel_size=(1, 8)),
+                nn.Dropout(drop),
+                nn.Flatten(),
+            )
+            with torch.no_grad():
+                probe = torch.zeros(1, 1, n_channels, n_times)
+                n_in = int(self.features(probe).shape[-1])
+            self.classifier = nn.Linear(n_in, n_classes)
+
+        def forward(self, x):
+            return self.classifier(self.features(x))
+
+    if "shallow" in family:
+        return TinyShallow()
     return TinyEEGNet()
 
 

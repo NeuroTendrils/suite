@@ -146,15 +146,6 @@ QListWidget#settingsNav::item:selected {
 QLabel#groupLabel { color: @text; font-size: 15px; font-weight: 500; }
 QLabel#settingTitle { color: @text; font-size: 13px; font-weight: 600; }
 QLabel#settingDescription { color: @mutedText; font-size: 12px; }
-QPlainTextEdit#diagnosticsLog {
-    background-color: @sidebar;
-    color: @text;
-    border: 1px solid @border;
-    border-radius: 6px;
-    font-family: Menlo, Monaco, Consolas, monospace;
-    font-size: 11px;
-    padding: 8px;
-}
 QScrollArea#pageScroll { background: transparent; border: none; }
 QWidget#pageContent { background: transparent; }
 QFrame#emptyPanel {
@@ -162,7 +153,7 @@ QFrame#emptyPanel {
     border: 1px dashed @border;
     border-radius: 10px;
 }
-QFrame#filePanel, QFrame#fingerprintPanel, QFrame#upcomingPanel,
+QFrame#filePanel, QFrame#fingerprintPanel,
 QFrame#libraryPanel, QFrame#detailPanel {
     background-color: @sidebar;
     border: 1px solid @border;
@@ -252,7 +243,6 @@ QToolTip {
 
 class Theme(QObject):
     changed = Signal()
-    mode_changed = Signal(object)
 
     _instance: Theme | None = None
 
@@ -297,17 +287,8 @@ class Theme(QObject):
     def is_dark(self) -> bool:
         return self._dark
 
-    def accent_color(self) -> QColor:
-        return QColor(self._colors.accent)
-
-    def text_color(self) -> QColor:
-        return QColor(self._colors.text)
-
     def muted_text_color(self) -> QColor:
         return QColor(self._colors.muted_text)
-
-    def border_color(self) -> QColor:
-        return QColor(self._colors.border)
 
     def set_mode(self, mode: ThemeMode) -> None:
         if self._mode is mode:
@@ -315,7 +296,6 @@ class Theme(QObject):
         self._mode = mode
         QSettings(ORG, APP).setValue(THEME_KEY, mode.value)
         self.apply()
-        self.mode_changed.emit(mode)
 
     def system_uses_dark(self) -> bool:
         hints = QGuiApplication.styleHints()

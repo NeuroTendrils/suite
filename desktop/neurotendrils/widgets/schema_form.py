@@ -70,16 +70,17 @@ def collect_values(
         key = schema["id"]
         editor = editors[key]
         ptype = schema["type"]
-        if ptype == "boolean":
-            values[key] = editor.isChecked()  # type: ignore[attr-defined]
-        elif ptype == "enum":
-            values[key] = editor.currentText()  # type: ignore[attr-defined]
-        elif ptype == "string":
-            values[key] = editor.text()  # type: ignore[attr-defined]
-        elif ptype == "integer":
-            values[key] = int(round(editor.value()))  # type: ignore[attr-defined]
-        else:
-            values[key] = float(editor.value())  # type: ignore[attr-defined]
+        if isinstance(editor, QCheckBox):
+            values[key] = editor.isChecked()
+        elif isinstance(editor, QComboBox):
+            values[key] = editor.currentText()
+        elif isinstance(editor, QLineEdit):
+            values[key] = editor.text()
+        elif isinstance(editor, QDoubleSpinBox):
+            if ptype == "integer":
+                values[key] = int(round(editor.value()))
+            else:
+                values[key] = float(editor.value())
     return values
 
 

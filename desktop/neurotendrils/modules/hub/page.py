@@ -16,24 +16,18 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from neurotendrils.core.formatting import format_bytes
 from neurotendrils.core.library import LibraryEntry, scan_all
+from neurotendrils.core.projectdir import ProjectDir
+from neurotendrils.widgets.layoututil import clear_layout
 from neurotendrils.widgets.pageheader import PageHeader
 from neurotendrils.widgets.scroll_page import ScrollPage
-
-
-def _fmt_size(nbytes: int) -> str:
-    if nbytes < 1024:
-        return f"{nbytes} B"
-    if nbytes < 1024**2:
-        return f"{nbytes / 1024:.1f} KB"
-    return f"{nbytes / 1024**2:.1f} MB"
 
 
 class HubPage(ScrollPage):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self._entries: list[LibraryEntry] = []
-        self._selected: LibraryEntry | None = None
+        self._index: dict[str, list[LibraryEntry]] | None = None
 
         self.content_layout.addWidget(
             PageHeader(
@@ -45,16 +39,16 @@ class HubPage(ScrollPage):
         toolbar = QHBoxLayout()
         self._filter = QComboBox(self)
         self._filter.addItems(["All", "Plans", "Datasets", "Models"])
-        self._filter.currentTextChanged.connect(lambda *_: self.refresh())
+        self._filter.currentTextChanged.connect(lambda *_: self._render_list())
         refresh_btn = QPushButton("Refresh", self)
         refresh_btn.setObjectName("secondaryButton")
-        refresh_btn.clicked.connect(self.refresh)
+        refresh_btn.clicked.connect(lambda: self.refresh(force=True))
         toolbar.addWidget(self._filter)
         toolbar.addWidget(refresh_btn)
         toolbar.addStretch(1)
         self.content_layout.addLayout(toolbar)
 
-        self.content_layout.addWidget(self._label("Local library"))
+        self.content_layout.addWidget(self.section_label("Local library"))
         self._list_host = QVBoxLayout()
         self._list_host.setSpacing(8)
         list_widget = QWidget(self)
@@ -65,7 +59,7 @@ class HubPage(ScrollPage):
         pl.addWidget(list_widget)
         self.content_layout.addWidget(panel)
 
-        self.content_layout.addWidget(self._label("Details"))
+        self.content_layout.addWidget(self.section_label("Details"))
         self._detail = QLabel("Select an item to see details.", self)
         self._detail.setObjectName("fileMetaLabel")
         self._detail.setWordWrap(True)
@@ -87,7 +81,7 @@ class HubPage(ScrollPage):
         dl.addLayout(actions)
         self.content_layout.addWidget(detail_panel)
 
-        self.content_layout.addWidget(self._label("Cloud"))
+        self.content_layout.addWidget(self.section_label("Cloud"))
         cloud = QLabel(
             "Sign in and cloud storage will appear here. "
             "The Hub website will browse the same library online.",
@@ -97,25 +91,22 @@ class HubPage(ScrollPage):
         cloud.setWordWrap(True)
         self.content_layout.addWidget(cloud)
         self.content_layout.addStretch(1)
-        self.refresh()
+
+        ProjectDir.instance().root_changed.connect(lambda *_: self.refresh(force=True))
 
     def showEvent(self, event) -> None:  # noqa: N802
         super().showEvent(event)
-        self.refresh()
+        if self._index is None:
+            self.refresh(force=True)
 
-    def _label(self, text: str) -> QLabel:
-        label = QLabel(text, self)
-        label.setObjectName("groupLabel")
-        return label
+    def refresh(self, *, force: bool = False) -> None:
+        if force or self._index is None:
+            self._index = scan_all()
+        self._render_list()
 
-    def refresh(self) -> None:
-        while self._list_host.count():
-            item = self._list_host.takeAt(0)
-            w = item.widget()
-            if w:
-                w.deleteLater()
-
-        index = scan_all()
+    def _render_list(self) -> None:
+        clear_layout(self._list_host)
+        index = self._index or {"plans": [], "datasets": [], "models": []}
         kind_filter = self._filter.currentText().lower()
         entries: list[LibraryEntry] = []
         if kind_filter in {"all", "plans"}:
@@ -124,7 +115,6 @@ class HubPage(ScrollPage):
             entries.extend(index["datasets"])
         if kind_filter in {"all", "models"}:
             entries.extend(index["models"])
-        self._entries = entries
 
         if not entries:
             empty = QLabel("No local items yet.", self)
@@ -154,18 +144,21 @@ class HubPage(ScrollPage):
             self._list_host.addWidget(row)
 
     def show_details(self, entry: LibraryEntry) -> None:
-        self._selected = entry
         modified = datetime.fromtimestamp(entry.modified).strftime("%Y-%m-%d %H:%M")
         lines = [
             f"{entry.kind.title()}: {entry.title}",
             f"Path: {entry.path}",
-            f"Size: {_fmt_size(entry.size_bytes)}",
+            f"Size: {format_bytes(entry.size_bytes)}",
             f"Modified: {modified}",
         ]
         if entry.kind == "plan":
             lines.append(f"Steps: {entry.extra.get('steps')}")
-            if entry.extra.get("dataset_path"):
-                lines.append(f"Dataset: {entry.extra['dataset_path']}")
+            dataset_path = str(entry.extra.get("dataset_path") or "")
+            if dataset_path:
+                if ProjectDir.instance().contains(dataset_path):
+                    lines.append(f"Dataset: {dataset_path}")
+                else:
+                    lines.append("Dataset: (outside project)")
         if entry.kind == "model":
             lines.append(f"Template: {entry.extra.get('template_id')}")
             lines.append(f"Format: {entry.extra.get('format')}")
@@ -178,7 +171,6 @@ class HubPage(ScrollPage):
                 )
             publish = entry.extra.get("publish") or {}
             lines.append(f"Publish: {publish.get('status', 'local')}")
-        # Ensure path exists for display confidence
         if not Path(entry.path).exists():
             lines.append("Warning: path is missing on disk.")
         self._detail.setText("\n".join(lines))

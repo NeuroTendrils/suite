@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from neurotendrils.core.naming import sanitize_base_name, unique_path
+from neurotendrils.core.naming import sanitize_base_name, unique_dir, unique_path
 from neurotendrils.core.projectdir import ProjectDir
 
 ICA_SEED = 42
@@ -16,6 +16,9 @@ TARGET_SFREQ = 250.0
 RESAMPLE_IF_ABOVE = 256.0
 MIN_CHANNELS_FOR_ICA = 8
 MIN_DURATION_FOR_ICA = 30.0
+
+# Steps that only operate on continuous Raw (must not follow epoch).
+_RAW_ONLY_STEPS = frozenset({"filter", "notch", "reref", "resample", "ica"})
 
 
 def step_catalog():
@@ -53,7 +56,28 @@ def make_step(step_id: str, params: dict[str, Any], rationale: str = "") -> dict
     }
 
 
+def _infer_line_freq(fingerprint: dict[str, Any]) -> str:
+    """Prefer 50 Hz outside the Americas when fingerprint has no cue."""
+    for key in ("line_freq", "power_line_freq"):
+        value = fingerprint.get(key)
+        if value in (50, 50.0, "50"):
+            return "50"
+        if value in (60, 60.0, "60"):
+            return "60"
+    try:
+        import locale
+
+        loc = (locale.getlocale()[0] or "").upper()
+    except Exception:  # noqa: BLE001
+        loc = ""
+    # Rough: North America / parts of Asia / South America use 60 Hz.
+    if any(tag in loc for tag in ("_US", "_CA", "_MX", "_BR", "_KR", "_TW", "_PH")):
+        return "60"
+    return "50"
+
+
 def from_fingerprint(fingerprint: dict[str, Any]) -> dict[str, Any]:
+    """Recommend a continuous-data preprocess plan (no unlabeled epoching)."""
     if not fingerprint:
         return {"v": 1, "steps": []}
 
@@ -61,32 +85,45 @@ def from_fingerprint(fingerprint: dict[str, Any]) -> dict[str, Any]:
     duration = float(fingerprint.get("duration_sec") or 0)
     n_channels = int(fingerprint.get("n_channels") or 0)
     types = fingerprint.get("ch_types") or []
-    eeg_like = 0
-    for t in types:
-        if str(t).lower() in {"eeg", "eog"}:
-            eeg_like += 1
+    eeg_like = sum(1 for t in types if str(t).lower() in {"eeg", "eog"})
     if eeg_like == 0:
         eeg_like = n_channels
 
+    highpass = fingerprint.get("highpass")
+    lowpass = fingerprint.get("lowpass")
     steps: list[dict[str, Any]] = []
 
-    filter_params = default_params("filter")
-    if sfreq > 0:
-        nyquist = sfreq / 2.0
-        h_freq = float(filter_params.get("h_freq") or 0)
-        if h_freq >= nyquist:
-            filter_params["h_freq"] = max(1.0, nyquist * 0.9)
-    steps.append(
-        make_step(
-            "filter",
-            filter_params,
-            "Remove slow drift and high-frequency noise before later steps.",
-        )
+    # Skip refiltering when the recording already has a sensible bandpass.
+    already_filtered = (
+        highpass is not None
+        and lowpass is not None
+        and float(highpass) >= 0.5
+        and float(lowpass) <= 80.0
     )
+    if not already_filtered:
+        filter_params = default_params("filter")
+        if sfreq > 0:
+            nyquist = sfreq / 2.0
+            h_freq = float(filter_params.get("h_freq") or 0)
+            if h_freq >= nyquist:
+                filter_params["h_freq"] = max(1.0, nyquist * 0.9)
+        steps.append(
+            make_step(
+                "filter",
+                filter_params,
+                "Remove slow drift and high-frequency noise before later steps.",
+            )
+        )
 
     notch_params = default_params("notch")
-    notch_params["freq"] = "60"
-    steps.append(make_step("notch", notch_params, "Attenuate power-line interference."))
+    notch_params["freq"] = _infer_line_freq(fingerprint)
+    steps.append(
+        make_step(
+            "notch",
+            notch_params,
+            f"Attenuate ~{notch_params['freq']} Hz power-line interference.",
+        )
+    )
 
     if eeg_like >= 2:
         steps.append(
@@ -117,13 +154,9 @@ def from_fingerprint(fingerprint: dict[str, Any]) -> dict[str, Any]:
             )
         )
 
-    steps.append(
-        make_step(
-            "epoch",
-            default_params("epoch"),
-            "Segment continuous data into fixed-length windows.",
-        )
-    )
+    # Do NOT auto-append unlabeled fixed-length epochs — that produces a single
+    # event class and causes Studio to fall back to synthetic training data.
+    # Users can add Epoch manually when they have event/annotation labels.
     return {"v": 1, "steps": steps}
 
 
@@ -135,18 +168,26 @@ def validate_plan(plan: dict[str, Any]) -> str | None:
     steps = plan.get("steps")
     if not isinstance(steps, list) or not steps:
         return "Plan must contain a nonempty steps array."
+    seen_epoch = False
     for index, step in enumerate(steps):
         if not isinstance(step, dict):
             return f"Step {index} must be an object."
-        step_id = step.get("step_id")
-        if not step_id or find_step(str(step_id)) is None:
+        step_id = str(step.get("step_id") or "")
+        if not step_id or find_step(step_id) is None:
             return f"Unknown step_id at index {index}."
         params = step.get("params")
         if not isinstance(params, dict):
             return f"Step {step_id}: params must be an object."
-        err = validate_step_params(str(step_id), params)
+        err = validate_step_params(step_id, params)
         if err:
             return err
+        if step_id == "epoch":
+            seen_epoch = True
+        elif seen_epoch and step_id in _RAW_ONLY_STEPS:
+            return (
+                f"Step {step_id} at index {index} cannot run after epoch "
+                "(Raw-only step after epoched data)."
+            )
     return None
 
 
@@ -187,12 +228,10 @@ def load_plan(path: str | Path) -> dict[str, Any]:
 
 
 def suggest_run_paths(base_name: str) -> tuple[Path, Path]:
-    from datetime import datetime
-
     project = ProjectDir.instance()
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     stem = f"{sanitize_base_name(base_name, 'run')}_{stamp}"
-    run_dir = project.runs_dir() / stem
+    run_dir = unique_dir(project.runs_dir(), stem)
     run_dir.mkdir(parents=True, exist_ok=False)
     return run_dir / "cleaned.fif", run_dir / "run.json"
 
@@ -206,6 +245,8 @@ def write_run_metadata(
     result: dict[str, Any],
     plan_path: str | None = None,
 ) -> None:
+    project = ProjectDir.instance()
+    safe_meta = project.require_contains(meta_path, "run metadata")
     payload: dict[str, Any] = {
         "v": 1,
         "saved_at": datetime.now(timezone.utc).isoformat(),
@@ -217,5 +258,5 @@ def write_run_metadata(
     }
     if plan_path:
         payload["plan_path"] = plan_path
-    meta_path.parent.mkdir(parents=True, exist_ok=True)
-    meta_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    safe_meta.parent.mkdir(parents=True, exist_ok=True)
+    safe_meta.write_text(json.dumps(payload, indent=2), encoding="utf-8")

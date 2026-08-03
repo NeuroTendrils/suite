@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QScrollArea, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QLabel, QScrollArea, QVBoxLayout, QWidget
 
 
 class ScrollPage(QWidget):
@@ -23,3 +23,8 @@ class ScrollPage(QWidget):
         self.content_layout.setSpacing(18)
         scroll.setWidget(self.content)
         outer.addWidget(scroll)
+
+    def section_label(self, text: str) -> QLabel:
+        label = QLabel(text, self)
+        label.setObjectName("groupLabel")
+        return label

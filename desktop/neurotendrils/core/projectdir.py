@@ -127,7 +127,20 @@ class ProjectDir(QObject):
             return resolved == resolved_root
 
     def require_contains(self, path: str | Path, label: str = "path") -> Path:
-        resolved = resolve_path(path)
+        """Resolve *path* and require it stays inside the project root.
+
+        Uses realpath so symlink write-through outside the project is rejected.
+        """
+        raw = Path(path).expanduser()
+        resolved = resolve_path(raw)
         if not self.contains(resolved):
             raise PermissionError(f"{label} must be inside the project folder")
+        if raw.exists() or raw.parent.exists():
+            try:
+                real = Path(os.path.realpath(str(raw if raw.exists() else raw.parent)))
+            except OSError:
+                real = resolved
+            check = real if raw.exists() else real / raw.name
+            if not self.contains(check):
+                raise PermissionError(f"{label} resolves outside the project folder")
         return resolved

@@ -12,6 +12,7 @@ def main(argv: list[str] | None = None) -> int:
 
     from PySide6.QtWidgets import QApplication
 
+    from neurotendrils import __version__
     from neurotendrils.core.projectdir import ProjectDir
     from neurotendrils.core.theme import Theme
     from neurotendrils.mainwindow import MainWindow
@@ -19,7 +20,7 @@ def main(argv: list[str] | None = None) -> int:
     app = QApplication(argv or sys.argv)
     app.setOrganizationName("NeuroTendrils")
     app.setApplicationName("NeuroTendrils")
-    app.setApplicationVersion("0.1.0")
+    app.setApplicationVersion(__version__)
 
     Theme.instance().initialize(app)
     ProjectDir.instance().initialize()

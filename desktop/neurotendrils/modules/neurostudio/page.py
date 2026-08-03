@@ -21,43 +21,47 @@ from PySide6.QtWidgets import (
 
 from neurotendrils.core.dataset_io import select_studio_path
 from neurotendrils.core.eeg_formats import extension_badge, studio_file_filter
-from neurotendrils.core.jobs import WorkerJob, export_job, train_job
+from neurotendrils.core.formatting import format_bytes
+from neurotendrils.core.jobs import (
+    WorkerJob,
+    cancel_bound_job,
+    export_job,
+    start_bound_job,
+    train_job,
+)
 from neurotendrils.core.projectdir import ProjectDir
 from neurotendrils.core.studio_io import (
     default_config,
+    ensure_model_hub_fields,
     find_template,
     recommend,
     suggest_export_dir,
     suggest_train_dir,
     template_catalog,
     validate_config,
-    write_model_sidecar,
 )
+from neurotendrils.widgets.layoututil import clear_layout
 from neurotendrils.widgets.pageheader import PageHeader
 from neurotendrils.widgets.schema_form import SchemaEditDialog, SchemaFormWidget
 from neurotendrils.widgets.scroll_page import ScrollPage
 from neurotendrils.widgets.skeleton import SkeletonLoader
 
 
-def _fmt_size(nbytes: int) -> str:
-    if nbytes < 1024**2:
-        return f"{nbytes / 1024:.1f} KB"
-    return f"{nbytes / 1024**2:.1f} MB"
-
-
 class NeuroStudioPage(ScrollPage):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._dataset_path = ""
-        self._dataset_kind = ""
         self._selected_template = ""
         self._suggested_template = ""
         self._configs: dict[str, dict[str, Any]] = {}
         self._rationales: dict[str, str] = {}
         self._job: WorkerJob | None = None
-        self._train_dir = ""
+        self._job_token = 0
+        self._job_kind = ""
+        self._template_pinned = False
         self._last_train: dict[str, Any] = {}
         self._train_log = ""
+        self._catalog_cache: list[dict[str, Any]] | None = None
 
         self.content_layout.addWidget(
             PageHeader(
@@ -73,13 +77,8 @@ class NeuroStudioPage(ScrollPage):
         self.content_layout.addStretch(1)
         self._refresh()
 
-    def _section(self, text: str) -> QLabel:
-        label = QLabel(text, self)
-        label.setObjectName("groupLabel")
-        return label
-
     def _build_dataset(self) -> None:
-        self.content_layout.addWidget(self._section("Training data"))
+        self.content_layout.addWidget(self.section_label("Training data"))
         self._data_stack = QStackedWidget(self)
         empty = QFrame(self)
         empty.setObjectName("emptyPanel")
@@ -133,7 +132,7 @@ class NeuroStudioPage(ScrollPage):
         self.content_layout.addWidget(self._data_stack)
 
     def _build_templates(self) -> None:
-        self.content_layout.addWidget(self._section("Templates"))
+        self.content_layout.addWidget(self.section_label("Templates"))
         self._templates_status = QLabel("Select training data to see recommendations.", self)
         self._templates_status.setObjectName("fileMetaLabel")
         self._template_list = QVBoxLayout()
@@ -145,7 +144,7 @@ class NeuroStudioPage(ScrollPage):
         self._render_templates()
 
     def _build_tune(self) -> None:
-        self.content_layout.addWidget(self._section("Tune"))
+        self.content_layout.addWidget(self.section_label("Tune"))
         self._tune_form = SchemaFormWidget(self)
         self._tune_form.values_changed.connect(self._on_tune_changed)
         self._tune_error = QLabel("", self)
@@ -159,7 +158,7 @@ class NeuroStudioPage(ScrollPage):
         self.content_layout.addWidget(reset, alignment=Qt.AlignmentFlag.AlignLeft)
 
     def _build_train(self) -> None:
-        self.content_layout.addWidget(self._section("Train"))
+        self.content_layout.addWidget(self.section_label("Train"))
         device_row = QHBoxLayout()
         device_row.addWidget(QLabel("Device", self))
         self._device = QComboBox(self)
@@ -195,7 +194,7 @@ class NeuroStudioPage(ScrollPage):
         self.content_layout.addLayout(row)
 
     def _build_export(self) -> None:
-        self.content_layout.addWidget(self._section("Export"))
+        self.content_layout.addWidget(self.section_label("Export"))
         fmt_row = QHBoxLayout()
         fmt_row.addWidget(QLabel("Format", self))
         self._export_format = QComboBox(self)
@@ -237,40 +236,57 @@ class NeuroStudioPage(ScrollPage):
         )
         if not path:
             return
+        if self._job is not None and self._job.is_running():
+            QMessageBox.information(self, "Busy", "Wait for the current job to finish.")
+            return
         try:
             resolved, kind = select_studio_path(path)
         except (OSError, ValueError, PermissionError) as exc:
             QMessageBox.warning(self, "Invalid data", str(exc))
             return
         self._dataset_path = resolved
-        self._dataset_kind = kind
         p = Path(resolved)
         self._file_name.setText(p.name)
         self._file_badge.setText(extension_badge(resolved))
-        self._file_meta.setText(f"{_fmt_size(p.stat().st_size)} · {kind}")
+        self._file_meta.setText(f"{format_bytes(p.stat().st_size)} · {kind}")
         self._file_path.setText(resolved)
         self._data_stack.setCurrentIndex(1)
         self._suggested_template, self._rationales = recommend(resolved, kind)
-        if not self._selected_template:
-            self.select_template(self._suggested_template)
-        self._render_templates()
+        if not self._template_pinned or not self._selected_template:
+            self.select_template(self._suggested_template, pinned=False)
+        else:
+            self._render_templates()
         self._refresh()
 
     def clear_dataset(self) -> None:
+        if self._job is not None and self._job.is_running():
+            QMessageBox.information(self, "Busy", "Wait for the current job to finish.")
+            return
         self.cancel_job()
         self._dataset_path = ""
-        self._dataset_kind = ""
+        self._selected_template = ""
+        self._suggested_template = ""
+        self._template_pinned = False
+        self._rationales = {}
+        self._configs = {}
+        self._last_train = {}
+        self._train_log = ""
         self._data_stack.setCurrentIndex(0)
+        self._train_result.clear()
+        self._train_log_label.clear()
+        self._train_status.setText("Ready when data and a template are selected.")
+        self._export_result.clear()
+        self._export_status.setText("Export a trained checkpoint.")
+        self._tune_form.set_schemas([], {})
         self._templates_status.setText("Select training data to see recommendations.")
+        self._render_templates()
         self._refresh()
 
     def _render_templates(self) -> None:
-        while self._template_list.count():
-            item = self._template_list.takeAt(0)
-            w = item.widget()
-            if w:
-                w.deleteLater()
-        for tmpl in template_catalog():
+        clear_layout(self._template_list)
+        if self._catalog_cache is None:
+            self._catalog_cache = template_catalog()
+        for tmpl in self._catalog_cache:
             tid = tmpl["id"]
             row = QFrame(self)
             row.setObjectName("templateRow")
@@ -312,8 +328,9 @@ class NeuroStudioPage(ScrollPage):
                 f"Suggested: {self._suggested_template or '—'}"
             )
 
-    def select_template(self, template_id: str) -> None:
+    def select_template(self, template_id: str, *, pinned: bool = True) -> None:
         self._selected_template = template_id
+        self._template_pinned = pinned
         if template_id not in self._configs:
             self._configs[template_id] = default_config(template_id)
         tmpl = find_template(template_id)
@@ -378,26 +395,29 @@ class NeuroStudioPage(ScrollPage):
         except OSError as exc:
             QMessageBox.warning(self, "Train failed", str(exc))
             return
-        self._train_dir = str(out_dir)
         self._train_log = ""
         self._train_status.setText("Training…")
         self._train_skeleton.show()
         self._train_result.clear()
+        self._job_kind = "train"
         job = train_job(
             input_path=self._dataset_path,
-            output_dir=self._train_dir,
+            output_dir=str(out_dir),
             template_id=self._selected_template,
             config=config,
             device=self._device.currentText(),
         )
         job.progress.connect(self._on_train_progress)
-        self._bind_job(job, self._on_train_ok, self._on_train_fail)
+        start_bound_job(
+            self, "_job", job, self._on_train_ok, self._on_train_fail, self._refresh
+        )
 
     def _on_train_progress(self, payload: dict[str, Any]) -> None:
         message = str(payload.get("message") or payload)
         if "epoch" in payload:
+            total = payload.get("total_epochs", payload.get("epochs", "?"))
             message = (
-                f"epoch {payload.get('epoch')}/{payload.get('epochs')}  "
+                f"epoch {payload.get('epoch')}/{total}  "
                 f"loss={payload.get('loss')}  acc={payload.get('accuracy')}"
             )
         self._train_status.setText(message)
@@ -413,9 +433,11 @@ class NeuroStudioPage(ScrollPage):
             self._refresh()
             return
         metrics = result.get("metrics") or {}
+        mode = result.get("data_mode", "?")
         self._train_result.setText(
             "\n".join(
                 [
+                    f"data_mode={mode}",
                     f"accuracy={metrics.get('accuracy')}  "
                     f"balanced={metrics.get('balanced_accuracy')}",
                     f"checkpoint: {ckpt}",
@@ -429,7 +451,12 @@ class NeuroStudioPage(ScrollPage):
 
     def _on_train_fail(self, code: str, message: str) -> None:
         self._train_skeleton.hide()
-        self._train_status.setText(f"Train failed ({code}): {message}")
+        if code == "cancelled":
+            self._train_status.setText("Training cancelled.")
+        else:
+            self._train_status.setText(f"Train failed ({code}): {message}")
+            if code == "no_labels":
+                QMessageBox.warning(self, "No labels", message)
         self._refresh()
 
     def start_export(self) -> None:
@@ -438,73 +465,65 @@ class NeuroStudioPage(ScrollPage):
             return
         if self._job and self._job.is_running():
             return
+        if self._last_train.get("data_mode") == "synthetic_demo":
+            QMessageBox.warning(
+                self,
+                "Export blocked",
+                "This checkpoint was trained on synthetic demo data and cannot be exported.",
+            )
+            return
         fmt = self._export_format.currentText()
         out_dir = suggest_export_dir(self._selected_template, fmt)
         self._export_status.setText("Exporting…")
+        self._job_kind = "export"
         job = export_job(
             checkpoint_path=ckpt,
             output_dir=str(out_dir),
             format=fmt,
             train_meta_path=self._last_train.get("train_meta_path"),
         )
-        self._bind_job(
+        start_bound_job(
+            self,
+            "_job",
             job,
-            lambda result: self._on_export_ok(result, out_dir, fmt),
+            lambda result: self._on_export_ok(result, out_dir),
             self._on_export_fail,
+            self._refresh,
         )
 
-    def _on_export_ok(self, result: dict[str, Any], out_dir: Path, fmt: str) -> None:
+    def _on_export_ok(self, result: dict[str, Any], out_dir: Path) -> None:
         artifact = result.get("artifact_path") or result.get("output_path") or ""
         if artifact and not ProjectDir.instance().contains(artifact):
             self._export_status.setText("Export left the project sandbox.")
             return
-        artifact_name = Path(artifact).name if artifact else "model"
         try:
-            write_model_sidecar(
-                out_dir,
-                template_id=self._selected_template,
-                fmt=fmt,
-                artifact_name=artifact_name,
-                metrics=self._last_train.get("metrics"),
-            )
-        except OSError:
-            pass
+            ensure_model_hub_fields(out_dir)
+        except (OSError, PermissionError) as exc:
+            self._export_status.setText(f"Export ok, Hub fields failed: {exc}")
+            self._export_result.setText(f"Exported to {out_dir}\n{artifact}")
+            return
         self._export_result.setText(f"Exported to {out_dir}\n{artifact}")
         self._export_status.setText("Export complete.")
         self._refresh()
 
     def _on_export_fail(self, code: str, message: str) -> None:
-        self._export_status.setText(f"Export failed ({code}): {message}")
+        if code == "cancelled":
+            self._export_status.setText("Export cancelled.")
+        else:
+            self._export_status.setText(f"Export failed ({code}): {message}")
         self._refresh()
 
     def cancel_job(self) -> None:
-        if self._job and self._job.is_running():
-            thread = self._job._thread  # noqa: SLF001
-            thread.requestInterruption()
-            thread.quit()
-            if not thread.wait(500):
-                thread.terminate()
-                thread.wait(1000)
-            self._job = None
-            self._train_skeleton.hide()
-            self._train_status.setText("Cancelled.")
+        if self._job is None or not self._job.is_running():
+            return
+        kind = self._job_kind
+        if cancel_bound_job(self, "_job"):
+            if kind == "export":
+                self._export_status.setText("Cancelling…")
+            else:
+                self._train_skeleton.hide()
+                self._train_status.setText("Cancelling…")
             self._refresh()
-
-    def _bind_job(self, job: WorkerJob, on_ok, on_fail) -> None:
-        self._job = job
-
-        def ok(result: dict[str, Any]) -> None:
-            self._job = None
-            on_ok(result)
-
-        def fail(code: str, message: str) -> None:
-            self._job = None
-            on_fail(code, message)
-
-        job.finished.connect(ok)
-        job.failed.connect(fail)
-        job.start()
-        self._refresh()
 
     def _refresh(self) -> None:
         busy = self._job is not None and self._job.is_running()

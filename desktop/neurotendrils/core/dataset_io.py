@@ -8,10 +8,43 @@ from pathlib import Path
 from neurotendrils.core.eeg_formats import (
     IMPORT_SUFFIXES,
     STUDIO_SUFFIXES,
+    matched_suffix,
     matches_suffix,
 )
 from neurotendrils.core.naming import sanitize_base_name, unique_path
 from neurotendrils.core.projectdir import ProjectDir
+
+# Primary suffix → companion suffixes that must travel with it.
+_COMPANIONS: dict[str, tuple[str, ...]] = {
+    "vhdr": ("eeg", "vmrk"),
+    "eeg": ("vhdr", "vmrk"),
+    "set": ("fdt",),
+}
+
+
+def _companion_sources(source: Path, primary_suffix: str) -> list[Path]:
+    extras: list[Path] = []
+    for ext in _COMPANIONS.get(primary_suffix, ()):
+        candidate = source.with_suffix("." + ext)
+        # BrainVision uses .vhdr/.eeg/.vmrk with the same stem.
+        if not candidate.is_file() and primary_suffix in {"vhdr", "eeg"}:
+            candidate = source.parent / f"{source.stem}.{ext}"
+        if candidate.is_file() and candidate != source:
+            extras.append(candidate)
+    # EEGLAB .set may sit beside stem.fdt
+    if primary_suffix == "set":
+        fdt = source.with_suffix(".fdt")
+        if fdt.is_file():
+            extras.append(fdt)
+    # Deduplicate while preserving order
+    seen: set[Path] = set()
+    unique: list[Path] = []
+    for path in extras:
+        resolved = path.resolve()
+        if resolved not in seen:
+            seen.add(resolved)
+            unique.append(path)
+    return unique
 
 
 def import_recording(source_path: str) -> tuple[str, bool]:
@@ -27,19 +60,19 @@ def import_recording(source_path: str) -> tuple[str, bool]:
         return str(source), False
 
     stem = sanitize_base_name(source.stem, "recording")
-    # Preserve compound suffixes like .fif.gz
-    name = source.name
-    lower = name.lower()
-    suffix = ""
-    for s in IMPORT_SUFFIXES:
-        if lower.endswith("." + s):
-            suffix = "." + s
-            break
-    if not suffix:
-        suffix = source.suffix
+    matched = matched_suffix(str(source), IMPORT_SUFFIXES) or source.suffix.lstrip(".")
+    suffix = f".{matched}" if matched else source.suffix
 
     dest = unique_path(project.datasets_dir(), stem, suffix)
+    dest.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(source, dest)
+
+    # Copy format companions next to the primary file (same dest stem).
+    for companion in _companion_sources(source, matched):
+        dest_extra = dest.with_name(dest.stem + companion.suffix)
+        if not dest_extra.exists():
+            shutil.copy2(companion, dest_extra)
+
     return str(dest.resolve()), True
 
 
@@ -48,18 +81,19 @@ def select_studio_path(path: str) -> tuple[str, str]:
     project = ProjectDir.instance()
     p = Path(path).expanduser().resolve()
     if p.is_dir():
-        cleaned = p / "cleaned.fif"
-        if cleaned.is_file():
-            p = cleaned
+        for name in ("cleaned-epo.fif", "cleaned_epo.fif", "cleaned.fif"):
+            candidate = p / name
+            if candidate.is_file():
+                p = candidate
+                break
         else:
-            raise FileNotFoundError("Directory has no cleaned.fif")
+            raise FileNotFoundError("Directory has no cleaned.fif / cleaned-epo.fif")
 
     if not p.is_file():
         raise FileNotFoundError(f"Training data not found: {p}")
     if not matches_suffix(str(p), STUDIO_SUFFIXES):
         raise ValueError("Unsupported training data format")
-    if not project.contains(p):
-        raise PermissionError("Training data must be inside the project folder")
+    project.require_contains(p, "Training data")
 
     runs = project.runs_dir().resolve()
     datasets = project.datasets_dir().resolve()
