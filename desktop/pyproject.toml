@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "neurotendrils"
+version = "0.1.0"
+description = "NeuroTendrils desktop suite (PySide6)"
+requires-python = ">=3.10"
+dependencies = ["PySide6>=6.6"]
+
+[project.scripts]
+neurotendrils = "neurotendrils.main:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["neurotendrils*"]

@@ -1,4 +1,4 @@
-"""Argv-only CLI entry for NeuroStudio.
+"""CLI entry for NeuroStudio.
 
 Invoked as: python -m neurostudio <command> [args...]
 
@@ -12,7 +12,6 @@ import json
 import sys
 
 from . import __version__
-from .ipc import run_ipc_loop
 from .templates import catalog as template_catalog
 
 
@@ -37,12 +36,6 @@ def build_parser() -> argparse.ArgumentParser:
     )
     catalog_cmd.set_defaults(handler=cmd_catalog)
 
-    ipc = subparsers.add_parser(
-        "ipc",
-        help="JSON-lines IPC server on stdin/stdout",
-    )
-    ipc.set_defaults(handler=cmd_ipc)
-
     return parser
 
 
@@ -66,10 +59,6 @@ def cmd_catalog(_args: argparse.Namespace) -> int:
     sys.stdout.write("\n")
     sys.stdout.flush()
     return 0
-
-
-def cmd_ipc(_args: argparse.Namespace) -> int:
-    return run_ipc_loop()
 
 
 def main(argv: list[str] | None = None) -> int:

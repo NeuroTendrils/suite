@@ -96,10 +96,21 @@ def export_model(
             on_progress(payload)
 
     progress({"stage": "load", "message": "Loading checkpoint…"})
+    # weights_only=True blocks pickle-based code execution from untrusted .pt files.
     try:
-        blob = torch.load(ckpt_path, map_location="cpu", weights_only=False)
+        blob = torch.load(ckpt_path, map_location="cpu", weights_only=True)
     except TypeError:
-        blob = torch.load(ckpt_path, map_location="cpu")
+        # Older torch without weights_only — refuse rather than falling back to pickle.
+        raise ExportError(
+            "unsafe_torch",
+            "PyTorch is too old for safe checkpoint loading; upgrade torch "
+            "so weights_only=True is available",
+        ) from None
+    except Exception as exc:
+        raise ExportError(
+            "invalid_checkpoint",
+            f"could not safely load checkpoint: {exc}",
+        ) from exc
     if not isinstance(blob, dict) or "model_state" not in blob:
         raise ExportError("invalid_checkpoint", "checkpoint is missing model_state")
 

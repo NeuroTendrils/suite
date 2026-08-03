@@ -1,9 +1,7 @@
-# NeuroStudio train + export stack (Phases 6–7).
 torch>=2.1
 numpy>=1.24
 scikit-learn>=1.3
 safetensors>=0.4
 onnx>=1.15
 onnxscript>=0.1.0
-# Optional: braindecode installs separately if users want catalog backends.
-# braindecode>=0.8
+braindecode>=0.8
