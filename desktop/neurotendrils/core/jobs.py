@@ -308,6 +308,38 @@ def train_job(
     return job
 
 
+def run_dataset_plan_job(
+    *,
+    dataset_path: str,
+    plan: dict[str, Any],
+) -> WorkerJob:
+    """Clean every member of a dataset manifest with a NeuroFlow plan."""
+    _assert_in_project(dataset_path)
+    job = WorkerJob()
+    root = ProjectDir.instance().root
+    plan_snapshot = deepcopy(plan)
+
+    def work() -> dict[str, Any]:
+        from neurotendrils.core.dataset_clean import (
+            DatasetCleanError,
+            clean_dataset_with_plan,
+        )
+
+        try:
+            return clean_dataset_with_plan(
+                dataset_path,
+                plan_snapshot,
+                project_root=root,
+                on_progress=lambda payload: job.progress.emit(payload),
+                should_cancel=job.is_cancelled,
+            )
+        except DatasetCleanError as exc:
+            raise RuntimeError(exc.message) from exc
+
+    job.set_work(work)
+    return job
+
+
 def create_dataset_job(
     *,
     sources: list[str],

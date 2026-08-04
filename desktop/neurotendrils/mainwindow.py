@@ -300,13 +300,8 @@ class MainWindow(QMainWindow):
         self.flow.import_recording()
 
     def open_dataset_in_flow(self, path: str) -> None:
-        from neurotendrils.core.dataset_manifest import is_dataset_manifest
-
-        # Multi-file manifests are Studio training units; single files go to Flow.
-        if is_dataset_manifest(path):
-            self.navigate("studio")
-            self.studio.set_dataset(path)
-            return
+        # Recordings and multi-file datasets both open in Flow (clean / fingerprint).
+        # Train on the (cleaned) dataset from NeuroStudio.
         self.navigate("flow")
         self.flow.set_dataset_path(path, False)
 

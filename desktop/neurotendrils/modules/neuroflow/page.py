@@ -19,6 +19,12 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from neurotendrils.core.dataset_manifest import (
+    inspect_manifest_light,
+    is_dataset_manifest,
+    load_manifest,
+    resolve_member_path,
+)
 from neurotendrils.core.eeg_formats import (
     extension_badge,
     import_file_filter,
@@ -30,6 +36,7 @@ from neurotendrils.core.jobs import (
     cancel_bound_job,
     fingerprint_job,
     import_recording_job,
+    run_dataset_plan_job,
     run_plan_job,
     start_bound_job,
 )
@@ -230,9 +237,13 @@ class NeuroFlowPage(QWidget):
         empty_l = QVBoxLayout(empty)
         empty_l.setContentsMargins(20, 18, 20, 18)
         empty_l.setSpacing(8)
-        title = QLabel("No recording selected", empty)
+        title = QLabel("No recording or dataset selected", empty)
         title.setObjectName("emptyPanelTitle")
-        hint = QLabel(import_format_hint(), empty)
+        hint = QLabel(
+            import_format_hint()
+            + " Multi-file datasets (dataset.json) can be cleaned here too.",
+            empty,
+        )
         hint.setObjectName("emptyPanelHint")
         hint.setWordWrap(True)
         choose = QPushButton("Browse files…", empty)
@@ -477,13 +488,10 @@ class NeuroFlowPage(QWidget):
 
     def _refresh_pickers(self) -> None:
         self._dataset_rows.clear()
-        # Flow cleans one recording; multi-file dataset manifests belong in Studio.
-        datasets = [
-            e for e in scan_datasets() if not e.extra.get("manifest")
-        ][:_RECENT_LIMIT]
+        datasets = scan_datasets()[:_RECENT_LIMIT]
         if not datasets:
             self._dataset_rows.add_placeholder(
-                "No recordings in the project folder yet."
+                "No recordings or datasets in the project folder yet."
             )
         else:
             for entry in datasets:
@@ -603,9 +611,9 @@ class NeuroFlowPage(QWidget):
             return
         path, _ = QFileDialog.getOpenFileName(
             self,
-            "Choose EEG recording",
+            "Choose EEG recording or dataset.json",
             str(project.datasets_dir()),
-            import_file_filter(),
+            "Datasets (dataset.json);;" + import_file_filter(),
         )
         if not path:
             return
@@ -642,12 +650,27 @@ class NeuroFlowPage(QWidget):
             self._plan = {"v": 1, "steps": []}
             self.render_plan()
         p = Path(path)
-        self._file_name.setText(p.name)
-        self._file_name.setToolTip(p.name)
-        self._file_badge.setText(extension_badge(path))
-        size = format_bytes(p.stat().st_size) if p.is_file() else ""
-        status = "Copied into project" if copied else "Using project file"
-        self._file_meta.setText(f"{size} · {status}" if size else status)
+        if is_dataset_manifest(path):
+            try:
+                manifest = load_manifest(path)
+                summary = inspect_manifest_light(manifest)
+            except (OSError, ValueError) as exc:
+                alert(self, "Invalid dataset", str(exc))
+                return
+            self._file_name.setText(summary["name"])
+            self._file_name.setToolTip(summary["name"])
+            self._file_badge.setText("DATASET")
+            self._file_meta.setText(
+                f"{summary['n_members']} files · split {summary['split_mode']} · "
+                + ("Copied into project" if copied else "Using project dataset")
+            )
+        else:
+            self._file_name.setText(p.name)
+            self._file_name.setToolTip(p.name)
+            self._file_badge.setText(extension_badge(path))
+            size = format_bytes(p.stat().st_size) if p.is_file() else ""
+            status = "Copied into project" if copied else "Using project file"
+            self._file_meta.setText(f"{size} · {status}" if size else status)
         self._file_path.setText(path)
         self._file_path.setToolTip(path)
         self._recording_stack.setCurrentIndex(1)
@@ -694,7 +717,19 @@ class NeuroFlowPage(QWidget):
         self._fp_panel.hide()
         self._fp_skeleton.show()
         self._job_kind = "fingerprint"
-        job = fingerprint_job(self._dataset_path)
+        fp_path = self._dataset_path
+        if is_dataset_manifest(self._dataset_path):
+            try:
+                manifest = load_manifest(self._dataset_path)
+                if not manifest.members:
+                    raise ValueError("Dataset has no members")
+                fp_path = str(resolve_member_path(manifest, manifest.members[0]))
+            except (OSError, ValueError) as exc:
+                self._fp_skeleton.hide()
+                self._fp_status.setText(f"Fingerprint failed: {exc}")
+                alert(self, "Fingerprint failed", str(exc))
+                return
+        job = fingerprint_job(fp_path)
         start_bound_job(
             self,
             "_job",
@@ -895,8 +930,14 @@ class NeuroFlowPage(QWidget):
         if err:
             alert(self, "Invalid plan", err)
             return
+
+        is_dataset = is_dataset_manifest(self._dataset_path)
         try:
-            out_path, meta_path = suggest_run_paths(Path(self._dataset_path).stem)
+            if is_dataset:
+                stem = Path(self._dataset_path).parent.name
+            else:
+                stem = Path(self._dataset_path).stem
+            out_path, meta_path = suggest_run_paths(stem)
         except OSError as exc:
             alert(self, "Run failed", str(exc))
             return
@@ -905,18 +946,26 @@ class NeuroFlowPage(QWidget):
         self._run_output = str(out_path)
         self._run_meta = str(meta_path)
         self._run_done = False
-        self._run_status.setText("Running plan…")
+        self._run_status.setText(
+            "Cleaning dataset members…" if is_dataset else "Running plan…"
+        )
         self._run_skeleton.show()
         _set_text(self._run_result, "")
         _set_text(self._run_log_label, "")
         self._job_kind = "run"
 
-        job = run_plan_job(
-            self._run_input,
-            self._run_output,
-            self._plan,
-            meta_path=self._run_meta,
-        )
+        if is_dataset:
+            job = run_dataset_plan_job(
+                dataset_path=self._dataset_path,
+                plan=self._plan,
+            )
+        else:
+            job = run_plan_job(
+                self._run_input,
+                self._run_output,
+                self._plan,
+                meta_path=self._run_meta,
+            )
         job.progress.connect(self._on_run_progress)
         start_bound_job(
             self,
@@ -938,7 +987,7 @@ class NeuroFlowPage(QWidget):
         self._run_skeleton.hide()
         self._cancel_btn.setVisible(False)
         project = ProjectDir.instance()
-        out = result.get("output_path") or self._run_output
+        out = result.get("manifest_path") or result.get("output_path") or self._run_output
         meta = result.get("meta_path") or self._run_meta
         if not project.contains(out):
             self._run_status.setText("Run finished but output left the project sandbox.")
@@ -950,6 +999,28 @@ class NeuroFlowPage(QWidget):
             self._refresh_actions()
             return
         kind = result.get("output_kind", "?")
+        if kind == "dataset_manifest":
+            self._run_output = str(out)
+            notify_library_changed()
+            lines = [
+                f"Finished · cleaned dataset · {result.get('n_members')} members",
+                f"Input: {self._run_input}",
+                f"Output dataset: {out}",
+                f"Steps/plan: {result.get('n_steps')}",
+            ]
+            warn = result.get("warnings") or []
+            if warn:
+                lines.append("Warnings: " + "; ".join(str(w) for w in warn[:4]))
+            _set_text(self._run_result, "\n".join(lines))
+            self._run_status.setText("Dataset cleaned — open it in NeuroStudio to train.")
+            self._run_done = True
+            notify(
+                "Dataset cleaned",
+                f"{result.get('name')} · {result.get('n_members')} files",
+                level="success",
+            )
+            self._refresh_actions()
+            return
         lines = [
             f"Finished · {result.get('n_steps')} steps · {kind}",
             f"Input: {self._run_input}",

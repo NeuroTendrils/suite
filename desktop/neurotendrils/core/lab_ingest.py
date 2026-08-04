@@ -90,46 +90,31 @@ def _constant_channel_warnings(data_ct: np.ndarray, *, names: list[str]) -> list
     return warnings
 
 
-def _event_id_for_class(class_name: str, class_names: list[str]) -> dict[str, int]:
-    if class_name not in class_names:
-        class_names.append(class_name)
-    code = class_names.index(class_name) + 1
-    return {class_name: code}
-
-
-def _window_epochs_from_raw(
+def _annotate_windows_on_raw(
     raw: Any,
     *,
     class_name: str,
     class_names: list[str],
     window_sec: float = 1.0,
 ) -> Any:
-    """Cut fixed windows labeled with a single class (per-trial lab files)."""
+    """Tag fixed windows on continuous Raw so Flow can clean and Studio can epoch."""
     import mne
 
+    if class_name not in class_names:
+        class_names.append(class_name)
     sfreq = float(raw.info["sfreq"])
-    n_times = raw.n_times
+    n_times = int(raw.n_times)
     win = max(8, int(round(window_sec * sfreq)))
     if n_times < win:
         win = n_times
     starts = list(range(0, max(1, n_times - win + 1), win))
     if not starts:
         starts = [0]
-    event_id = _event_id_for_class(class_name, class_names)
-    code = event_id[class_name]
-    events = np.array([[s, 0, code] for s in starts], dtype=np.int64)
-    tmax = (win - 1) / sfreq
-    return mne.Epochs(
-        raw,
-        events,
-        event_id=event_id,
-        tmin=0.0,
-        tmax=tmax,
-        baseline=None,
-        preload=True,
-        reject_by_annotation=False,
-        verbose="ERROR",
-    )
+    onsets = [s / sfreq for s in starts]
+    durations = [win / sfreq] * len(onsets)
+    descriptions = [class_name] * len(onsets)
+    raw.set_annotations(mne.Annotations(onsets, durations, descriptions))
+    return raw
 
 
 def _is_matlab73(path: Path) -> bool:
@@ -310,19 +295,15 @@ def normalize_txt(
         if onsets:
             raw.set_annotations(mne.Annotations(onsets, [0.0] * len(onsets), descriptions))
 
-    # Avoid double-counting: warnings already recorded above.
     hint = class_from_filename(path.stem, filename_map)
     dest.parent.mkdir(parents=True, exist_ok=True)
+    raw_dest = dest.with_name(dest.name.replace("-epo.fif", "_raw.fif"))
     if hint:
-        epochs = _window_epochs_from_raw(
+        _annotate_windows_on_raw(
             raw, class_name=hint, class_names=class_names, window_sec=1.0
         )
-        epochs.save(str(dest), overwrite=True, verbose="ERROR")
-        return dest, hint
-
-    raw_dest = dest.with_name(dest.name.replace("-epo.fif", "_raw.fif"))
     raw.save(str(raw_dest), overwrite=True, verbose="ERROR")
-    return raw_dest, None
+    return raw_dest, hint
 
 
 def normalize_set_or_mne(
@@ -371,18 +352,15 @@ def normalize_set_or_mne(
                 warnings.append(w)
 
     dest.parent.mkdir(parents=True, exist_ok=True)
+    raw_dest = dest.with_name(dest.name.replace("-epo.fif", "_raw.fif"))
     if hint and (
         raw.annotations is None
         or len(raw.annotations) == 0
         or len(set(raw.annotations.description)) < 2
     ):
-        epochs = _window_epochs_from_raw(
+        _annotate_windows_on_raw(
             raw, class_name=hint, class_names=class_names, window_sec=1.0
         )
-        epochs.save(str(dest), overwrite=True, verbose="ERROR")
-        return dest, hint
-
-    raw_dest = dest.with_name(dest.name.replace("-epo.fif", "_raw.fif"))
     raw.save(str(raw_dest), overwrite=True, verbose="ERROR")
     return raw_dest, hint
 

@@ -384,7 +384,9 @@ def _prepare_arrays(
     # 2) Continuous raw: annotations or stim-channel events → epoch
     try:
         raw = mne.io.read_raw(str(path), preload=True, verbose="ERROR")
-        packed = _from_raw_labeled(raw, seed=seed, meta=meta)
+        packed = _from_raw_labeled(
+            raw, seed=seed, meta=meta, allow_single_class=allow_single_class
+        )
         if packed is not None:
             return packed
         meta["raw_label_warning"] = (
@@ -440,7 +442,11 @@ def _from_epochs(
 
 
 def _from_raw_labeled(
-    raw: Any, *, seed: int, meta: dict[str, Any]
+    raw: Any,
+    *,
+    seed: int,
+    meta: dict[str, Any],
+    allow_single_class: bool = False,
 ) -> tuple[np.ndarray, np.ndarray, str, dict[str, Any]] | None:
     """Epoch continuous raw around annotations or stim events."""
     import mne
@@ -448,6 +454,8 @@ def _from_raw_labeled(
     events: np.ndarray | None = None
     event_id: dict[str, int] = {}
     label_source = ""
+    min_classes = 1 if allow_single_class else 2
+    min_trials = 1 if allow_single_class else 4
 
     # Prefer annotations (common after set_annotations / BIDS / experiment logs).
     try:
@@ -470,47 +478,56 @@ def _from_raw_labeled(
         meta["annotations_note"] = str(exc)
 
     # Stim / trigger channel fallback.
-    if events is None or len(events) == 0 or len(event_id) < 2:
+    if events is None or len(events) == 0 or len(event_id) < min_classes:
         try:
             stim_events = mne.find_events(raw, verbose="ERROR", shortest_event=1)
             if stim_events is not None and len(stim_events) > 0:
                 codes = sorted(int(c) for c in np.unique(stim_events[:, 2]))
-                # Need ≥2 distinct non-zero codes.
                 codes = [c for c in codes if c != 0]
-                if len(codes) >= 2:
+                if len(codes) >= min_classes:
                     events = stim_events[np.isin(stim_events[:, 2], codes)]
                     event_id = {f"event_{c}": c for c in codes}
                     label_source = "stim"
         except Exception as exc:  # noqa: BLE001
             meta["stim_note"] = str(exc)
 
-    if events is None or len(events) < 4 or len(event_id) < 2:
+    if events is None or len(events) < min_trials or len(event_id) < min_classes:
         return None
 
     sfreq = float(raw.info["sfreq"])
-    # ~0.5 s windows by default; clamp for very low/high rates.
+    # Prefer annotation duration when uniform; else ~0.5–1 s windows.
     tmax = min(1.0, max(0.25, 128.0 / sfreq))
+    try:
+        if raw.annotations is not None and len(raw.annotations) > 0:
+            durs = np.asarray(raw.annotations.duration, dtype=float)
+            positive = durs[durs > 0]
+            if len(positive):
+                tmax = float(np.median(positive))
+    except Exception:  # noqa: BLE001
+        pass
     try:
         epochs = mne.Epochs(
             raw,
             events,
             event_id=event_id,
             tmin=0.0,
-            tmax=tmax,
+            tmax=max(0.05, tmax - (1.0 / sfreq)),
             baseline=None,
             preload=True,
-            reject_by_annotation=True,
+            reject_by_annotation=False,
             verbose="ERROR",
         )
     except Exception as exc:  # noqa: BLE001
         meta["epoching_note"] = str(exc)
         return None
 
-    if len(epochs) < 4:
+    if len(epochs) < min_trials:
         return None
 
     codes = np.asarray(epochs.events[:, 2], dtype=np.int64)
-    y, class_names, code_to_class = _remap_codes(codes, event_id)
+    y, class_names, code_to_class = _remap_codes(
+        codes, event_id, allow_single_class=allow_single_class
+    )
     if y is None:
         return None
 
