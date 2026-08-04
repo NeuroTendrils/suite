@@ -92,6 +92,51 @@ def scan_datasets() -> list[LibraryEntry]:
     datasets_dir = ProjectDir.instance().datasets_dir()
     if not datasets_dir.is_dir():
         return entries
+
+    # Multi-file dataset manifests (directories with dataset.json).
+    for path in sorted(datasets_dir.iterdir()):
+        if path.is_symlink() or not path.is_dir():
+            continue
+        manifest = path / "dataset.json"
+        if not manifest.is_file() or manifest.is_symlink():
+            continue
+        try:
+            data = json.loads(manifest.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        members = data.get("members") or []
+        label = data.get("label") or {}
+        classes = label.get("class_names") or []
+        title = str(data.get("name") or path.name)
+        size_bytes, modified = _stat_size_mtime(manifest)
+        # Roll up member sizes when cheap.
+        for member in members[:64]:
+            rel = str(member.get("path") or "")
+            try:
+                sz, mt = _stat_size_mtime(path / rel)
+                size_bytes += sz
+                modified = max(modified, mt)
+            except OSError:
+                pass
+        class_bit = f"{len(classes)} classes" if classes else str(label.get("source") or "labels")
+        entries.append(
+            LibraryEntry(
+                kind="dataset",
+                id=path.name,
+                title=title,
+                subtitle=f"Dataset · {len(members)} files · {class_bit}",
+                path=str(manifest),
+                size_bytes=size_bytes,
+                modified=modified,
+                extra={
+                    "manifest": True,
+                    "n_members": len(members),
+                    "label_source": label.get("source"),
+                    "class_names": classes,
+                },
+            )
+        )
+
     for path in sorted(datasets_dir.iterdir()):
         if path.is_symlink() or not path.is_file():
             continue

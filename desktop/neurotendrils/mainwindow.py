@@ -91,9 +91,10 @@ class MainWindow(QMainWindow):
         self.datasets = LibraryPage(
             "dataset",
             "Datasets",
-            "Recordings in the open project.",
-            "Import recording",
+            "Multi-file lab datasets and recordings in the open project.",
+            "Create dataset",
             self._pages,
+            secondary_action="Import recording",
         )
         self.models = LibraryPage(
             "model",
@@ -167,7 +168,8 @@ class MainWindow(QMainWindow):
         self.projects.openDatasetRequested.connect(self.open_dataset_in_flow)
         self.projects.openRunRequested.connect(self.open_run_in_studio)
         self.projects.openTemplateRequested.connect(self.open_template_in_studio)
-        self.datasets.primaryActionRequested.connect(self.projects.import_dataset)
+        self.datasets.primaryActionRequested.connect(self.projects.create_lab_dataset)
+        self.datasets.secondaryActionRequested.connect(self.projects.import_dataset)
         self.models.primaryActionRequested.connect(self.open_training)
         self.cloud.connectRequested.connect(self.open_cloud_unavailable)
 
@@ -298,6 +300,13 @@ class MainWindow(QMainWindow):
         self.flow.import_recording()
 
     def open_dataset_in_flow(self, path: str) -> None:
+        from neurotendrils.core.dataset_manifest import is_dataset_manifest
+
+        # Multi-file manifests are Studio training units; single files go to Flow.
+        if is_dataset_manifest(path):
+            self.navigate("studio")
+            self.studio.set_dataset(path)
+            return
         self.navigate("flow")
         self.flow.set_dataset_path(path, False)
 

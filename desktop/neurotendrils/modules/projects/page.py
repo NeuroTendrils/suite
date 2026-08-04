@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from neurotendrils.core.dataset_actions import prompt_and_create_dataset
 from neurotendrils.core.dataset_io import import_recording
 from neurotendrils.core.eeg_formats import import_file_filter, import_format_hint
 from neurotendrils.core.formatting import format_bytes, format_relative
@@ -353,7 +354,13 @@ class ProjectsPage(QWidget):
 
         self._sections: dict[str, RowList] = {}
         for label, key, glyph, action, slot in (
-            ("Datasets", "datasets", Glyph.DATASETS, "Import", self.import_dataset),
+            (
+                "Datasets",
+                "datasets",
+                Glyph.DATASETS,
+                "Create dataset",
+                self.create_lab_dataset,
+            ),
             ("Pipelines", "plans", Glyph.PROJECTS, "Open NeuroFlow", self.openFlowRequested.emit),
             ("Templates", "templates", Glyph.STUDIO, "Open NeuroStudio", self.openStudioRequested.emit),
             ("Runs", "runs", Glyph.RUNS, "Open NeuroFlow", self.openFlowRequested.emit),
@@ -397,7 +404,7 @@ class ProjectsPage(QWidget):
             "templates": [],
         }
         empty = {
-            "datasets": "No datasets yet. Import a recording to add one here.",
+            "datasets": "No datasets yet. Create a multi-file dataset or import a recording.",
             "plans": "No saved pipelines yet. Build one in NeuroFlow, then Save plan.",
             "templates": "No saved templates yet. Tune one in NeuroStudio and Save template.",
             "runs": "No runs yet. A run is one NeuroFlow plan execution.",
@@ -555,14 +562,23 @@ class ProjectsPage(QWidget):
         elif entry.kind == "model":
             self.openStudioRequested.emit()
 
+    def create_lab_dataset(self) -> None:
+        """Create a multi-file lab dataset (project-global entry point)."""
+        prompt_and_create_dataset(
+            self,
+            self,
+            after=lambda: self.refresh_interior(force=True),
+        )
+
     def import_dataset(self) -> None:
+        """Import a single recording file into the project datasets folder."""
         project = ProjectDir.instance()
         if not project.root:
             alert(self, "Project required", "Open a project first.")
             return
         path, _ = QFileDialog.getOpenFileName(
             self,
-            "Import dataset",
+            "Import recording",
             str(project.datasets_dir()),
             import_file_filter(),
         )
@@ -576,10 +592,10 @@ class ProjectsPage(QWidget):
         notify_library_changed()
         self.refresh_interior(force=True)
         status = "Copied into project" if copied else "Already in project"
-        notify("Dataset imported", f"{Path(dest).name} · {status}", level="success")
+        notify("Recording imported", f"{Path(dest).name} · {status}", level="success")
         alert(
             self,
-            "Dataset ready",
+            "Recording ready",
             f"{Path(dest).name}\n{status}\n\n{import_format_hint()}",
         )
 

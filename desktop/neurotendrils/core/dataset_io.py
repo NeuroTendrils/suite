@@ -89,9 +89,16 @@ def import_recording(
 
 
 def select_studio_path(path: str) -> tuple[str, str]:
-    """Return (resolved_path, kind) where kind is run_output|dataset|project_file."""
+    """Return (resolved_path, kind) where kind is run_output|dataset|dataset_manifest|project_file."""
+    from neurotendrils.core.dataset_manifest import is_dataset_manifest, manifest_path_for
+
     project = ProjectDir.instance()
     p = Path(path).expanduser().resolve()
+    if is_dataset_manifest(p):
+        manifest = manifest_path_for(p)
+        project.require_contains(manifest, "Training data")
+        return str(manifest.resolve()), "dataset_manifest"
+
     if p.is_dir():
         for name in ("cleaned-epo.fif", "cleaned_epo.fif", "cleaned.fif"):
             candidate = p / name

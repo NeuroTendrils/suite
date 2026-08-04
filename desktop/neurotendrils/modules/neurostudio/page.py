@@ -19,7 +19,13 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from neurotendrils.core.dataset_actions import prompt_and_create_dataset
 from neurotendrils.core.dataset_io import select_studio_path
+from neurotendrils.core.dataset_manifest import (
+    inspect_manifest_light,
+    is_dataset_manifest,
+    load_manifest,
+)
 from neurotendrils.core.eeg_formats import extension_badge, studio_file_filter
 from neurotendrils.core.formatting import format_bytes
 from neurotendrils.core.jobs import (
@@ -217,19 +223,36 @@ class NeuroStudioPage(QWidget):
         t = QLabel("No training data selected", empty)
         t.setObjectName("emptyPanelTitle")
         h = QLabel(
-            "Choose a NeuroFlow run output (cleaned.fif) or a dataset inside the project.",
+            "Create a multi-file dataset from lab sources (.set, .mat, .txt, …), "
+            "or choose a single cleaned FIF / existing dataset.",
             empty,
         )
         h.setObjectName("emptyPanelHint")
         h.setWordWrap(True)
-        choose = QPushButton("Browse files…", empty)
+        choose = QPushButton("Browse file…", empty)
         choose.setObjectName("secondaryButton")
         choose.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         choose.setCursor(Qt.CursorShape.PointingHandCursor)
         choose.clicked.connect(self.choose_dataset)
+        create = QPushButton("Create dataset…", empty)
+        create.setObjectName("primaryButton")
+        create.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        create.setCursor(Qt.CursorShape.PointingHandCursor)
+        create.clicked.connect(self.create_dataset_from_files)
+        open_ds = QPushButton("Open dataset…", empty)
+        open_ds.setObjectName("secondaryButton")
+        open_ds.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        open_ds.setCursor(Qt.CursorShape.PointingHandCursor)
+        open_ds.clicked.connect(self.choose_dataset_manifest)
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(8)
+        btn_row.addWidget(create)
+        btn_row.addWidget(open_ds)
+        btn_row.addWidget(choose)
+        btn_row.addStretch(1)
         el.addWidget(t)
         el.addWidget(h)
-        el.addWidget(choose, alignment=Qt.AlignmentFlag.AlignLeft)
+        el.addLayout(btn_row)
 
         selected = QFrame(host)
         selected.setObjectName("filePanel")
@@ -565,6 +588,40 @@ class NeuroStudioPage(QWidget):
             return
         self.set_dataset(path)
 
+    def choose_dataset_manifest(self) -> None:
+        project = ProjectDir.instance()
+        start = project.datasets_dir()
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Open dataset manifest",
+            str(start),
+            "Dataset (dataset.json);;All files (*)",
+        )
+        if not path:
+            return
+        self.set_dataset(path)
+
+    def create_dataset_from_files(self) -> None:
+        self._job_kind = "dataset_ingest"
+        self.flow.set_status("Importing dataset…")
+
+        def _ok(result: dict[str, Any]) -> None:
+            manifest = str(result.get("manifest_path") or "")
+            if manifest:
+                self.set_dataset(manifest)
+            else:
+                self.flow.set_status("")
+
+        def _fail(_code: str, _message: str) -> None:
+            self.flow.set_status("")
+
+        started = prompt_and_create_dataset(
+            self, self, on_ok=_ok, on_fail=_fail, after=self._refresh
+        )
+        if not started:
+            self.flow.set_status("")
+            self._job_kind = ""
+
     def set_dataset(self, path: str) -> None:
         if self._job is not None and self._job.is_running():
             alert(self, "Busy", "Wait for the current job to finish.")
@@ -577,10 +634,39 @@ class NeuroStudioPage(QWidget):
         self._dataset_path = resolved
         self._export_done = False
         p = Path(resolved)
-        self._file_name.setText(p.name)
-        self._file_badge.setText(extension_badge(resolved))
-        self._file_meta.setText(f"{format_bytes(p.stat().st_size)} · {kind}")
-        self._file_path.setText(resolved)
+        if kind == "dataset_manifest" or is_dataset_manifest(resolved):
+            try:
+                manifest = load_manifest(resolved)
+                summary = inspect_manifest_light(manifest)
+            except (OSError, ValueError) as exc:
+                alert(self, "Invalid dataset", str(exc))
+                return
+            self._file_name.setText(summary["name"])
+            self._file_badge.setText("DATASET")
+            hints = summary.get("filename_class_files") or {}
+            hint_bit = (
+                ", ".join(f"{k}×{v}" for k, v in sorted(hints.items()))
+                if hints
+                else summary.get("label_source")
+            )
+            warn_n = len(summary.get("warnings") or [])
+            meta_parts = [
+                f"{summary['n_members']} files",
+                f"split {summary['split_mode']}",
+                str(hint_bit),
+            ]
+            if summary.get("sfreq"):
+                meta_parts.append(f"{summary['sfreq']} Hz")
+            if warn_n:
+                meta_parts.append(f"{warn_n} warnings")
+            self._file_meta.setText(" · ".join(str(x) for x in meta_parts if x))
+            self._file_path.setText(resolved)
+            kind = "dataset_manifest"
+        else:
+            self._file_name.setText(p.name)
+            self._file_badge.setText(extension_badge(resolved))
+            self._file_meta.setText(f"{format_bytes(p.stat().st_size)} · {kind}")
+            self._file_path.setText(resolved)
         self._data_stack.setCurrentIndex(1)
         self._suggested_template, self._rationales = recommend(resolved, kind)
         if not self._template_pinned or not self._selected_template:
@@ -802,8 +888,10 @@ class NeuroStudioPage(QWidget):
         self._train_chart.clear()
         _set_text(self._train_result, "")
         self._job_kind = "train"
+        use_manifest = is_dataset_manifest(self._dataset_path)
         job = train_job(
-            input_path=self._dataset_path,
+            input_path="" if use_manifest else self._dataset_path,
+            dataset_path=self._dataset_path if use_manifest else None,
             output_dir=str(out_dir),
             template_id=self._selected_template,
             config=config,

@@ -26,6 +26,18 @@ STUDIO_SUFFIXES: tuple[str, ...] = (
     "gdf",
 )
 
+# Sources that can be normalized into a multi-file dataset.
+LAB_DATASET_SUFFIXES: tuple[str, ...] = (
+    "fif",
+    "fif.gz",
+    "edf",
+    "bdf",
+    "set",
+    "gdf",
+    "mat",
+    "txt",
+)
+
 _IMPORT_HINT_LABELS: dict[str, str | None] = {
     "edf": "EDF",
     "bdf": "BDF",
@@ -55,6 +67,13 @@ def import_file_filter() -> str:
 def studio_file_filter() -> str:
     return (
         f"{_filter_string(STUDIO_SUFFIXES, 'Training data')};;"
+        "All files (*)"
+    )
+
+
+def lab_dataset_file_filter() -> str:
+    return (
+        f"{_filter_string(LAB_DATASET_SUFFIXES, 'Lab EEG sources')};;"
         "All files (*)"
     )
 

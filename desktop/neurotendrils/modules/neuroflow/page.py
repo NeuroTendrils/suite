@@ -477,7 +477,10 @@ class NeuroFlowPage(QWidget):
 
     def _refresh_pickers(self) -> None:
         self._dataset_rows.clear()
-        datasets = scan_datasets()[:_RECENT_LIMIT]
+        # Flow cleans one recording; multi-file dataset manifests belong in Studio.
+        datasets = [
+            e for e in scan_datasets() if not e.extra.get("manifest")
+        ][:_RECENT_LIMIT]
         if not datasets:
             self._dataset_rows.add_placeholder(
                 "No recordings in the project folder yet."

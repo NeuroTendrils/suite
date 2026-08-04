@@ -180,7 +180,11 @@ def recommend(dataset_path: str, dataset_kind: str) -> tuple[str, dict[str, str]
 def suggest_train_dir(dataset_path: str, template_id: str) -> Path:
     project = ProjectDir.instance()
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    base = sanitize_base_name(Path(dataset_path).stem, "dataset")
+    src = Path(dataset_path)
+    if src.name == "dataset.json":
+        base = sanitize_base_name(src.parent.name, "dataset")
+    else:
+        base = sanitize_base_name(src.stem, "dataset")
     tmpl = sanitize_base_name(template_id, "template")
     stem = f"studio_{base}_{tmpl}_{stamp}"
     path = unique_dir(project.runs_dir(), stem)

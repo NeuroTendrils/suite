@@ -71,6 +71,7 @@ class LibraryPage(QWidget):
     """List of one record kind, with details in a right-side inspector."""
 
     primaryActionRequested = Signal()
+    secondaryActionRequested = Signal()
 
     def __init__(
         self,
@@ -81,6 +82,7 @@ class LibraryPage(QWidget):
         parent: QWidget | None = None,
         *,
         show_header: bool = True,
+        secondary_action: str = "",
     ) -> None:
         super().__init__(parent)
         self._kind = kind
@@ -111,13 +113,24 @@ class LibraryPage(QWidget):
             heading.addWidget(description_label)
             header.addLayout(heading, 1)
 
+            actions = QHBoxLayout()
+            actions.setSpacing(8)
+            if secondary_action:
+                secondary = QPushButton(secondary_action, self)
+                secondary.setObjectName("secondaryButton")
+                secondary.setCursor(Qt.CursorShape.PointingHandCursor)
+                secondary.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+                secondary.clicked.connect(self.secondaryActionRequested.emit)
+                actions.addWidget(secondary)
             if primary_action:
                 action = QPushButton(primary_action, self)
                 action.setObjectName("primaryButton")
                 action.setCursor(Qt.CursorShape.PointingHandCursor)
                 action.setFocusPolicy(Qt.FocusPolicy.NoFocus)
                 action.clicked.connect(self.primaryActionRequested.emit)
-                header.addWidget(action, 0, Qt.AlignmentFlag.AlignTop)
+                actions.addWidget(action)
+            if primary_action or secondary_action:
+                header.addLayout(actions, 0)
             layout.addLayout(header)
             layout.addSpacing(16)
 

@@ -255,13 +255,19 @@ def run_plan_job(
 
 def train_job(
     *,
-    input_path: str,
+    input_path: str = "",
     output_dir: str,
     template_id: str,
     config: dict[str, Any],
     device: str,
+    dataset_path: str | None = None,
 ) -> WorkerJob:
-    _assert_in_project(input_path, output_dir)
+    paths = [output_dir]
+    if dataset_path:
+        paths.append(dataset_path)
+    if input_path:
+        paths.append(input_path)
+    _assert_in_project(*paths)
     job = WorkerJob()
     root = ProjectDir.instance().root
 
@@ -281,10 +287,14 @@ def train_job(
                         "path must be inside the project folder"
                     ) from exc
 
-        _inside(input_path)
+        if dataset_path:
+            _inside(dataset_path)
+        if input_path:
+            _inside(input_path)
         _inside(output_dir)
         return train(
-            input_path=input_path,
+            input_path=input_path or "",
+            dataset_path=dataset_path,
             output_dir=output_dir,
             template_id=template_id,
             config=config,
@@ -293,6 +303,40 @@ def train_job(
             should_cancel=job.is_cancelled,
             allow_synthetic=False,
         )
+
+    job.set_work(work)
+    return job
+
+
+def create_dataset_job(
+    *,
+    sources: list[str],
+    name: str,
+    sfreq: float = 500.0,
+) -> WorkerJob:
+    job = WorkerJob()
+    root = ProjectDir.instance().root
+
+    def work() -> dict[str, Any]:
+        from neurotendrils.core.lab_ingest import IngestError, create_dataset_from_sources
+
+        try:
+            manifest_path, manifest = create_dataset_from_sources(
+                sources,
+                name=name,
+                sfreq=sfreq,
+                project_root=root,
+                on_progress=lambda payload: job.progress.emit(payload),
+            )
+        except IngestError as exc:
+            raise RuntimeError(exc.message) from exc
+        return {
+            "manifest_path": manifest_path,
+            "name": manifest.name,
+            "n_members": len(manifest.members),
+            "warnings": list(manifest.meta.get("warnings") or []),
+            "class_names": list(manifest.label.class_names),
+        }
 
     job.set_work(work)
     return job

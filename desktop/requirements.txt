@@ -1,2 +1,5 @@
 # Desktop shell (PySide6). Install into the same venv as workers.
 PySide6>=6.6
+# EEGLAB .set / MATLAB v7.3 mats are HDF5; MNE reads them via pymatreader+h5py.
+h5py>=3.10
+pymatreader>=1.0
