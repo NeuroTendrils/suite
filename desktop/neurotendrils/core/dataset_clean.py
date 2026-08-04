@@ -146,13 +146,24 @@ def clean_dataset_with_plan(
         out_path = members_dir / f"{sanitize_base_name(member.id, f'm{index}')}_raw.fif"
 
         try:
-            result = run_plan(
-                raw_in,
-                out_path,
-                plan_snapshot,
-                on_progress=None,
-                should_cancel=should_cancel,
-            )
+            # ICA often emits sklearn ConvergenceWarning on short/noisy trials —
+            # keep the run going; surface only hard failures.
+            import warnings
+
+            try:
+                from sklearn.exceptions import ConvergenceWarning
+            except Exception:  # noqa: BLE001
+                ConvergenceWarning = UserWarning  # type: ignore[misc, assignment]
+
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", category=ConvergenceWarning)
+                result = run_plan(
+                    raw_in,
+                    out_path,
+                    plan_snapshot,
+                    on_progress=None,
+                    should_cancel=should_cancel,
+                )
         except RunError as exc:
             raise DatasetCleanError(
                 exc.code, f"{member.id}: {exc.message}"

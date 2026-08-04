@@ -83,6 +83,23 @@ def _summarize_params(params: dict[str, Any]) -> str:
     return " · ".join(parts)
 
 
+def _fingerprint_member_path(manifest) -> Path:
+    """Prefer a continuous Raw member for fingerprinting when available."""
+    ranked: list[tuple[int, Path]] = []
+    for member in manifest.members:
+        path = resolve_member_path(manifest, member)
+        name = path.name.lower()
+        if name.endswith(("_raw.fif", ".fif")) and "-epo" not in name:
+            rank = 0 if name.endswith("_raw.fif") else 1
+        elif "-epo" in name or name.endswith("_epo.fif"):
+            rank = 3
+        else:
+            rank = 2
+        ranked.append((rank, path))
+    ranked.sort(key=lambda item: (item[0], item[1].name))
+    return ranked[0][1]
+
+
 class _PlanStepRow(QFrame):
     """A plan step; row actions appear on hover to keep the list quiet."""
 
@@ -723,7 +740,7 @@ class NeuroFlowPage(QWidget):
                 manifest = load_manifest(self._dataset_path)
                 if not manifest.members:
                     raise ValueError("Dataset has no members")
-                fp_path = str(resolve_member_path(manifest, manifest.members[0]))
+                fp_path = str(_fingerprint_member_path(manifest))
             except (OSError, ValueError) as exc:
                 self._fp_skeleton.hide()
                 self._fp_status.setText(f"Fingerprint failed: {exc}")
@@ -767,7 +784,17 @@ class NeuroFlowPage(QWidget):
         else:
             self._fp_channels.clear()
             self._fp_channels.hide()
-        self._fp_status.setText("Fingerprint ready.")
+        kind = str(result.get("mne_kind") or "raw")
+        if kind == "epochs" and result.get("n_epochs") is not None:
+            self._fp_status.setText(
+                f"Fingerprint ready (epoched · {result.get('n_epochs')} trials)."
+            )
+        elif is_dataset_manifest(self._dataset_path):
+            self._fp_status.setText(
+                "Fingerprint ready (sample member from dataset)."
+            )
+        else:
+            self._fp_status.setText("Fingerprint ready.")
         self._fp_panel.show()
         # Avoid opacity fades on the panel — they clip wrapped channel labels.
         if not self._plan_user_owned:
@@ -1002,21 +1029,34 @@ class NeuroFlowPage(QWidget):
         if kind == "dataset_manifest":
             self._run_output = str(out)
             notify_library_changed()
+            name = str(result.get("name") or Path(out).parent.name)
             lines = [
                 f"Finished · cleaned dataset · {result.get('n_members')} members",
-                f"Input: {self._run_input}",
-                f"Output dataset: {out}",
+                f"Name: {name}",
+                f"Saved under project datasets/",
+                f"Path: {out}",
                 f"Steps/plan: {result.get('n_steps')}",
+                "",
+                "Select this dataset in NeuroStudio → Data to train.",
             ]
             warn = result.get("warnings") or []
             if warn:
                 lines.append("Warnings: " + "; ".join(str(w) for w in warn[:4]))
             _set_text(self._run_result, "\n".join(lines))
-            self._run_status.setText("Dataset cleaned — open it in NeuroStudio to train.")
+            self._run_status.setText(f"Saved as datasets/{name}")
             self._run_done = True
+            # Keep selection on the cleaned output without leaving the Run stage.
+            self._dataset_path = str(out)
+            self._file_name.setText(name)
+            self._file_badge.setText("DATASET")
+            self._file_meta.setText(
+                f"{result.get('n_members')} files · cleaned output"
+            )
+            self._file_path.setText(str(out))
+            self._refresh_pickers()
             notify(
                 "Dataset cleaned",
-                f"{result.get('name')} · {result.get('n_members')} files",
+                f"{name} · {result.get('n_members')} files → datasets/{name}",
                 level="success",
             )
             self._refresh_actions()
