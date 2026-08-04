@@ -105,11 +105,11 @@ def train(
             on_progress(payload)
 
     progress({"stage": "load", "message": "Preparing training data…"})
-    roles = None
+    split_ctx: dict[str, Any] = {}
     if ds_path is not None:
         from .dataset_load import prepare_from_dataset, split_indices
 
-        x, y, data_mode, data_meta, roles = prepare_from_dataset(
+        x, y, data_mode, data_meta, split_ctx = prepare_from_dataset(
             ds_path, seed=seed, prepare_file=_prepare_arrays
         )
     else:
@@ -142,16 +142,19 @@ def train(
     if ds_path is not None:
         from .dataset_load import split_indices
 
-        train_idx, val_idx = split_indices(
+        train_idx, val_idx, resolved_split = split_indices(
             y,
             seed=seed,
-            split_mode=str(data_meta.get("split_mode") or "stratified"),
+            split_mode=str(data_meta.get("split_mode") or "by_group"),
             val_fraction=float(data_meta.get("val_fraction") or 0.2),
-            roles=roles,
+            roles=split_ctx.get("roles"),
+            groups=split_ctx.get("groups"),
             stratified_split=_stratified_split,
         )
+        data_meta["split_mode_resolved"] = resolved_split
     else:
         train_idx, val_idx = _stratified_split(y, seed=seed)
+        data_meta["split_mode_resolved"] = "stratified"
 
     x_train = torch.tensor(x[train_idx], dtype=torch.float32)
     y_train = torch.tensor(y[train_idx], dtype=torch.long)
@@ -195,12 +198,18 @@ def train(
     criterion = nn.CrossEntropyLoss()
     history: list[dict[str, Any]] = []
 
+    split_note = str(data_meta.get("split_mode_resolved") or "")
     progress(
         {
             "stage": "train",
-            "message": f"Training on {device_name} ({data_mode})…",
+            "message": (
+                f"Training on {device_name} ({data_mode}"
+                + (f", split={split_note}" if split_note else "")
+                + ")…"
+            ),
             "device": device_name,
             "data_mode": data_mode,
+            "split_mode": split_note,
             "n_train": int(len(y_train)),
             "n_val": int(len(y_val)),
             "n_classes": n_classes,

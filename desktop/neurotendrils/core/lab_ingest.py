@@ -59,17 +59,34 @@ def _load_numeric_txt(path: Path) -> np.ndarray:
     return arr
 
 
-def _constant_channel_warnings(data_ct: np.ndarray, *, names: list[str]) -> list[str]:
-    """data_ct: (n_channels, n_times)."""
-    warnings: list[str] = []
-    for i, name in enumerate(names):
+def _constant_channel_mask(data_ct: np.ndarray) -> np.ndarray:
+    """True = keep channel. data_ct: (n_channels, n_times)."""
+    keep = np.ones(data_ct.shape[0], dtype=bool)
+    for i in range(data_ct.shape[0]):
         row = data_ct[i]
         if row.size == 0:
             continue
         if float(np.nanstd(row)) < 1e-9:
-            warnings.append(f"Constant channel {name} (value={float(row[0]):.4g})")
+            keep[i] = False
         elif float(np.nanmax(np.abs(row - 187500.0))) < 1e-3:
-            warnings.append(f"Saturated channel {name} (187500)")
+            keep[i] = False
+    if not bool(keep.any()):
+        return np.ones(data_ct.shape[0], dtype=bool)
+    return keep
+
+
+def _constant_channel_warnings(data_ct: np.ndarray, *, names: list[str]) -> list[str]:
+    """data_ct: (n_channels, n_times)."""
+    warnings: list[str] = []
+    keep = _constant_channel_mask(data_ct)
+    for i, name in enumerate(names):
+        if keep[i]:
+            continue
+        row = data_ct[i]
+        if float(np.nanstd(row)) < 1e-9:
+            warnings.append(f"Dropped constant channel {name} (value={float(row[0]):.4g})")
+        else:
+            warnings.append(f"Dropped saturated channel {name} (187500)")
     return warnings
 
 
@@ -266,6 +283,11 @@ def normalize_txt(
     for w in _constant_channel_warnings(eeg, names=ch_names):
         if w not in warnings:
             warnings.append(w)
+    keep = _constant_channel_mask(eeg)
+    eeg = eeg[keep]
+    ch_names = [n for n, k in zip(ch_names, keep) if k]
+    # Remove per-channel DC so window splits are not dominated by offsets.
+    eeg = eeg - np.nanmean(eeg, axis=1, keepdims=True)
 
     info = mne.create_info(ch_names, sfreq=float(sfreq), ch_types="eeg")
     raw = mne.io.RawArray(eeg, info, verbose="ERROR")
@@ -288,6 +310,7 @@ def normalize_txt(
         if onsets:
             raw.set_annotations(mne.Annotations(onsets, [0.0] * len(onsets), descriptions))
 
+    # Avoid double-counting: warnings already recorded above.
     hint = class_from_filename(path.stem, filename_map)
     dest.parent.mkdir(parents=True, exist_ok=True)
     if hint:
@@ -427,7 +450,8 @@ def create_dataset_from_sources(
 
     manifest = create_empty_manifest(out_dir.name, sfreq=sfreq)
     manifest.label = LabelConfig(source=label_source, map=filename_map)  # type: ignore[arg-type]
-    manifest.split = SplitConfig()
+    # Group-level holdout by default — random window splits leak on trial files.
+    manifest.split = SplitConfig(mode="by_group", val_fraction=0.2)
     class_names: list[str] = []
     warnings: list[str] = []
 
@@ -470,7 +494,8 @@ def create_dataset_from_sources(
                 path=rel,
                 source_path=str(source),
                 class_hint=hint,
-                group=None,
+                # One group per source file so windows from a trial stay together.
+                group=stem,
                 role=None,
             )
         )
@@ -479,6 +504,12 @@ def create_dataset_from_sources(
     manifest.meta["sfreq"] = sfreq
     manifest.meta["warnings"] = warnings
     manifest.meta["source_count"] = total
+    if len(manifest.members) >= 2:
+        warnings.append(
+            "Split is by trial/file group (or last 20% of each file) to avoid "
+            "window leakage — not a random shuffle of windows."
+        )
+        manifest.meta["warnings"] = warnings
     manifest_path = save_manifest(manifest, out_dir)
     _emit(
         on_progress,

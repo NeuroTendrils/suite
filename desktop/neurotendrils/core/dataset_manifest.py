@@ -45,7 +45,8 @@ class LabelConfig:
 
 @dataclass
 class SplitConfig:
-    mode: SplitMode = "stratified"
+    # Prefer group/trial holdout so windowed trial files cannot leak into val.
+    mode: SplitMode = "by_group"
     val_fraction: float = 0.2
     seed: int = 42
 
