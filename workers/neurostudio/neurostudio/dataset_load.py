@@ -54,7 +54,10 @@ def prepare_from_dataset(
             warnings.append(f"Missing member: {rel}")
             continue
         role = member.get("role")
-        group = str(member.get("group") or member.get("id") or rel)
+        # Prefer explicit subject (Study), then group, then member id.
+        group = str(
+            member.get("subject") or member.get("group") or member.get("id") or rel
+        )
         try:
             x, y, mode, meta = prepare_file(
                 member_path, seed=seed, allow_single_class=True

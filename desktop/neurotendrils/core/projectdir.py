@@ -23,7 +23,7 @@ WORKSPACE_KEY = "workspace/root"
 PROJECT_KEY = "project/active"
 # Legacy single-folder key — migrated into workspace + active project on first load.
 LEGACY_ROOT_KEY = "project/root"
-SUBDIRS = ("plans", "datasets", "models", "runs", "templates")
+SUBDIRS = ("plans", "datasets", "models", "runs", "templates", "inferences")
 PROJECT_META = "project.json"
 
 
@@ -358,6 +358,9 @@ class ProjectDir(QObject):
 
     def templates_dir(self) -> Path:
         return Path(self._root) / "templates"
+
+    def inferences_dir(self) -> Path:
+        return Path(self._root) / "inferences"
 
     def contains(self, path: str | Path) -> bool:
         if not self._root or not path:

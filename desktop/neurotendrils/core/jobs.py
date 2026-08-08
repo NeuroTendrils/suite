@@ -397,3 +397,38 @@ def export_job(
 
     job.set_work(work)
     return job
+
+
+def infer_job(
+    *,
+    checkpoint_path: str,
+    output_dir: str,
+    input_path: str = "",
+    dataset_path: str | None = None,
+    device: str = "cpu",
+) -> WorkerJob:
+    paths = [checkpoint_path, output_dir]
+    if input_path:
+        paths.append(input_path)
+    if dataset_path:
+        paths.append(dataset_path)
+    _assert_in_project(*paths)
+    job = WorkerJob()
+
+    def work() -> dict[str, Any]:
+        from neurostudio.predict import PredictError, predict
+
+        try:
+            return predict(
+                checkpoint_path=checkpoint_path,
+                input_path=input_path,
+                dataset_path=dataset_path,
+                output_dir=output_dir,
+                device=device,
+                on_progress=lambda payload: job.progress.emit(payload),
+            )
+        except PredictError as exc:
+            raise RuntimeError(exc.message) from exc
+
+    job.set_work(work)
+    return job

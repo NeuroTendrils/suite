@@ -32,6 +32,7 @@ from neurotendrils.core.jobs import (
     WorkerJob,
     cancel_bound_job,
     export_job,
+    infer_job,
     start_bound_job,
     train_job,
 )
@@ -46,6 +47,7 @@ from neurotendrils.core.studio_io import (
     recommend,
     save_template_config,
     suggest_export_dir,
+    suggest_infer_dir,
     suggest_train_dir,
     template_catalog,
     validate_config,
@@ -66,6 +68,7 @@ TEMPLATE = "template"
 TUNE = "tune"
 TRAIN = "train"
 EXPORT = "export"
+INFER = "infer"
 
 _RECENT_LIMIT = 4
 
@@ -181,6 +184,7 @@ class NeuroStudioPage(QWidget):
         self._train_log = ""
         self._catalog_cache: list[dict[str, Any]] | None = None
         self._export_done = False
+        self._infer_done = False
         self._tune_valid = True
 
         layout = QVBoxLayout(self)
@@ -189,7 +193,7 @@ class NeuroStudioPage(QWidget):
 
         self.flow = StageFlow(
             "NeuroStudio",
-            "Pick prepared data, choose a template, tune it, then train and export.",
+            "Pick prepared data, choose a template, tune it, then train, export, and infer.",
             self,
         )
         self.flow.add_stage(DATA, "Data", self._build_dataset(), primary="Choose file")
@@ -199,6 +203,7 @@ class NeuroStudioPage(QWidget):
         self.flow.add_stage(TUNE, "Tune", self._build_tune(), primary="Continue")
         self.flow.add_stage(TRAIN, "Train", self._build_train(), primary="Start training")
         self.flow.add_stage(EXPORT, "Export", self._build_export(), primary="Export")
+        self.flow.add_stage(INFER, "Infer", self._build_infer(), primary="Run inference")
         self.flow.finalize()
         self.flow.primaryTriggered.connect(self._on_primary)
         self.flow.stageChanged.connect(lambda *_: self._refresh())
@@ -457,6 +462,25 @@ class NeuroStudioPage(QWidget):
         layout.addWidget(self._export_result)
         return host
 
+    def _build_infer(self) -> QWidget:
+        host, layout = _stage_widget(self)
+        self._infer_status = QLabel(
+            "Run the trained checkpoint on the selected dataset or epochs.",
+            host,
+        )
+        self._infer_status.setObjectName("fileMetaLabel")
+        self._infer_status.setWordWrap(True)
+        self._infer_result = QLabel("", host)
+        self._infer_result.setObjectName("filePathLabel")
+        self._infer_result.setWordWrap(True)
+        self._infer_result.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+        )
+        self._infer_result.hide()
+        layout.addWidget(self._infer_status)
+        layout.addWidget(self._infer_result)
+        return host
+
     # ---------- flow chrome ----------
 
     def showEvent(self, event) -> None:  # noqa: ANN001, N802
@@ -502,7 +526,13 @@ class NeuroStudioPage(QWidget):
                 self.start_training()
             return
         if key == EXPORT:
-            self.start_export()
+            if self._export_done:
+                self.flow.go_to(INFER)
+            else:
+                self.start_export()
+            return
+        if key == INFER:
+            self.start_inference()
 
     def _context_items(self) -> list[tuple[str, str]]:
         items: list[tuple[str, str]] = []
@@ -532,11 +562,13 @@ class NeuroStudioPage(QWidget):
         self.flow.set_complete(TUNE, has_template and self._tune_valid)
         self.flow.set_complete(TRAIN, has_ckpt)
         self.flow.set_complete(EXPORT, self._export_done)
+        self.flow.set_complete(INFER, self._infer_done)
 
         self.flow.set_unlocked(TEMPLATE, has_data)
         self.flow.set_unlocked(TUNE, has_template)
         self.flow.set_unlocked(TRAIN, has_data and has_template)
         self.flow.set_unlocked(EXPORT, has_ckpt)
+        self.flow.set_unlocked(INFER, has_ckpt)
 
         self.flow.set_context(self._context_items())
 
@@ -563,10 +595,21 @@ class NeuroStudioPage(QWidget):
                     "Start training", enabled=has_data and has_template and not busy
                 )
             self.flow.set_status(self._train_status.text() if training else "")
+        elif stage == INFER:
+            inferring = busy and self._job_kind == "infer"
+            if inferring:
+                self.flow.set_primary("Inferring…", enabled=False)
+            else:
+                self.flow.set_primary(
+                    "Run inference", enabled=has_ckpt and has_data and not busy
+                )
+            self.flow.set_status(self._infer_status.text() if inferring else "")
         else:
             exporting = busy and self._job_kind == "export"
             if exporting:
                 self.flow.set_primary("Exporting…", enabled=False)
+            elif self._export_done:
+                self.flow.set_primary("Continue to Infer", enabled=True)
             else:
                 self.flow.set_primary("Export", enabled=has_ckpt and not busy)
             self.flow.set_status(self._export_status.text() if exporting else "")
@@ -1050,6 +1093,69 @@ class NeuroStudioPage(QWidget):
         else:
             self._export_status.setText(f"Export failed ({code}): {message}")
             notify("Export failed", message, level="error")
+        self._refresh()
+
+    # ---------- infer ----------
+
+    def start_inference(self) -> None:
+        ckpt = self._last_train.get("checkpoint_path")
+        if not ckpt or not Path(ckpt).is_file():
+            alert(self, "No checkpoint", "Train a model before running inference.")
+            return
+        if not self._dataset_path:
+            alert(self, "No data", "Choose a dataset or epochs file first.")
+            return
+        if self._job and self._job.is_running():
+            return
+        out_dir = suggest_infer_dir(self._selected_template or "infer")
+        self.flow.go_to(INFER)
+        self._infer_status.setText("Running inference…")
+        self._infer_done = False
+        self._job_kind = "infer"
+        is_ds = is_dataset_manifest(self._dataset_path)
+        job = infer_job(
+            checkpoint_path=str(ckpt),
+            output_dir=str(out_dir),
+            input_path="" if is_ds else self._dataset_path,
+            dataset_path=self._dataset_path if is_ds else None,
+            device=self._device.currentText(),
+        )
+        start_bound_job(
+            self,
+            "_job",
+            job,
+            self._on_infer_ok,
+            self._on_infer_fail,
+            self._refresh,
+        )
+
+    def _on_infer_ok(self, result: dict[str, Any]) -> None:
+        out = str(result.get("output_path") or "")
+        metrics = result.get("metrics") or {}
+        lines = [
+            f"Inferred {result.get('n_trials')} trials",
+            f"Output: {out}",
+        ]
+        if metrics.get("accuracy") is not None:
+            lines.append(f"Accuracy vs labels: {metrics.get('accuracy')}")
+        _set_text(self._infer_result, "\n".join(lines))
+        self._infer_status.setText("Inference complete.")
+        self._infer_done = True
+        notify_library_changed()
+        notify(
+            "Inference complete",
+            f"{result.get('n_trials')} trials → {Path(out).name}",
+            level="success",
+        )
+        self._refresh()
+
+    def _on_infer_fail(self, code: str, message: str) -> None:
+        if code == "cancelled":
+            self._infer_status.setText("Inference cancelled.")
+            notify("Inference cancelled", level="info")
+        else:
+            self._infer_status.setText(f"Inference failed ({code}): {message}")
+            notify("Inference failed", message, level="error")
         self._refresh()
 
     # ---------- shared ----------

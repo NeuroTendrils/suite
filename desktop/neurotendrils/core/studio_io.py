@@ -199,6 +199,15 @@ def suggest_export_dir(template_id: str, fmt: str) -> Path:
     return unique_dir(project.models_dir(), stem)
 
 
+def suggest_infer_dir(template_id: str = "infer") -> Path:
+    project = ProjectDir.instance()
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    stem = f"{sanitize_base_name(template_id, 'infer')}_{stamp}"
+    path = unique_dir(project.inferences_dir(), stem)
+    path.mkdir(parents=True, exist_ok=False)
+    return path
+
+
 def ensure_model_hub_fields(model_dir: Path) -> Path:
     """Merge Hub-facing fields into an existing export sidecar without wiping it."""
     project = ProjectDir.instance()
