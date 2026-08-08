@@ -171,6 +171,7 @@ class MainWindow(QMainWindow):
         self.datasets.primaryActionRequested.connect(self.projects.create_lab_dataset)
         self.datasets.prepareRequested.connect(self.open_prep)
         self.datasets.openInFlowRequested.connect(self.open_dataset_in_flow)
+        self.flow.trainInStudioRequested.connect(self.open_run_in_studio)
         self.datasets.secondaryActionRequested.connect(self.projects.import_dataset)
         self.models.primaryActionRequested.connect(self.open_training)
         self.cloud.connectRequested.connect(self.open_cloud_unavailable)

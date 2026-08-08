@@ -68,12 +68,16 @@ from neurotendrils.widgets.motion import stagger_in
 from neurotendrils.widgets.rows import ListRow, RowList
 from neurotendrils.widgets.section import SectionHeader
 from neurotendrils.widgets.skeleton import SkeletonLoader
+from neurotendrils.widgets.augment_review import AugmentReview
+from neurotendrils.widgets.erp_plot import ErpPlot
+from neurotendrils.widgets.ica_browser import IcaBrowser
 from neurotendrils.widgets.stage_flow import StageFlow
 
 RECORDING = "recording"
 FINGERPRINT = "fingerprint"
 PLAN = "plan"
 RUN = "run"
+REVIEW = "review"
 
 _RECENT_LIMIT = 4
 
@@ -200,6 +204,8 @@ def _stage_widget(parent: QWidget | None = None) -> tuple[QWidget, QVBoxLayout]:
 
 
 class NeuroFlowPage(QWidget):
+    trainInStudioRequested = Signal(str)
+
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._dataset_path = ""
@@ -214,6 +220,7 @@ class NeuroFlowPage(QWidget):
         self._run_output = ""
         self._run_meta = ""
         self._run_done = False
+        self._review_loaded = False
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -233,6 +240,9 @@ class NeuroFlowPage(QWidget):
         )
         self.flow.add_stage(PLAN, "Plan", self._build_plan(), primary="Continue")
         self.flow.add_stage(RUN, "Run", self._build_run(), primary="Run plan")
+        self.flow.add_stage(
+            REVIEW, "Review", self._build_review(), primary="Train in NeuroStudio"
+        )
         self.flow.finalize()
         self.flow.primaryTriggered.connect(self._on_primary)
         self.flow.stageChanged.connect(self._on_stage_changed)
@@ -473,6 +483,32 @@ class NeuroFlowPage(QWidget):
         layout.addWidget(self._run_rows)
         return host
 
+    def _build_review(self) -> QWidget:
+        host, layout = _stage_widget(self)
+        self._review_status = QLabel(
+            "After a run, review ICA, ERPs, and suggested augment trials here.",
+            host,
+        )
+        self._review_status.setObjectName("fileMetaLabel")
+        self._review_status.setWordWrap(True)
+        layout.addWidget(self._review_status)
+
+        self._ica_browser = IcaBrowser(host)
+        layout.addWidget(self._ica_browser)
+        self._erp_plot = ErpPlot(host)
+        layout.addWidget(self._erp_plot)
+        self._augment_review = AugmentReview(host)
+        layout.addWidget(self._augment_review)
+
+        train_hint = QLabel(
+            "When satisfied, continue to NeuroStudio to train on the cleaned epochs.",
+            host,
+        )
+        train_hint.setObjectName("mutedLabel")
+        train_hint.setWordWrap(True)
+        layout.addWidget(train_hint)
+        return host
+
     # ---------- flow chrome ----------
 
     def showEvent(self, event) -> None:  # noqa: ANN001, N802
@@ -482,6 +518,8 @@ class NeuroFlowPage(QWidget):
     def _on_stage_changed(self, key: str) -> None:
         if key in {RECORDING, RUN}:
             self._refresh_pickers()
+        if key == REVIEW and self._run_done and not self._review_loaded:
+            self._load_review()
         self._refresh_actions()
 
     def _on_primary(self, key: str) -> None:
@@ -501,7 +539,14 @@ class NeuroFlowPage(QWidget):
             self.flow.advance()
             return
         if key == RUN:
-            self.run_plan()
+            if self._run_done:
+                self.flow.go_to(REVIEW)
+            else:
+                self.run_plan()
+            return
+        if key == REVIEW:
+            self.trainInStudioRequested.emit(self._run_output or self._dataset_path)
+            return
 
     def _refresh_pickers(self) -> None:
         self._dataset_rows.clear()
@@ -582,10 +627,12 @@ class NeuroFlowPage(QWidget):
         self.flow.set_complete(FINGERPRINT, bool(self._fingerprint))
         self.flow.set_complete(PLAN, has_plan)
         self.flow.set_complete(RUN, self._run_done)
+        self.flow.set_complete(REVIEW, self._review_loaded)
 
         self.flow.set_unlocked(FINGERPRINT, has_data)
         self.flow.set_unlocked(PLAN, has_data)
         self.flow.set_unlocked(RUN, has_data and has_plan)
+        self.flow.set_unlocked(REVIEW, self._run_done)
 
         self.flow.set_context(self._context_items())
 
@@ -609,10 +656,16 @@ class NeuroFlowPage(QWidget):
         elif stage == PLAN:
             self.flow.set_primary("Continue", enabled=has_plan)
             self.flow.set_status("")
+        elif stage == REVIEW:
+            out = self._run_output or self._dataset_path
+            self.flow.set_primary("Train in NeuroStudio", enabled=bool(out))
+            self.flow.set_status(self._review_status.text() if self._review_loaded else "")
         else:
             running = busy and self._job_kind == "run"
             if running:
                 self.flow.set_primary("Running…", enabled=False)
+            elif self._run_done:
+                self.flow.set_primary("Review results", enabled=True)
             else:
                 self.flow.set_primary(
                     "Run plan", enabled=has_data and has_plan and not busy
@@ -1059,7 +1112,9 @@ class NeuroFlowPage(QWidget):
                 f"{name} · {result.get('n_members')} files → datasets/{name}",
                 level="success",
             )
+            self._review_loaded = False
             self._refresh_actions()
+            self.flow.go_to(REVIEW)
             return
         lines = [
             f"Finished · {result.get('n_steps')} steps · {kind}",
@@ -1082,7 +1137,67 @@ class NeuroFlowPage(QWidget):
             f"{result.get('n_steps')} steps · {Path(str(out)).name}",
             level="success",
         )
+        self._review_loaded = False
         self._refresh_pickers()
+        self._refresh_actions()
+        self.flow.go_to(REVIEW)
+
+    def _load_review(self) -> None:
+        """Best-effort ICA / ERP / augment previews from run output."""
+        out = self._run_output or ""
+        path = Path(out)
+        if is_dataset_manifest(out):
+            try:
+                manifest = load_manifest(out)
+                path = resolve_member_path(manifest, manifest.members[0])
+            except Exception:  # noqa: BLE001
+                self._review_status.setText("Review: could not open cleaned dataset member.")
+                return
+
+        self._review_status.setText(f"Reviewing {path.name}…")
+        # ICA on continuous cleaned output when available.
+        try:
+            if path.is_file() and "-epo" not in path.name.lower():
+                from neuroflow.qa import ica_component_summary
+
+                summary = ica_component_summary(str(path))
+                self._ica_browser.set_summary(summary)
+            else:
+                self._review_status.setText("ICA review skipped (epoched output).")
+        except Exception as exc:  # noqa: BLE001
+            self._review_status.setText(f"ICA review unavailable: {exc}")
+
+        # ERP + augment when epoched.
+        epo_path = path
+        if path.is_file() and "-epo" not in path.name.lower():
+            sibling = path.with_name("cleaned-epo.fif")
+            if sibling.is_file():
+                epo_path = sibling
+            else:
+                epo_path = path
+        try:
+            if epo_path.is_file() and (
+                "-epo" in epo_path.name.lower() or epo_path.suffix == ".fif"
+            ):
+                from neuroflow.qa import augment_preview_pairs, erp_averages
+
+                try:
+                    erp = erp_averages(str(epo_path))
+                    self._erp_plot.set_erp(erp)
+                except Exception:  # noqa: BLE001
+                    pass
+                try:
+                    preview = augment_preview_pairs(str(epo_path))
+                    self._augment_review.set_preview(preview)
+                except Exception:  # noqa: BLE001
+                    pass
+        except Exception as exc:  # noqa: BLE001
+            self._review_status.setText(
+                (self._review_status.text() + f" · ERP/augment: {exc}").strip()
+            )
+
+        self._review_loaded = True
+        self._review_status.setText(f"Review ready · {path.name}")
         self._refresh_actions()
 
     def _on_run_fail(self, code: str, message: str) -> None:

@@ -45,6 +45,7 @@ hiddenimports += [
     "neuroflow.steps",
     "neuroflow.apply",
     "neuroflow.repro",
+    "neuroflow.qa",
     "neurostudio.train",
     "neurostudio.export",
     "neurostudio.templates",
