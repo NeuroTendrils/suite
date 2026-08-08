@@ -203,10 +203,54 @@ def _apply_ica(
         raise ApplyError("step_failed", f"ica apply failed: {exc}") from exc
 
 
+def _channel_xy(raw: Any) -> list[list[float]]:
+    """2D electrode positions for topoplots (unit disk); empty if unknown."""
+    try:
+        from mne.channels.layout import _find_topomap_coords
+
+        picks = list(range(len(raw.ch_names)))
+        pos = _find_topomap_coords(raw.info, picks=picks)
+        # Normalize to roughly [-1, 1]
+        pos = np.asarray(pos, dtype=float)
+        if pos.size == 0:
+            return []
+        pos = pos[:, :2]
+        m = float(np.max(np.abs(pos))) or 1.0
+        pos = pos / m
+        return [[float(x), float(y)] for x, y in pos]
+    except Exception:  # noqa: BLE001
+        return []
+
+
+def _component_spectra(
+    sources: np.ndarray, sfreq: float, *, n_fft: int = 256
+) -> dict[str, Any]:
+    """Compact Welch PSD per ICA component for EEGLAB-like properties."""
+    from scipy.signal import welch
+
+    n_comp = int(sources.shape[0])
+    freqs: np.ndarray | None = None
+    psds: list[list[float]] = []
+    for i in range(n_comp):
+        f, pxx = welch(sources[i], fs=sfreq, nperseg=min(n_fft, sources.shape[1]))
+        # Keep ≤40 Hz for UI density.
+        mask = f <= 40.0
+        if freqs is None:
+            freqs = f[mask]
+        step = max(1, int(len(freqs) // 64))
+        band = pxx[mask][::step]
+        # dB scale
+        band = 10.0 * np.log10(np.maximum(band, 1e-20))
+        psds.append([float(v) for v in band])
+    assert freqs is not None
+    freqs_out = [float(v) for v in freqs[:: max(1, int(len(freqs) // 64))]]
+    return {"freqs": freqs_out, "psd": psds}
+
+
 def _write_ica_artifacts(
     ica: Any, fit_raw: Any, artifacts_dir: Path, *, exclude: list[int]
 ) -> None:
-    """Persist ICA solution + compact summary for the Review stage."""
+    """Persist ICA solution + EEGLAB-style summary (maps, spectra, waveforms)."""
     import json
 
     artifacts_dir.mkdir(parents=True, exist_ok=True)
@@ -218,7 +262,13 @@ def _write_ica_artifacts(
     total = float(np.sum(contrib)) or 1.0
     fractions = (contrib / total).tolist()
 
-    # ~2s of each component at ~50 Hz for sparkline plots in the UI.
+    # Scalp maps = mixing matrix columns (n_channels × n_components).
+    try:
+        mixing = ica.get_components()
+        maps = [[float(v) for v in mixing[:, i]] for i in range(mixing.shape[1])]
+    except Exception:  # noqa: BLE001
+        maps = []
+
     sfreq = float(fit_raw.info["sfreq"])
     n_keep = min(sources.shape[1], int(sfreq * 2.0))
     step = max(1, int(round(sfreq / 50.0)))
@@ -226,12 +276,21 @@ def _write_ica_artifacts(
         [float(v) for v in sources[i, :n_keep:step]] for i in range(sources.shape[0])
     ]
 
+    spectra: dict[str, Any] = {"freqs": [], "psd": []}
+    try:
+        spectra = _component_spectra(sources, sfreq)
+    except Exception:  # noqa: BLE001
+        pass
+
     summary = {
         "n_components": int(ica.n_components_),
         "contributions": [float(x) for x in fractions],
         "suggested_exclude": [int(i) for i in exclude],
         "ch_names": list(fit_raw.ch_names),
+        "maps": maps,
+        "positions": _channel_xy(fit_raw),
         "waveforms": waveforms,
+        "spectra": spectra,
         "sfreq": float(sfreq / step),
         "ica_path": str(ica_path),
     }

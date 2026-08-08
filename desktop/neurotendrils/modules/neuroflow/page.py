@@ -79,8 +79,7 @@ from neurotendrils.widgets.section import SectionHeader
 from neurotendrils.widgets.skeleton import SkeletonLoader
 from neurotendrils.widgets.augment_review import AugmentReview
 from neurotendrils.widgets.eeg_viewer import EegViewer, ViewerEvent
-from neurotendrils.widgets.erp_plot import ErpPlot
-from neurotendrils.widgets.ica_browser import IcaBrowser
+from neurotendrils.widgets.plot_hub import PlotHub
 from neurotendrils.widgets.stage_flow import StageFlow
 from neurotendrils.widgets.trial_labels import TrialLabelEditor
 
@@ -408,8 +407,13 @@ class NeuroFlowPage(QWidget):
         layout.addLayout(body, 1)
 
         self._inspect_labels = TrialLabelEditor(host)
-        self._inspect_labels.setMaximumHeight(180)
+        self._inspect_labels.setMaximumHeight(160)
         layout.addWidget(self._inspect_labels)
+
+        self._inspect_plots = PlotHub(host)
+        self._inspect_plots.setMinimumHeight(280)
+        self._inspect_plots.setMaximumHeight(360)
+        layout.addWidget(self._inspect_plots)
         return host
 
     def _build_fingerprint(self) -> QWidget:
@@ -565,17 +569,20 @@ class NeuroFlowPage(QWidget):
     def _build_review(self) -> QWidget:
         host, layout = _stage_widget(self)
         self._review_status = QLabel(
-            "After a run, review ICA, ERPs, and suggested augment trials here.",
+            "EEGLAB-style Plot hub: channel layout, spectra, ERP, ERP image, "
+            "and ICA reject-by-map. Toggle red headers to exclude components.",
             host,
         )
         self._review_status.setObjectName("fileMetaLabel")
         self._review_status.setWordWrap(True)
         layout.addWidget(self._review_status)
 
-        self._ica_browser = IcaBrowser(host)
-        layout.addWidget(self._ica_browser)
-        self._erp_plot = ErpPlot(host)
-        layout.addWidget(self._erp_plot)
+        self._plot_hub = PlotHub(host)
+        self._plot_hub.setMinimumHeight(420)
+        layout.addWidget(self._plot_hub, 1)
+        # Keep a handle for exclude CSV (IcaMapBrowser inside PlotHub).
+        self._ica_browser = self._plot_hub.ica_browser()
+
         self._augment_review = AugmentReview(host)
         layout.addWidget(self._augment_review)
 
@@ -1320,10 +1327,11 @@ class NeuroFlowPage(QWidget):
         )
         if codes and not self._inspect_labels.mapping():
             self._inspect_labels.set_codes(codes)
+        self._inspect_plots.set_channel_positions(all_names)
         self._inspect_status.setText(
             f"Preview ready · {arr.shape[0]} ch shown / {len(all_names)} total · "
             f"{float(result.get('duration_sec') or 0):.1f}s · "
-            "Paint bad → drag spans · Save BAD marks · Drop channels as needed."
+            "Paint bad → drag spans · Save BAD · Drop channels · see Channels tab below."
         )
         self._refresh_actions()
 
@@ -1510,25 +1518,49 @@ class NeuroFlowPage(QWidget):
         )
 
     def _on_review_ok(self, result: dict[str, Any]) -> None:
-        if result.get("ica"):
-            self._ica_browser.set_summary(result["ica"])
+        ica = result.get("ica")
+        if ica:
+            self._plot_hub.set_ica(ica)
+            ch_names = list(ica.get("ch_names") or [])
+            positions = ica.get("positions") or None
+            if ch_names:
+                pos_tuples = None
+                if positions:
+                    pos_tuples = [(float(p[0]), float(p[1])) for p in positions]
+                self._plot_hub.set_channel_positions(ch_names, pos_tuples)
+            self._plot_hub.show_tab("ICA maps")
+        spectra = result.get("spectra") or {}
+        if spectra.get("freqs") and spectra.get("channels"):
+            self._plot_hub.set_spectra(
+                list(spectra["freqs"]), dict(spectra["channels"])
+            )
         if result.get("erp"):
-            self._erp_plot.set_erp(result["erp"])
+            self._plot_hub.set_erp(result["erp"])
+        erp_image = result.get("erp_image") or {}
+        if erp_image.get("trials"):
+            self._plot_hub.set_erp_image(
+                list(erp_image["trials"]),
+                list(erp_image.get("times") or []),
+                title=str(erp_image.get("title") or ""),
+            )
         if result.get("augment"):
             self._augment_review.set_preview(result["augment"])
         bits = []
-        if result.get("ica"):
-            bits.append("ICA")
+        if ica:
+            bits.append(f"ICA ({ica.get('n_components')} maps)")
         elif result.get("ica_error"):
-            bits.append(f"ICA skipped ({result['ica_error'][:60]})")
+            bits.append(f"ICA skipped ({str(result['ica_error'])[:60]})")
         if result.get("erp"):
             bits.append("ERP")
-        elif result.get("erp_error"):
-            bits.append("ERP skipped")
+        if erp_image.get("trials"):
+            bits.append("ERP image")
+        if spectra.get("channels"):
+            bits.append("spectra")
         if result.get("augment"):
             bits.append("augment")
         self._review_status.setText(
             "Review ready · " + (" · ".join(bits) if bits else "no QA artifacts")
+            + " — use Plot tabs (Channels / Spectra / ERP / ERP image / ICA maps)."
         )
         self._review_loaded = True
         self._refresh_actions()

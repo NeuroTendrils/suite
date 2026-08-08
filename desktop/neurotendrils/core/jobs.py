@@ -339,7 +339,9 @@ def review_qa_job(path: str) -> WorkerJob:
     def work() -> dict[str, Any]:
         from neuroflow.qa import (
             augment_preview_pairs,
+            channel_spectra,
             erp_averages,
+            erp_image_data,
             ica_component_summary,
         )
 
@@ -348,19 +350,18 @@ def review_qa_job(path: str) -> WorkerJob:
             "path": str(p),
             "ica": None,
             "erp": None,
+            "erp_image": None,
+            "spectra": None,
             "augment": None,
         }
         epo = p
         continuous = p
         # Prefer artifacts next to the run output (ica_summary.json) — no refit.
-        summary_candidates = [p.parent / "ica_summary.json"]
-        for cand in summary_candidates:
-            if cand.is_file():
-                try:
-                    out["ica"] = ica_component_summary(str(p))
-                    break
-                except Exception as exc:  # noqa: BLE001
-                    out["ica_error"] = str(exc)
+        if (p.parent / "ica_summary.json").is_file():
+            try:
+                out["ica"] = ica_component_summary(str(p))
+            except Exception as exc:  # noqa: BLE001
+                out["ica_error"] = str(exc)
 
         if p.is_file() and "-epo" not in p.name.lower():
             sibling = p.parent / "cleaned-epo.fif"
@@ -371,9 +372,6 @@ def review_qa_job(path: str) -> WorkerJob:
                     out["ica"] = ica_component_summary(str(continuous))
                 except Exception as exc:  # noqa: BLE001
                     out["ica_error"] = str(exc)
-            if epo == p and out.get("erp") is None:
-                # Continuous-only run: still try ERP if somehow epoched later.
-                pass
         elif p.is_file():
             raw_guess = p.with_name(p.name.replace("-epo.fif", ".fif"))
             if "cleaned-epo" in p.name:
@@ -386,11 +384,20 @@ def review_qa_job(path: str) -> WorkerJob:
                 except Exception as exc:  # noqa: BLE001
                     out["ica_error"] = str(exc)
 
+        try:
+            out["spectra"] = channel_spectra(str(epo if epo.is_file() else continuous))
+        except Exception as exc:  # noqa: BLE001
+            out["spectra_error"] = str(exc)
+
         if epo.is_file() and ("-epo" in epo.name.lower() or epo != continuous):
             try:
                 out["erp"] = erp_averages(str(epo))
             except Exception as exc:  # noqa: BLE001
                 out["erp_error"] = str(exc)
+            try:
+                out["erp_image"] = erp_image_data(str(epo))
+            except Exception as exc:  # noqa: BLE001
+                out["erp_image_error"] = str(exc)
             try:
                 out["augment"] = augment_preview_pairs(str(epo))
             except Exception as exc:  # noqa: BLE001

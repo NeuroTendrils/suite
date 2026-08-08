@@ -1,4 +1,4 @@
-"""QA helpers: ICA component summary, ERP averages, augment before/after pairs.
+"""QA helpers: ICA component summary, ERP averages, spectra, ERP image, augment.
 
 Copyright 2026 NeuroTendrils
 """
@@ -32,15 +32,17 @@ def _load_saved_ica_summary(raw_path: str) -> dict[str, Any] | None:
 
 
 def ica_component_summary(raw_path: str, *, n_components: float | int = 0.99) -> dict[str, Any]:
-    """Return ICA contributions; load run artifacts when present (fast path)."""
+    """Return ICA contributions + maps; load run artifacts when present (fast path)."""
     saved = _load_saved_ica_summary(raw_path)
     if saved is not None:
         return saved
 
+    # Slow path: fit ICA (prefer running a NeuroFlow plan so artifacts are cached).
+    from .apply import _channel_xy, _component_spectra
+    from .repro import ICA_RANDOM_STATE
+
     import mne
     from mne.preprocessing import ICA
-
-    from .repro import ICA_RANDOM_STATE
 
     raw = mne.io.read_raw(raw_path, preload=True, verbose="ERROR")
     ica = ICA(
@@ -67,18 +69,32 @@ def ica_component_summary(raw_path: str, *, n_components: float | int = 0.99) ->
     except Exception:  # noqa: BLE001
         eog_indices = []
 
+    try:
+        mixing = ica.get_components()
+        maps = [[float(v) for v in mixing[:, i]] for i in range(mixing.shape[1])]
+    except Exception:  # noqa: BLE001
+        maps = []
+
     n_keep = min(sources.shape[1], int(sfreq * 2.0))
     step = max(1, int(round(sfreq / 50.0)))
     waveforms = [
         [float(v) for v in sources[i, :n_keep:step]] for i in range(sources.shape[0])
     ]
+    spectra: dict[str, Any] = {"freqs": [], "psd": []}
+    try:
+        spectra = _component_spectra(sources, sfreq)
+    except Exception:  # noqa: BLE001
+        pass
 
     return {
         "n_components": int(ica.n_components_),
         "contributions": [float(x) for x in fractions],
         "suggested_exclude": [int(i) for i in eog_indices],
         "ch_names": list(raw.ch_names),
+        "maps": maps,
+        "positions": _channel_xy(fit_raw),
         "waveforms": waveforms,
+        "spectra": spectra,
         "sfreq": float(sfreq / step),
     }
 
@@ -92,7 +108,6 @@ def erp_averages(epochs_path: str) -> dict[str, Any]:
     averages: dict[str, list[float]] = {}
     for name in epochs.event_id:
         evoked = epochs[name].average()
-        # Mean across channels for a compact plot; keep per-ch optional later.
         data = evoked.data.mean(axis=0)
         averages[str(name)] = [float(v) for v in data.tolist()]
     return {
@@ -101,6 +116,75 @@ def erp_averages(epochs_path: str) -> dict[str, Any]:
         "ch_names": list(epochs.ch_names),
         "n_epochs": int(len(epochs)),
         "event_id": {str(k): int(v) for k, v in epochs.event_id.items()},
+    }
+
+
+def channel_spectra(path: str, *, fmax: float = 40.0) -> dict[str, Any]:
+    """Welch PSD per channel for Plot → Spectra (EEGLAB spectopo-like)."""
+    import mne
+    from scipy.signal import welch
+
+    p = Path(path)
+    try:
+        raw = mne.io.read_raw(str(p), preload=True, verbose="ERROR")
+        data = raw.get_data()
+        sfreq = float(raw.info["sfreq"])
+        ch_names = list(raw.ch_names)
+        # Cap duration for speed.
+        n_max = int(min(data.shape[1], sfreq * 60.0))
+        data = data[:, :n_max]
+    except Exception:
+        epochs = mne.read_epochs(str(p), preload=True, verbose="ERROR")
+        data = epochs.get_data().mean(axis=0)  # average across epochs for spectra
+        sfreq = float(epochs.info["sfreq"])
+        ch_names = list(epochs.ch_names)
+
+    channels: dict[str, list[float]] = {}
+    freqs_out: list[float] = []
+    for i, name in enumerate(ch_names[:32]):
+        f, pxx = welch(data[i], fs=sfreq, nperseg=min(256, data.shape[1]))
+        mask = f <= fmax
+        if not freqs_out:
+            step = max(1, int(mask.sum() // 64))
+            freqs_out = [float(v) for v in f[mask][::step]]
+            step_use = step
+        else:
+            step_use = max(1, int(mask.sum() // 64))
+        band = 10.0 * np.log10(np.maximum(pxx[mask][::step_use], 1e-20))
+        channels[str(name)] = [float(v) for v in band]
+    return {"freqs": freqs_out, "channels": channels}
+
+
+def erp_image_data(
+    epochs_path: str, *, channel: str | None = None, max_trials: int = 200
+) -> dict[str, Any]:
+    """Single-channel ERP image (trials × time) for Plot → ERP image."""
+    import mne
+
+    epochs = mne.read_epochs(epochs_path, preload=True, verbose="ERROR")
+    if len(epochs) == 0:
+        return {"trials": [], "times": [], "channel": "", "title": ""}
+    ch = channel
+    if ch is None or ch not in epochs.ch_names:
+        # Prefer Cz-like, else middle channel.
+        for cand in ("Cz", "CZ", "Cz-Avg", "CPz", "Pz"):
+            if cand in epochs.ch_names:
+                ch = cand
+                break
+        else:
+            ch = epochs.ch_names[len(epochs.ch_names) // 2]
+    idx = epochs.ch_names.index(ch)
+    X = epochs.get_data(copy=False)[:, idx, :]
+    if X.shape[0] > max_trials:
+        X = X[:max_trials]
+    step = max(1, X.shape[1] // 256)
+    times = [float(t) for t in epochs.times[::step]]
+    trials = [[float(v) for v in row[::step]] for row in X]
+    return {
+        "trials": trials,
+        "times": times,
+        "channel": str(ch),
+        "title": f"Single-trial ERPs at {ch}",
     }
 
 
@@ -126,7 +210,6 @@ def augment_preview_pairs(
     n = min(len(epochs), max_pairs)
     indices = rng.choice(len(epochs), size=n, replace=False)
 
-    # Downsample time for UI.
     n_times = X.shape[2]
     step = max(1, n_times // 128)
     times = epochs.times[::step].tolist()
