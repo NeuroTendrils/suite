@@ -90,19 +90,21 @@ def import_format_hint() -> str:
     return "Supported: " + ", ".join(parts) + "."
 
 
-def matched_suffix(path: str, suffixes: tuple[str, ...] = IMPORT_SUFFIXES) -> str | None:
-    lower = path.lower()
+def matched_suffix(
+    path: str | Path, suffixes: tuple[str, ...] = IMPORT_SUFFIXES
+) -> str | None:
+    lower = str(path).lower()
     for suffix in suffixes:
         if lower.endswith("." + suffix):
             return suffix
     return None
 
 
-def matches_suffix(path: str, suffixes: tuple[str, ...]) -> bool:
+def matches_suffix(path: str | Path, suffixes: tuple[str, ...]) -> bool:
     return matched_suffix(path, suffixes) is not None
 
 
-def extension_badge(path: str) -> str:
+def extension_badge(path: str | Path) -> str:
     suffix = matched_suffix(path, IMPORT_SUFFIXES)
     if suffix:
         return suffix.upper()

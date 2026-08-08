@@ -23,7 +23,7 @@ def read_recording(path: str | Path, *, preload: bool = True) -> Any:
     if not file_path.is_file():
         raise ReadError("file_not_found", f"file not found: {file_path}")
 
-    suffix = matched_suffix(file_path) or file_path.suffix.lstrip(".").lower()
+    suffix = matched_suffix(str(file_path)) or file_path.suffix.lstrip(".").lower()
     try:
         if suffix in {"fif", "fif.gz"}:
             try:
