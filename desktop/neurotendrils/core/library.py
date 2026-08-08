@@ -119,6 +119,14 @@ def scan_datasets() -> list[LibraryEntry]:
             except OSError:
                 pass
         class_bit = f"{len(classes)} classes" if classes else str(label.get("source") or "labels")
+        about = data.get("about") or {}
+        montage = data.get("montage") or {}
+        subjects = {
+            str(m.get("subject") or m.get("group") or "")
+            for m in members
+            if (m.get("subject") or m.get("group"))
+        }
+        subjects.discard("")
         entries.append(
             LibraryEntry(
                 kind="dataset",
@@ -133,6 +141,9 @@ def scan_datasets() -> list[LibraryEntry]:
                     "n_members": len(members),
                     "label_source": label.get("source"),
                     "class_names": classes,
+                    "about_summary": about.get("summary") or "",
+                    "montage": montage.get("name") or montage.get("custom_path") or "",
+                    "n_subjects": len(subjects),
                 },
             )
         )

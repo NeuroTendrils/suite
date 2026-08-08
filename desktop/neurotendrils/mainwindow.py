@@ -169,6 +169,8 @@ class MainWindow(QMainWindow):
         self.projects.openRunRequested.connect(self.open_run_in_studio)
         self.projects.openTemplateRequested.connect(self.open_template_in_studio)
         self.datasets.primaryActionRequested.connect(self.projects.create_lab_dataset)
+        self.datasets.prepareRequested.connect(self.open_prep)
+        self.datasets.openInFlowRequested.connect(self.open_dataset_in_flow)
         self.datasets.secondaryActionRequested.connect(self.projects.import_dataset)
         self.models.primaryActionRequested.connect(self.open_training)
         self.cloud.connectRequested.connect(self.open_cloud_unavailable)
@@ -304,6 +306,11 @@ class MainWindow(QMainWindow):
         # Train on the (cleaned) dataset from NeuroStudio.
         self.navigate("flow")
         self.flow.set_dataset_path(path, False)
+
+    def open_prep(self, path: str) -> None:
+        from neurotendrils.widgets.prep_dialog import open_prep_dialog
+
+        open_prep_dialog(self, path)
 
     def open_run_in_studio(self, path: str) -> None:
         self.navigate("studio")

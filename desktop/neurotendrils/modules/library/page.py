@@ -72,6 +72,8 @@ class LibraryPage(QWidget):
 
     primaryActionRequested = Signal()
     secondaryActionRequested = Signal()
+    openInFlowRequested = Signal(str)
+    prepareRequested = Signal(str)
 
     def __init__(
         self,
@@ -227,16 +229,27 @@ class LibraryPage(QWidget):
         self._selected = entry
         self._rows.select(row)
         fields, tips = self._fields(entry)
-        self._inspector.set_record(
-            self._kind,
-            entry.title,
-            fields,
+        actions: list[tuple[str, str]] = []
+        if self._kind == "dataset":
+            actions.extend(
+                [
+                    ("prepare", "Prepare…"),
+                    ("clean_flow", "Clean with NeuroFlow"),
+                ]
+            )
+        actions.extend(
             [
                 ("rename", "Rename…"),
                 ("reveal", "Browse folder"),
                 ("copy", "Copy path"),
                 ("delete", "Delete…"),
-            ],
+            ]
+        )
+        self._inspector.set_record(
+            self._kind,
+            entry.title,
+            fields,
+            actions,
             tooltips=tips,
         )
         if not self._inspector.isVisible():
@@ -297,6 +310,16 @@ class LibraryPage(QWidget):
             if dataset_path:
                 fields.append(("Dataset", format_path(dataset_path, keep=2)))
                 tips["Dataset"] = dataset_path
+        if self._kind == "dataset":
+            about = str(entry.extra.get("about_summary") or "")
+            if about:
+                fields.insert(1, ("About", about))
+            montage = entry.extra.get("montage")
+            if montage:
+                fields.insert(2 if about else 1, ("Montage", str(montage)))
+            n_subjects = entry.extra.get("n_subjects")
+            if n_subjects:
+                fields.append(("Subjects", str(n_subjects)))
         if not Path(entry.path).exists():
             fields.append(("Status", "Missing on disk"))
         return fields, tips
@@ -305,6 +328,12 @@ class LibraryPage(QWidget):
         if self._selected is None:
             return
         path = Path(self._selected.path)
+        if key == "prepare":
+            self.prepareRequested.emit(str(path))
+            return
+        if key == "clean_flow":
+            self.openInFlowRequested.emit(str(path))
+            return
         if key == "copy":
             clipboard = QGuiApplication.clipboard()
             if clipboard is not None:
