@@ -41,7 +41,7 @@ ProgressCb = Callable[[dict[str, Any]], None]
 
 def train(
     *,
-    input_path: str | Path,
+    input_path: str | Path = "",
     output_dir: str | Path,
     template_id: str,
     config: dict[str, Any] | None = None,
@@ -49,16 +49,23 @@ def train(
     on_progress: ProgressCb | None = None,
     should_cancel: Callable[[], bool] | None = None,
     allow_synthetic: bool = False,
+    dataset_path: str | Path | None = None,
 ) -> dict[str, Any]:
     """Train a template and write artifacts into *output_dir*."""
-    in_path = Path(input_path).expanduser()
+    in_path = Path(input_path).expanduser() if input_path else Path()
+    ds_path = Path(dataset_path).expanduser() if dataset_path else None
     out_dir = Path(output_dir).expanduser()
 
-    if not str(input_path).strip():
-        raise TrainError("invalid_args", "input_path is required")
+    if ds_path is None and not str(input_path).strip():
+        raise TrainError("invalid_args", "input_path or dataset_path is required")
     if not str(output_dir).strip():
         raise TrainError("invalid_args", "output_dir is required")
-    if not in_path.is_file():
+    if ds_path is not None:
+        from .dataset_load import is_manifest_path
+
+        if not is_manifest_path(ds_path):
+            raise TrainError("file_not_found", f"dataset manifest not found: {ds_path}")
+    elif not in_path.is_file():
         raise TrainError("file_not_found", f"input file not found: {in_path}")
     if out_dir.exists() and out_dir.is_symlink():
         raise TrainError("invalid_args", "output_dir must not be a symlink")
@@ -98,27 +105,56 @@ def train(
             on_progress(payload)
 
     progress({"stage": "load", "message": "Preparing training data…"})
-    x, y, data_mode, data_meta = _prepare_arrays(in_path, seed=seed)
+    split_ctx: dict[str, Any] = {}
+    if ds_path is not None:
+        from .dataset_load import prepare_from_dataset, split_indices
+
+        x, y, data_mode, data_meta, split_ctx = prepare_from_dataset(
+            ds_path, seed=seed, prepare_file=_prepare_arrays
+        )
+    else:
+        x, y, data_mode, data_meta = _prepare_arrays(in_path, seed=seed)
 
     if data_mode == "synthetic_demo" and not allow_synthetic:
         note = data_meta.get("note") or data_meta.get("epochs_label_warning") or ""
         raise TrainError(
             "no_labels",
-            "No usable trial labels found in this file. "
-            "Train on labeled epochs/annotations (or a Flow run with real events), "
+            "No usable trial labels found. "
+            "Use a labeled dataset (embedded events, filename classes, or data+label .mat), "
             f"not unlabeled windows. {note}".strip(),
+        )
+
+    if x.shape[0] < 4:
+        raise TrainError(
+            "invalid_data",
+            "Need at least 4 labeled trials across the dataset.",
         )
 
     n_classes = int(len(np.unique(y)))
     if n_classes < 2:
         raise TrainError(
             "invalid_data",
-            "Need at least 2 classes to train; check event labels in the FIF.",
+            "Need at least 2 classes to train; check event labels or filename class tags.",
         )
     n_channels = int(x.shape[2])
     n_times = int(x.shape[3])
 
-    train_idx, val_idx = _stratified_split(y, seed=seed)
+    if ds_path is not None:
+        from .dataset_load import split_indices
+
+        train_idx, val_idx, resolved_split = split_indices(
+            y,
+            seed=seed,
+            split_mode=str(data_meta.get("split_mode") or "by_group"),
+            val_fraction=float(data_meta.get("val_fraction") or 0.2),
+            roles=split_ctx.get("roles"),
+            groups=split_ctx.get("groups"),
+            stratified_split=_stratified_split,
+        )
+        data_meta["split_mode_resolved"] = resolved_split
+    else:
+        train_idx, val_idx = _stratified_split(y, seed=seed)
+        data_meta["split_mode_resolved"] = "stratified"
 
     x_train = torch.tensor(x[train_idx], dtype=torch.float32)
     y_train = torch.tensor(y[train_idx], dtype=torch.long)
@@ -162,12 +198,18 @@ def train(
     criterion = nn.CrossEntropyLoss()
     history: list[dict[str, Any]] = []
 
+    split_note = str(data_meta.get("split_mode_resolved") or "")
     progress(
         {
             "stage": "train",
-            "message": f"Training on {device_name} ({data_mode})…",
+            "message": (
+                f"Training on {device_name} ({data_mode}"
+                + (f", split={split_note}" if split_note else "")
+                + ")…"
+            ),
             "device": device_name,
             "data_mode": data_mode,
+            "split_mode": split_note,
             "n_train": int(len(y_train)),
             "n_val": int(len(y_val)),
             "n_classes": n_classes,
@@ -259,7 +301,8 @@ def train(
     metrics_path.write_text(json.dumps(metrics, indent=2), encoding="utf-8")
 
     summary = {
-        "input_path": str(in_path.resolve()),
+        "input_path": str(in_path.resolve()) if in_path and in_path.exists() else "",
+        "dataset_path": str(ds_path.resolve()) if ds_path is not None else "",
         "output_dir": str(out_dir.resolve()),
         "checkpoint_path": str(checkpoint_path.resolve()),
         "metrics_path": str(metrics_path.resolve()),
@@ -311,7 +354,7 @@ def _seed_everything(seed: int) -> None:
 
 
 def _prepare_arrays(
-    path: Path, *, seed: int
+    path: Path, *, seed: int, allow_single_class: bool = False
 ) -> tuple[np.ndarray, np.ndarray, str, dict[str, Any]]:
     """Return X (n, 1, C, T), y, data_mode, meta."""
     meta: dict[str, Any] = {"source": str(path)}
@@ -325,11 +368,15 @@ def _prepare_arrays(
     # 1) Epoched FIF with real trial labels
     try:
         epochs = mne.read_epochs(str(path), preload=True, verbose="ERROR")
-        packed = _from_epochs(epochs, seed=seed, meta=meta)
+        packed = _from_epochs(
+            epochs, seed=seed, meta=meta, allow_single_class=allow_single_class
+        )
         if packed is not None:
             return packed
         meta["epochs_label_warning"] = (
-            "Epoched FIF loaded but events did not yield ≥2 usable classes"
+            "Epoched FIF loaded but events did not yield usable classes"
+            if allow_single_class
+            else "Epoched FIF loaded but events did not yield ≥2 usable classes"
         )
     except Exception as exc:  # noqa: BLE001
         meta["epochs_load_note"] = str(exc)
@@ -337,7 +384,9 @@ def _prepare_arrays(
     # 2) Continuous raw: annotations or stim-channel events → epoch
     try:
         raw = mne.io.read_raw(str(path), preload=True, verbose="ERROR")
-        packed = _from_raw_labeled(raw, seed=seed, meta=meta)
+        packed = _from_raw_labeled(
+            raw, seed=seed, meta=meta, allow_single_class=allow_single_class
+        )
         if packed is not None:
             return packed
         meta["raw_label_warning"] = (
@@ -351,19 +400,26 @@ def _prepare_arrays(
 
 
 def _from_epochs(
-    epochs: Any, *, seed: int, meta: dict[str, Any]
+    epochs: Any,
+    *,
+    seed: int,
+    meta: dict[str, Any],
+    allow_single_class: bool = False,
 ) -> tuple[np.ndarray, np.ndarray, str, dict[str, Any]] | None:
     """Build arrays from an Epochs object using real event codes."""
     import mne
 
     if not isinstance(epochs, mne.BaseEpochs):
         return None
-    if len(epochs) < 4:
+    min_trials = 1 if allow_single_class else 4
+    if len(epochs) < min_trials:
         return None
 
     event_id = dict(epochs.event_id or {})
     codes = np.asarray(epochs.events[:, 2], dtype=np.int64)
-    y, class_names, code_to_class = _remap_codes(codes, event_id)
+    y, class_names, code_to_class = _remap_codes(
+        codes, event_id, allow_single_class=allow_single_class
+    )
     if y is None:
         return None
 
@@ -386,7 +442,11 @@ def _from_epochs(
 
 
 def _from_raw_labeled(
-    raw: Any, *, seed: int, meta: dict[str, Any]
+    raw: Any,
+    *,
+    seed: int,
+    meta: dict[str, Any],
+    allow_single_class: bool = False,
 ) -> tuple[np.ndarray, np.ndarray, str, dict[str, Any]] | None:
     """Epoch continuous raw around annotations or stim events."""
     import mne
@@ -394,6 +454,8 @@ def _from_raw_labeled(
     events: np.ndarray | None = None
     event_id: dict[str, int] = {}
     label_source = ""
+    min_classes = 1 if allow_single_class else 2
+    min_trials = 1 if allow_single_class else 4
 
     # Prefer annotations (common after set_annotations / BIDS / experiment logs).
     try:
@@ -416,47 +478,56 @@ def _from_raw_labeled(
         meta["annotations_note"] = str(exc)
 
     # Stim / trigger channel fallback.
-    if events is None or len(events) == 0 or len(event_id) < 2:
+    if events is None or len(events) == 0 or len(event_id) < min_classes:
         try:
             stim_events = mne.find_events(raw, verbose="ERROR", shortest_event=1)
             if stim_events is not None and len(stim_events) > 0:
                 codes = sorted(int(c) for c in np.unique(stim_events[:, 2]))
-                # Need ≥2 distinct non-zero codes.
                 codes = [c for c in codes if c != 0]
-                if len(codes) >= 2:
+                if len(codes) >= min_classes:
                     events = stim_events[np.isin(stim_events[:, 2], codes)]
                     event_id = {f"event_{c}": c for c in codes}
                     label_source = "stim"
         except Exception as exc:  # noqa: BLE001
             meta["stim_note"] = str(exc)
 
-    if events is None or len(events) < 4 or len(event_id) < 2:
+    if events is None or len(events) < min_trials or len(event_id) < min_classes:
         return None
 
     sfreq = float(raw.info["sfreq"])
-    # ~0.5 s windows by default; clamp for very low/high rates.
+    # Prefer annotation duration when uniform; else ~0.5–1 s windows.
     tmax = min(1.0, max(0.25, 128.0 / sfreq))
+    try:
+        if raw.annotations is not None and len(raw.annotations) > 0:
+            durs = np.asarray(raw.annotations.duration, dtype=float)
+            positive = durs[durs > 0]
+            if len(positive):
+                tmax = float(np.median(positive))
+    except Exception:  # noqa: BLE001
+        pass
     try:
         epochs = mne.Epochs(
             raw,
             events,
             event_id=event_id,
             tmin=0.0,
-            tmax=tmax,
+            tmax=max(0.05, tmax - (1.0 / sfreq)),
             baseline=None,
             preload=True,
-            reject_by_annotation=True,
+            reject_by_annotation=False,
             verbose="ERROR",
         )
     except Exception as exc:  # noqa: BLE001
         meta["epoching_note"] = str(exc)
         return None
 
-    if len(epochs) < 4:
+    if len(epochs) < min_trials:
         return None
 
     codes = np.asarray(epochs.events[:, 2], dtype=np.int64)
-    y, class_names, code_to_class = _remap_codes(codes, event_id)
+    y, class_names, code_to_class = _remap_codes(
+        codes, event_id, allow_single_class=allow_single_class
+    )
     if y is None:
         return None
 
@@ -479,19 +550,23 @@ def _from_raw_labeled(
 
 
 def _remap_codes(
-    codes: np.ndarray, event_id: dict[str, int]
+    codes: np.ndarray,
+    event_id: dict[str, int],
+    *,
+    allow_single_class: bool = False,
 ) -> tuple[np.ndarray | None, list[str], dict[str, int]]:
     """Map raw event codes → contiguous 0..C-1 class indices."""
     # Prefer names from event_id; unknowns become event_<code>.
     code_to_name = {int(v): str(k) for k, v in (event_id or {}).items()}
     present = sorted(int(c) for c in np.unique(codes))
-    if len(present) < 2:
+    min_classes = 1 if allow_single_class else 2
+    if len(present) < min_classes:
         return None, [], {}
 
     class_names = [code_to_name.get(c, f"event_{c}") for c in present]
     code_to_class = {c: i for i, c in enumerate(present)}
     y = np.asarray([code_to_class[int(c)] for c in codes], dtype=np.int64)
-    if len(np.unique(y)) < 2:
+    if len(np.unique(y)) < min_classes:
         return None, [], {}
     return y, class_names, {str(k): int(v) for k, v in code_to_class.items()}
 

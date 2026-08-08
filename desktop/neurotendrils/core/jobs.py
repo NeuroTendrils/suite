@@ -9,6 +9,7 @@ from typing import Any
 
 from PySide6.QtCore import QObject, QThread, Qt, Signal, Slot
 
+from neurotendrils.core.jsonutil import json_safe, signal_safe
 from neurotendrils.core.projectdir import ProjectDir
 
 
@@ -33,7 +34,10 @@ class _Runner(QObject):
             if self._owner.is_cancelled():
                 self.failed.emit("cancelled", "Cancelled")
                 return
-            self.finished.emit(result)
+            # Strip modules/classes before queued cross-thread delivery.
+            if not isinstance(result, dict):
+                raise TypeError(f"job must return dict, got {type(result).__name__}")
+            self.finished.emit(signal_safe(result))
         except Exception as exc:  # noqa: BLE001 — surface to UI
             code = getattr(exc, "code", type(exc).__name__)
             message = getattr(exc, "message", str(exc))
@@ -232,9 +236,10 @@ def run_plan_job(
             input_path,
             output_path,
             plan_snapshot,
-            on_progress=lambda payload: job.progress.emit(payload),
+            on_progress=lambda payload: job.progress.emit(signal_safe(payload)),
             should_cancel=job.is_cancelled,
         )
+        result = json_safe(result)
         out = str(result.get("output_path") or output_path)
         _inside(out, "output")
         if meta_path:
@@ -253,15 +258,248 @@ def run_plan_job(
     return job
 
 
+def preview_recording_job(
+    path: str, *, max_sec: float = 30.0, max_ch: int = 16
+) -> WorkerJob:
+    """Load a short, decimated preview for the EEG viewer (off the GUI thread)."""
+    _assert_in_project(path)
+    job = WorkerJob()
+
+    def work() -> dict[str, Any]:
+        import numpy as np
+
+        from neurotendrils.core.ingestion.readers import read_recording
+
+        raw = read_recording(path, preload=True)
+        import mne
+
+        events: list[dict[str, Any]] = []
+        # Nested lists — QueuedConnection cannot reliably deliver ndarray.
+        if isinstance(raw, mne.Epochs):
+            data = raw.get_data()
+            data = data[: min(8, len(data))]
+            flat = data.transpose(1, 0, 2).reshape(data.shape[1], -1)
+            sfreq = float(raw.info["sfreq"])
+            ch_names = list(raw.ch_names)[:max_ch]
+            flat = flat[:max_ch]
+            decim = max(1, int(round(sfreq / 100.0)))
+            preview = flat[:, ::decim]
+            return {
+                "data": preview.astype(np.float32).tolist(),
+                "sfreq": sfreq / decim,
+                "ch_names": ch_names,
+                "events": events,
+                "duration_sec": float(preview.shape[1] / (sfreq / decim)),
+                "all_ch_names": list(raw.ch_names),
+            }
+
+        picks = mne.pick_types(raw.info, eeg=True, eog=True, meg=False, exclude=[])
+        if len(picks) == 0:
+            picks = np.arange(min(max_ch, len(raw.ch_names)))
+        picks = picks[:max_ch]
+        sfreq = float(raw.info["sfreq"])
+        n_max = int(sfreq * max_sec)
+        data = raw.get_data(picks=picks, start=0, stop=min(n_max, raw.n_times))
+        decim = max(1, int(round(sfreq / 100.0)))
+        preview = data[:, ::decim]
+        ann = getattr(raw, "annotations", None)
+        if ann is not None:
+            for onset, duration, desc in zip(ann.onset, ann.duration, ann.description):
+                if float(onset) > max_sec:
+                    break
+                events.append(
+                    {
+                        "onset": float(onset),
+                        "duration": float(duration),
+                        "label": str(desc),
+                        "kind": (
+                            "bad" if str(desc).upper().startswith("BAD") else "event"
+                        ),
+                    }
+                )
+        return {
+            "data": preview.astype(np.float32).tolist(),
+            "sfreq": sfreq / decim,
+            "ch_names": [raw.ch_names[i] for i in picks],
+            "events": events,
+            "duration_sec": float(preview.shape[1] / (sfreq / decim)),
+            "all_ch_names": list(raw.ch_names),
+            "bads": list(raw.info.get("bads") or []),
+        }
+
+    job.set_work(work)
+    return job
+
+
+def review_qa_job(path: str) -> WorkerJob:
+    """ICA summary + ERP + augment preview off the GUI thread."""
+    _assert_in_project(path)
+    job = WorkerJob()
+
+    def work() -> dict[str, Any]:
+        from neuroflow.qa import (
+            augment_preview_pairs,
+            erp_averages,
+            ica_component_summary,
+        )
+
+        p = Path(path)
+        out: dict[str, Any] = {
+            "path": str(p),
+            "ica": None,
+            "erp": None,
+            "augment": None,
+        }
+        epo = p
+        continuous = p
+        # Prefer artifacts next to the run output (ica_summary.json) — no refit.
+        summary_candidates = [p.parent / "ica_summary.json"]
+        for cand in summary_candidates:
+            if cand.is_file():
+                try:
+                    out["ica"] = ica_component_summary(str(p))
+                    break
+                except Exception as exc:  # noqa: BLE001
+                    out["ica_error"] = str(exc)
+
+        if p.is_file() and "-epo" not in p.name.lower():
+            sibling = p.parent / "cleaned-epo.fif"
+            if sibling.is_file():
+                epo = sibling
+            if out["ica"] is None:
+                try:
+                    out["ica"] = ica_component_summary(str(continuous))
+                except Exception as exc:  # noqa: BLE001
+                    out["ica_error"] = str(exc)
+            if epo == p and out.get("erp") is None:
+                # Continuous-only run: still try ERP if somehow epoched later.
+                pass
+        elif p.is_file():
+            raw_guess = p.with_name(p.name.replace("-epo.fif", ".fif"))
+            if "cleaned-epo" in p.name:
+                raw_guess = p.with_name("cleaned.fif")
+            if raw_guess.is_file():
+                continuous = raw_guess
+            if out["ica"] is None:
+                try:
+                    out["ica"] = ica_component_summary(str(continuous))
+                except Exception as exc:  # noqa: BLE001
+                    out["ica_error"] = str(exc)
+
+        if epo.is_file() and ("-epo" in epo.name.lower() or epo != continuous):
+            try:
+                out["erp"] = erp_averages(str(epo))
+            except Exception as exc:  # noqa: BLE001
+                out["erp_error"] = str(exc)
+            try:
+                out["augment"] = augment_preview_pairs(str(epo))
+            except Exception as exc:  # noqa: BLE001
+                out["augment_error"] = str(exc)
+        return out
+
+    job.set_work(work)
+    return job
+
+
+def persist_bad_spans_job(path: str, spans: list[dict[str, Any]]) -> WorkerJob:
+    """Write BAD annotations onto a FIF recording."""
+    _assert_in_project(path)
+    job = WorkerJob()
+
+    def work() -> dict[str, Any]:
+        import mne
+
+        from neurotendrils.core.ingestion.readers import read_recording
+
+        raw = read_recording(path, preload=True)
+        if isinstance(raw, mne.Epochs):
+            raise RuntimeError("Cannot paint BAD spans on epoched data")
+        onsets = list(raw.annotations.onset) if raw.annotations else []
+        durations = list(raw.annotations.duration) if raw.annotations else []
+        descs = list(raw.annotations.description) if raw.annotations else []
+        for span in spans:
+            onsets.append(float(span["onset"]))
+            durations.append(float(span["duration"]))
+            descs.append("BAD")
+        raw.set_annotations(mne.Annotations(onsets, durations, descs))
+        out = path
+        if not str(path).lower().endswith((".fif", ".fif.gz")):
+            out = str(Path(path).with_suffix(".fif"))
+        raw.save(out, overwrite=True, verbose="ERROR")
+        return {"path": out, "n_bad": len(spans)}
+
+    job.set_work(work)
+    return job
+
+
+def apply_montage_job(path: str, montage_name: str) -> WorkerJob:
+    """Apply a standard montage and save back to FIF."""
+    _assert_in_project(path)
+    job = WorkerJob()
+
+    def work() -> dict[str, Any]:
+        import mne
+
+        from neurotendrils.core.ingestion.montage import apply_montage
+        from neurotendrils.core.ingestion.readers import read_recording
+        from neurotendrils.core.ingestion.schema import MontageConfig
+
+        raw = read_recording(path, preload=True)
+        if isinstance(raw, mne.Epochs):
+            raise RuntimeError("Montage apply expects continuous Raw")
+        apply_montage(raw, MontageConfig(name=montage_name))
+        out = path
+        if not str(path).lower().endswith((".fif", ".fif.gz")):
+            out = str(Path(path).with_suffix(".fif"))
+        raw.save(out, overwrite=True, verbose="ERROR")
+        return {"path": out, "montage": montage_name}
+
+    job.set_work(work)
+    return job
+
+
+def drop_channels_job(path: str, channel_names: list[str]) -> WorkerJob:
+    """Mark channels as bad and drop them from the saved FIF."""
+    _assert_in_project(path)
+    job = WorkerJob()
+
+    def work() -> dict[str, Any]:
+        import mne
+
+        from neurotendrils.core.ingestion.readers import read_recording
+
+        raw = read_recording(path, preload=True)
+        if isinstance(raw, mne.Epochs):
+            raise RuntimeError("Channel drop expects continuous Raw")
+        names = [n for n in channel_names if n in raw.ch_names]
+        if not names:
+            return {"path": path, "dropped": []}
+        raw.drop_channels(names)
+        out = path
+        if not str(path).lower().endswith((".fif", ".fif.gz")):
+            out = str(Path(path).with_suffix(".fif"))
+        raw.save(out, overwrite=True, verbose="ERROR")
+        return {"path": out, "dropped": names}
+
+    job.set_work(work)
+    return job
+
+
 def train_job(
     *,
-    input_path: str,
+    input_path: str = "",
     output_dir: str,
     template_id: str,
     config: dict[str, Any],
     device: str,
+    dataset_path: str | None = None,
 ) -> WorkerJob:
-    _assert_in_project(input_path, output_dir)
+    paths = [output_dir]
+    if dataset_path:
+        paths.append(dataset_path)
+    if input_path:
+        paths.append(input_path)
+    _assert_in_project(*paths)
     job = WorkerJob()
     root = ProjectDir.instance().root
 
@@ -281,18 +519,88 @@ def train_job(
                         "path must be inside the project folder"
                     ) from exc
 
-        _inside(input_path)
+        if dataset_path:
+            _inside(dataset_path)
+        if input_path:
+            _inside(input_path)
         _inside(output_dir)
         return train(
-            input_path=input_path,
+            input_path=input_path or "",
+            dataset_path=dataset_path,
             output_dir=output_dir,
             template_id=template_id,
             config=config,
             device=device,
-            on_progress=lambda payload: job.progress.emit(payload),
+            on_progress=lambda payload: job.progress.emit(signal_safe(payload)),
             should_cancel=job.is_cancelled,
             allow_synthetic=False,
         )
+
+    job.set_work(work)
+    return job
+
+
+def run_dataset_plan_job(
+    *,
+    dataset_path: str,
+    plan: dict[str, Any],
+) -> WorkerJob:
+    """Clean every member of a dataset manifest with a NeuroFlow plan."""
+    _assert_in_project(dataset_path)
+    job = WorkerJob()
+    root = ProjectDir.instance().root
+    plan_snapshot = deepcopy(plan)
+
+    def work() -> dict[str, Any]:
+        from neurotendrils.core.dataset_clean import (
+            DatasetCleanError,
+            clean_dataset_with_plan,
+        )
+
+        try:
+            return clean_dataset_with_plan(
+                dataset_path,
+                plan_snapshot,
+                project_root=root,
+                on_progress=lambda payload: job.progress.emit(signal_safe(payload)),
+                should_cancel=job.is_cancelled,
+            )
+        except DatasetCleanError as exc:
+            raise RuntimeError(exc.message) from exc
+
+    job.set_work(work)
+    return job
+
+
+def create_dataset_job(
+    *,
+    sources: list[str],
+    name: str,
+    sfreq: float = 500.0,
+) -> WorkerJob:
+    job = WorkerJob()
+    root = ProjectDir.instance().root
+
+    def work() -> dict[str, Any]:
+        from neurotendrils.core.lab_ingest import IngestError, create_dataset_from_sources
+
+        try:
+            manifest_path, manifest = create_dataset_from_sources(
+                sources,
+                name=name,
+                sfreq=sfreq,
+                project_root=root,
+                on_progress=lambda payload: job.progress.emit(signal_safe(payload)),
+            )
+        except IngestError as exc:
+            raise RuntimeError(exc.message) from exc
+        return {
+            "manifest_path": manifest_path,
+            "name": manifest.name,
+            "n_members": len(manifest.members),
+            "warnings": list(manifest.meta.get("warnings") or []),
+            "class_names": list(manifest.label.class_names),
+        }
 
     job.set_work(work)
     return job
@@ -316,8 +624,43 @@ def export_job(
             output_dir=output_dir,
             format=format,
             train_meta_path=train_meta_path,
-            on_progress=lambda payload: job.progress.emit(payload),
+            on_progress=lambda payload: job.progress.emit(signal_safe(payload)),
         )
+
+    job.set_work(work)
+    return job
+
+
+def infer_job(
+    *,
+    checkpoint_path: str,
+    output_dir: str,
+    input_path: str = "",
+    dataset_path: str | None = None,
+    device: str = "cpu",
+) -> WorkerJob:
+    paths = [checkpoint_path, output_dir]
+    if input_path:
+        paths.append(input_path)
+    if dataset_path:
+        paths.append(dataset_path)
+    _assert_in_project(*paths)
+    job = WorkerJob()
+
+    def work() -> dict[str, Any]:
+        from neurostudio.predict import PredictError, predict
+
+        try:
+            return predict(
+                checkpoint_path=checkpoint_path,
+                input_path=input_path,
+                dataset_path=dataset_path,
+                output_dir=output_dir,
+                device=device,
+                on_progress=lambda payload: job.progress.emit(signal_safe(payload)),
+            )
+        except PredictError as exc:
+            raise RuntimeError(exc.message) from exc
 
     job.set_work(work)
     return job

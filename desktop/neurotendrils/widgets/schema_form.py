@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
     QComboBox,
     QDoubleSpinBox,
     QFormLayout,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -123,6 +124,11 @@ class SchemaEditPanel(QWidget):
 
         form_host = QWidget(self)
         form = QFormLayout(form_host)
+        form.setContentsMargins(0, 8, 0, 0)
+        form.setHorizontalSpacing(16)
+        form.setVerticalSpacing(10)
+        form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        form.setFormAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
         self._editors = build_editors(
             schemas, values, form_host, decimals=decimals, single_step=single_step
         )
@@ -173,18 +179,26 @@ class SchemaFormWidget(QWidget):
         *,
         decimals: int = 6,
         single_step: float = 0.0001,
+        columns: int = 2,
     ) -> None:
         super().__init__(parent)
         self._schemas: list[dict[str, Any]] = []
         self._editors: dict[str, QWidget] = {}
         self._decimals = decimals
         self._single_step = single_step
-        self._layout = QFormLayout(self)
+        self._columns = max(1, columns)
+        self._layout = QGridLayout(self)
         self._layout.setContentsMargins(0, 0, 0, 0)
+        self._layout.setHorizontalSpacing(28)
+        self._layout.setVerticalSpacing(12)
 
     def set_schemas(self, schemas: list[dict[str, Any]], values: dict[str, Any]) -> None:
-        while self._layout.rowCount():
-            self._layout.removeRow(0)
+        while self._layout.count():
+            item = self._layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.setParent(None)
+                widget.deleteLater()
         self._schemas = schemas
         self._editors = build_editors(
             schemas,
@@ -193,9 +207,18 @@ class SchemaFormWidget(QWidget):
             decimals=self._decimals,
             single_step=self._single_step,
         )
-        for schema in schemas:
-            self._layout.addRow(schema.get("label", schema["id"]), self._editors[schema["id"]])
+        for index, schema in enumerate(schemas):
             editor = self._editors[schema["id"]]
+            cell = QWidget(self)
+            cell_l = QVBoxLayout(cell)
+            cell_l.setContentsMargins(0, 0, 0, 0)
+            cell_l.setSpacing(4)
+            label = QLabel(str(schema.get("label", schema["id"])), cell)
+            label.setObjectName("fileMetaLabel")
+            cell_l.addWidget(label)
+            cell_l.addWidget(editor)
+            row, col = divmod(index, self._columns)
+            self._layout.addWidget(cell, row, col)
             if isinstance(editor, QCheckBox):
                 editor.toggled.connect(self._emit)
             elif isinstance(editor, QComboBox):
@@ -204,6 +227,8 @@ class SchemaFormWidget(QWidget):
                 editor.textChanged.connect(lambda *_: self._emit())
             elif isinstance(editor, QDoubleSpinBox):
                 editor.valueChanged.connect(lambda *_: self._emit())
+        for col in range(self._columns):
+            self._layout.setColumnStretch(col, 1)
 
     def values(self) -> dict[str, Any]:
         return collect_values(self._schemas, self._editors)

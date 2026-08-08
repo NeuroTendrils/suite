@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import json
+from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from neurotendrils.core.naming import sanitize_base_name, unique_dir
+from neurotendrils.core.naming import sanitize_base_name, unique_dir, unique_path
 from neurotendrils.core.projectdir import ProjectDir
+
+CONFIG_KIND = "neurostudio_config"
 
 
 def template_catalog():
@@ -33,6 +36,93 @@ def validate_config(template_id: str, config: dict[str, Any]) -> str | None:
     from neurostudio.templates import validate_config as _validate
 
     return _validate(template_id, config)
+
+
+def save_template_config(
+    template_id: str,
+    config: dict[str, Any],
+    *,
+    name: str = "",
+    dataset_path: str = "",
+) -> Path:
+    """Persist a tuned template recipe into the project ``templates/`` folder."""
+    tmpl = find_template(template_id)
+    if tmpl is None:
+        raise ValueError(f"Unknown template: {template_id}")
+    err = validate_config(template_id, config)
+    if err:
+        raise ValueError(err)
+
+    project = ProjectDir.instance()
+    templates_dir = project.templates_dir()
+    templates_dir.mkdir(parents=True, exist_ok=True)
+
+    title = name or str(tmpl.get("title") or template_id)
+    stem = sanitize_base_name(title, template_id)
+    path = unique_path(templates_dir, stem, ".json")
+
+    payload: dict[str, Any] = {
+        "v": 1,
+        "kind": CONFIG_KIND,
+        "name": title,
+        "template_id": template_id,
+        "config": deepcopy(config),
+        "saved_at": datetime.now(timezone.utc).isoformat(),
+    }
+    if dataset_path:
+        payload["dataset_path"] = dataset_path
+    from neurotendrils.core.jsonutil import json_safe
+
+    path.write_text(json.dumps(json_safe(payload), indent=2), encoding="utf-8")
+    return path
+
+
+def load_template_config(path: str | Path) -> dict[str, Any]:
+    """Load a saved template config; returns the full payload."""
+    project = ProjectDir.instance()
+    resolved = project.require_contains(path, "template config")
+    data = json.loads(resolved.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise ValueError("Invalid template config")
+    if data.get("kind") not in {CONFIG_KIND, None}:
+        # Accept older drafts that omitted kind if they look like a config.
+        if "template_id" not in data or "config" not in data:
+            raise ValueError("Not a NeuroStudio template config")
+    template_id = str(data.get("template_id") or "")
+    if not template_id or find_template(template_id) is None:
+        raise ValueError(f"Unknown template: {template_id or '—'}")
+    config = data.get("config")
+    if not isinstance(config, dict):
+        raise ValueError("Template config is missing parameters")
+    err = validate_config(template_id, config)
+    if err:
+        raise ValueError(err)
+    return data
+
+
+def latest_config_for(template_id: str) -> dict[str, Any] | None:
+    """Most recently saved config for a built-in template, if any."""
+    templates_dir = ProjectDir.instance().templates_dir()
+    if not templates_dir.is_dir():
+        return None
+    newest: tuple[float, dict[str, Any]] | None = None
+    for path in templates_dir.glob("*.json"):
+        if path.is_symlink() or not path.is_file():
+            continue
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(data, dict):
+            continue
+        if str(data.get("template_id") or "") != template_id:
+            continue
+        if not isinstance(data.get("config"), dict):
+            continue
+        mtime = path.stat().st_mtime
+        if newest is None or mtime > newest[0]:
+            newest = (mtime, data)
+    return None if newest is None else newest[1]
 
 
 def _path_tokens(path: str) -> set[str]:
@@ -92,7 +182,11 @@ def recommend(dataset_path: str, dataset_kind: str) -> tuple[str, dict[str, str]
 def suggest_train_dir(dataset_path: str, template_id: str) -> Path:
     project = ProjectDir.instance()
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    base = sanitize_base_name(Path(dataset_path).stem, "dataset")
+    src = Path(dataset_path)
+    if src.name == "dataset.json":
+        base = sanitize_base_name(src.parent.name, "dataset")
+    else:
+        base = sanitize_base_name(src.stem, "dataset")
     tmpl = sanitize_base_name(template_id, "template")
     stem = f"studio_{base}_{tmpl}_{stamp}"
     path = unique_dir(project.runs_dir(), stem)
@@ -105,6 +199,15 @@ def suggest_export_dir(template_id: str, fmt: str) -> Path:
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     stem = f"{sanitize_base_name(template_id, 'model')}_{sanitize_base_name(fmt, 'pt')}_{stamp}"
     return unique_dir(project.models_dir(), stem)
+
+
+def suggest_infer_dir(template_id: str = "infer") -> Path:
+    project = ProjectDir.instance()
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    stem = f"{sanitize_base_name(template_id, 'infer')}_{stamp}"
+    path = unique_dir(project.inferences_dir(), stem)
+    path.mkdir(parents=True, exist_ok=False)
+    return path
 
 
 def ensure_model_hub_fields(model_dir: Path) -> Path:
@@ -130,5 +233,7 @@ def ensure_model_hub_fields(model_dir: Path) -> Path:
     else:
         publish.setdefault("status", "local")
     payload.setdefault("exported_at", datetime.now(timezone.utc).isoformat())
-    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    from neurotendrils.core.jsonutil import json_safe
+
+    path.write_text(json.dumps(json_safe(payload), indent=2), encoding="utf-8")
     return path

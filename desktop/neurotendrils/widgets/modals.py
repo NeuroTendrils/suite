@@ -235,6 +235,21 @@ class _ChoicePanel(QWidget):
             host.dismiss()
 
 
+def prompt_text(
+    anchor: QWidget | None,
+    title: str,
+    label: str,
+    default: str = "",
+) -> tuple[str, bool]:
+    """Simple single-line text prompt (native dialog — keeps modals lightweight)."""
+    from PySide6.QtWidgets import QInputDialog, QLineEdit
+
+    text, ok = QInputDialog.getText(
+        anchor, title, label, QLineEdit.EchoMode.Normal, default
+    )
+    return str(text), bool(ok)
+
+
 def prompt_choice(
     anchor: QWidget | None,
     title: str,

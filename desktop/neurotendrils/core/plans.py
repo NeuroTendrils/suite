@@ -17,8 +17,22 @@ RESAMPLE_IF_ABOVE = 256.0
 MIN_CHANNELS_FOR_ICA = 8
 MIN_DURATION_FOR_ICA = 30.0
 
-# Steps that only operate on continuous Raw (must not follow epoch).
+# Steps that only operate on continuous Raw (must not follow epoching).
 _RAW_ONLY_STEPS = frozenset({"filter", "notch", "reref", "resample", "ica"})
+_EPOCH_STEPS = frozenset({"epoch", "event_epoch"})
+# Steps that require Epochs input.
+_EPOCHS_ONLY_STEPS = frozenset({"augment"})
+
+# Task-aware event_epoch window defaults (seconds).
+_EPOCH_WINDOWS = {
+    "erp": {"tmin": -0.2, "tmax": 0.8, "baseline_tmin": -0.2, "baseline_tmax": 0.0},
+    "motor_imagery": {
+        "tmin": 0.0,
+        "tmax": 4.0,
+        "baseline_tmin": 0.0,
+        "baseline_tmax": 0.0,
+    },
+}
 
 
 def step_catalog():
@@ -77,7 +91,7 @@ def _infer_line_freq(fingerprint: dict[str, Any]) -> str:
 
 
 def from_fingerprint(fingerprint: dict[str, Any]) -> dict[str, Any]:
-    """Recommend a continuous-data preprocess plan (no unlabeled epoching)."""
+    """Recommend a recipe plan: filter/notch/reref/resample/ICA + event_epoch when labeled."""
     if not fingerprint:
         return {"v": 1, "steps": []}
 
@@ -92,71 +106,95 @@ def from_fingerprint(fingerprint: dict[str, Any]) -> dict[str, Any]:
     highpass = fingerprint.get("highpass")
     lowpass = fingerprint.get("lowpass")
     steps: list[dict[str, Any]] = []
+    mne_kind = str(fingerprint.get("mne_kind") or "raw")
 
-    # Skip refiltering when the recording already has a sensible bandpass.
-    already_filtered = (
-        highpass is not None
-        and lowpass is not None
-        and float(highpass) >= 0.5
-        and float(lowpass) <= 80.0
-    )
-    if not already_filtered:
-        filter_params = default_params("filter")
-        if sfreq > 0:
-            nyquist = sfreq / 2.0
-            h_freq = float(filter_params.get("h_freq") or 0)
-            if h_freq >= nyquist:
-                filter_params["h_freq"] = max(1.0, nyquist * 0.9)
+    if mne_kind != "epochs":
+        # Skip refiltering when the recording already has a sensible bandpass.
+        already_filtered = (
+            highpass is not None
+            and lowpass is not None
+            and float(highpass) >= 0.5
+            and float(lowpass) <= 80.0
+        )
+        if not already_filtered:
+            filter_params = default_params("filter")
+            if sfreq > 0:
+                nyquist = sfreq / 2.0
+                h_freq = float(filter_params.get("h_freq") or 0)
+                if h_freq >= nyquist:
+                    filter_params["h_freq"] = max(1.0, nyquist * 0.9)
+            steps.append(
+                make_step(
+                    "filter",
+                    filter_params,
+                    "Remove slow drift and high-frequency noise before later steps.",
+                )
+            )
+
+        notch_params = default_params("notch")
+        notch_params["freq"] = _infer_line_freq(fingerprint)
         steps.append(
             make_step(
-                "filter",
-                filter_params,
-                "Remove slow drift and high-frequency noise before later steps.",
+                "notch",
+                notch_params,
+                f"Attenuate ~{notch_params['freq']} Hz power-line interference.",
             )
         )
 
-    notch_params = default_params("notch")
-    notch_params["freq"] = _infer_line_freq(fingerprint)
-    steps.append(
-        make_step(
-            "notch",
-            notch_params,
-            f"Attenuate ~{notch_params['freq']} Hz power-line interference.",
-        )
-    )
-
-    if eeg_like >= 2:
-        steps.append(
-            make_step(
-                "reref",
-                default_params("reref"),
-                "Average reference for multi-channel EEG.",
+        if eeg_like >= 2:
+            steps.append(
+                make_step(
+                    "reref",
+                    default_params("reref"),
+                    "Average reference for multi-channel EEG.",
+                )
             )
-        )
 
-    if sfreq > RESAMPLE_IF_ABOVE:
-        resample_params = default_params("resample")
-        resample_params["sfreq"] = TARGET_SFREQ
-        steps.append(
-            make_step(
-                "resample",
-                resample_params,
-                f"Downsample to {int(TARGET_SFREQ)} Hz after filtering to speed later steps.",
+        if sfreq > RESAMPLE_IF_ABOVE:
+            resample_params = default_params("resample")
+            resample_params["sfreq"] = TARGET_SFREQ
+            steps.append(
+                make_step(
+                    "resample",
+                    resample_params,
+                    f"Downsample to {int(TARGET_SFREQ)} Hz after filtering to speed later steps.",
+                )
             )
-        )
 
-    if n_channels >= MIN_CHANNELS_FOR_ICA and duration >= MIN_DURATION_FOR_ICA:
-        steps.append(
-            make_step(
-                "ica",
-                default_params("ica"),
-                "Enough channels and duration for an ICA artifact pass.",
+        if n_channels >= MIN_CHANNELS_FOR_ICA and duration >= MIN_DURATION_FOR_ICA:
+            steps.append(
+                make_step(
+                    "ica",
+                    default_params("ica"),
+                    "Enough channels and duration for an ICA artifact pass.",
+                )
             )
-        )
 
-    # Do NOT auto-append unlabeled fixed-length epochs — that produces a single
-    # event class and causes Studio to fall back to synthetic training data.
-    # Users can add Epoch manually when they have event/annotation labels.
+        # Event-locked epochs when prep left annotations/stim events on the file.
+        if fingerprint.get("has_events"):
+            task = str(fingerprint.get("task_hint") or "erp")
+            window = dict(_EPOCH_WINDOWS.get(task, _EPOCH_WINDOWS["erp"]))
+            epoch_params = default_params("event_epoch")
+            epoch_params.update(window)
+            labels = fingerprint.get("annotation_labels") or []
+            if labels:
+                epoch_params["event_ids"] = ",".join(str(x) for x in labels)
+            steps.append(
+                make_step(
+                    "event_epoch",
+                    epoch_params,
+                    f"Cut labeled events into epochs ({task} window defaults).",
+                )
+            )
+            # Suggest augment when class coverage looks thin; researcher reviews in UI.
+            steps.append(
+                make_step(
+                    "augment",
+                    default_params("augment"),
+                    "Suggested fill for scarce/empty class windows (review before/after).",
+                )
+            )
+
     return {"v": 1, "steps": steps}
 
 
@@ -181,7 +219,12 @@ def validate_plan(plan: dict[str, Any]) -> str | None:
         err = validate_step_params(step_id, params)
         if err:
             return err
-        if step_id == "epoch":
+        if step_id in _EPOCHS_ONLY_STEPS and not seen_epoch:
+            return (
+                f"Step {step_id} at index {index} requires epochs; "
+                "add event_epoch (or epoch) earlier in the plan."
+            )
+        if step_id in _EPOCH_STEPS:
             seen_epoch = True
         elif seen_epoch and step_id in _RAW_ONLY_STEPS:
             return (
@@ -213,7 +256,9 @@ def save_plan(plan: dict[str, Any], suggested_name: str = "plan") -> Path:
             "note": "ICA uses a fixed random_state for reproducible components.",
         },
     )
-    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    from neurotendrils.core.jsonutil import json_safe
+
+    path.write_text(json.dumps(json_safe(payload), indent=2), encoding="utf-8")
     return path
 
 
@@ -273,4 +318,6 @@ def write_run_metadata(
     if plan_path:
         payload["plan_path"] = plan_path
     safe_meta.parent.mkdir(parents=True, exist_ok=True)
-    safe_meta.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    from neurotendrils.core.jsonutil import json_safe
+
+    safe_meta.write_text(json.dumps(json_safe(payload), indent=2), encoding="utf-8")

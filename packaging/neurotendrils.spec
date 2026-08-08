@@ -45,10 +45,14 @@ hiddenimports += [
     "neuroflow.steps",
     "neuroflow.apply",
     "neuroflow.repro",
+    "neuroflow.qa",
+    "neuroflow.clusters",
     "neurostudio.train",
     "neurostudio.export",
     "neurostudio.templates",
     "neurostudio.devices",
+    "neurostudio.predict",
+    "neurostudio.dataset_load",
 ]
 
 # Keep worker trees on disk so runtime.ensure_sys_path() finds them when frozen.

@@ -65,6 +65,19 @@ def import_recording(
     if not matches_suffix(str(source), IMPORT_SUFFIXES):
         raise ValueError("Unsupported EEG format")
 
+    matched = matched_suffix(str(source), IMPORT_SUFFIXES) or source.suffix.lstrip(".")
+
+    # Numeric .txt → FIF so fingerprint / Flow / viewer use MNE-native IO.
+    if matched == "txt":
+        from neurotendrils.core.ingestion.readers import read_recording
+
+        stem = sanitize_base_name(source.stem, "recording")
+        dest = unique_path(datasets_dir, stem, ".fif")
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        raw = read_recording(source, preload=True)
+        raw.save(str(dest), overwrite=True, verbose="ERROR")
+        return str(dest.resolve()), True
+
     try:
         source.relative_to(Path(root).resolve())
         return str(source), False
@@ -72,7 +85,6 @@ def import_recording(
         pass
 
     stem = sanitize_base_name(source.stem, "recording")
-    matched = matched_suffix(str(source), IMPORT_SUFFIXES) or source.suffix.lstrip(".")
     suffix = f".{matched}" if matched else source.suffix
 
     dest = unique_path(datasets_dir, stem, suffix)
@@ -89,9 +101,16 @@ def import_recording(
 
 
 def select_studio_path(path: str) -> tuple[str, str]:
-    """Return (resolved_path, kind) where kind is run_output|dataset|project_file."""
+    """Return (resolved_path, kind) where kind is run_output|dataset|dataset_manifest|project_file."""
+    from neurotendrils.core.dataset_manifest import is_dataset_manifest, manifest_path_for
+
     project = ProjectDir.instance()
     p = Path(path).expanduser().resolve()
+    if is_dataset_manifest(p):
+        manifest = manifest_path_for(p)
+        project.require_contains(manifest, "Training data")
+        return str(manifest.resolve()), "dataset_manifest"
+
     if p.is_dir():
         for name in ("cleaned-epo.fif", "cleaned_epo.fif", "cleaned.fif"):
             candidate = p / name
