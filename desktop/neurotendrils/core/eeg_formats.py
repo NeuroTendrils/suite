@@ -15,6 +15,7 @@ IMPORT_SUFFIXES: tuple[str, ...] = (
     "cnt",
     "mff",
     "gdf",
+    "txt",
 )
 
 STUDIO_SUFFIXES: tuple[str, ...] = (
@@ -24,6 +25,7 @@ STUDIO_SUFFIXES: tuple[str, ...] = (
     "bdf",
     "set",
     "gdf",
+    "txt",
 )
 
 # Sources that can be normalized into a multi-file dataset.
@@ -49,6 +51,7 @@ _IMPORT_HINT_LABELS: dict[str, str | None] = {
     "cnt": "CNT",
     "mff": "MFF",
     "gdf": "GDF",
+    "txt": "TXT",
 }
 
 

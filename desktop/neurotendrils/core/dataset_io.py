@@ -65,6 +65,19 @@ def import_recording(
     if not matches_suffix(str(source), IMPORT_SUFFIXES):
         raise ValueError("Unsupported EEG format")
 
+    matched = matched_suffix(str(source), IMPORT_SUFFIXES) or source.suffix.lstrip(".")
+
+    # Numeric .txt → FIF so fingerprint / Flow / viewer use MNE-native IO.
+    if matched == "txt":
+        from neurotendrils.core.ingestion.readers import read_recording
+
+        stem = sanitize_base_name(source.stem, "recording")
+        dest = unique_path(datasets_dir, stem, ".fif")
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        raw = read_recording(source, preload=True)
+        raw.save(str(dest), overwrite=True, verbose="ERROR")
+        return str(dest.resolve()), True
+
     try:
         source.relative_to(Path(root).resolve())
         return str(source), False
@@ -72,7 +85,6 @@ def import_recording(
         pass
 
     stem = sanitize_base_name(source.stem, "recording")
-    matched = matched_suffix(str(source), IMPORT_SUFFIXES) or source.suffix.lstrip(".")
     suffix = f".{matched}" if matched else source.suffix
 
     dest = unique_path(datasets_dir, stem, suffix)
