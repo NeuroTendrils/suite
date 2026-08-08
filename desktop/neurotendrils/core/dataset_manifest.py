@@ -8,6 +8,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
 
+from neurotendrils.core.ingestion.schema import (
+    AboutInfo,
+    AuxStream,
+    ChannelConfig,
+    EventsConfig,
+    IngestSchema,
+    MontageConfig,
+)
 from neurotendrils.core.naming import sanitize_base_name, unique_dir
 from neurotendrils.core.projectdir import ProjectDir, resolve_path
 
@@ -34,6 +42,8 @@ class DatasetMember:
     role: MemberRole | None = None
     source_path: str | None = None
     class_hint: str | None = None
+    subject: str | None = None
+    session: str | None = None
 
 
 @dataclass
@@ -60,18 +70,41 @@ class DatasetManifest:
     label: LabelConfig
     split: SplitConfig
     meta: dict[str, Any] = field(default_factory=dict)
+    about: AboutInfo = field(default_factory=AboutInfo)
+    montage: MontageConfig = field(default_factory=MontageConfig)
+    channels: ChannelConfig = field(default_factory=ChannelConfig)
+    events: EventsConfig = field(default_factory=EventsConfig)
+    aux: list[AuxStream] = field(default_factory=list)
 
     @property
     def root_dir(self) -> Path | None:
         """Directory containing dataset.json when loaded from disk."""
         return self.meta.get("_root_dir")  # type: ignore[return-value]
 
+    def ingest_schema(self) -> IngestSchema:
+        return IngestSchema(
+            about=self.about,
+            montage=self.montage,
+            channels=self.channels,
+            events=self.events,
+            aux=list(self.aux),
+        )
+
     def to_dict(self) -> dict[str, Any]:
+        members_out: list[dict[str, Any]] = []
+        for m in self.members:
+            row = asdict(m)
+            # Omit null optional study fields for compact JSON.
+            if row.get("subject") is None:
+                row.pop("subject", None)
+            if row.get("session") is None:
+                row.pop("session", None)
+            members_out.append(row)
         payload = {
             "version": self.version,
             "name": self.name,
             "created_at": self.created_at,
-            "members": [asdict(m) for m in self.members],
+            "members": members_out,
             "label": {
                 "source": self.label.source,
                 "map": dict(self.label.map),
@@ -82,6 +115,11 @@ class DatasetManifest:
                 "val_fraction": float(self.split.val_fraction),
                 "seed": int(self.split.seed),
             },
+            "about": self.about.to_dict(),
+            "montage": self.montage.to_dict(),
+            "channels": self.channels.to_dict(),
+            "events": self.events.to_dict(),
+            "aux": [a.to_dict() for a in self.aux],
             "meta": {k: v for k, v in self.meta.items() if not str(k).startswith("_")},
         }
         return payload
@@ -130,11 +168,23 @@ def _from_dict(data: dict[str, Any], *, root_dir: Path) -> DatasetManifest:
             role=m.get("role"),
             source_path=m.get("source_path"),
             class_hint=m.get("class_hint"),
+            subject=m.get("subject"),
+            session=m.get("session"),
         )
         for i, m in enumerate(data.get("members") or [])
     ]
     label_raw = data.get("label") or {}
     split_raw = data.get("split") or {}
+    # Prefer top-level ingest fields; fall back to meta.* for older manifests.
+    meta = dict(data.get("meta") or {})
+    about = AboutInfo.from_dict(data.get("about") or meta.get("about"))
+    montage = MontageConfig.from_dict(data.get("montage") or meta.get("montage"))
+    channels = ChannelConfig.from_dict(data.get("channels") or meta.get("channels"))
+    events = EventsConfig.from_dict(data.get("events") or meta.get("events"))
+    aux_raw = data.get("aux") if data.get("aux") is not None else meta.get("aux")
+    aux = [
+        AuxStream.from_dict(a) for a in (aux_raw or []) if isinstance(a, dict)
+    ]
     manifest = DatasetManifest(
         version=int(data.get("version") or 1),
         name=str(data.get("name") or root_dir.name),
@@ -150,7 +200,12 @@ def _from_dict(data: dict[str, Any], *, root_dir: Path) -> DatasetManifest:
             val_fraction=float(split_raw.get("val_fraction") or 0.2),
             seed=int(split_raw.get("seed") or 42),
         ),
-        meta=dict(data.get("meta") or {}),
+        meta=meta,
+        about=about,
+        montage=montage,
+        channels=channels,
+        events=events,
+        aux=aux,
     )
     manifest.meta["_root_dir"] = root_dir
     return manifest
@@ -248,6 +303,13 @@ def inspect_manifest_light(manifest: DatasetManifest) -> dict[str, Any]:
         )
         if hint:
             hints[hint] = hints.get(hint, 0) + 1
+    subjects = sorted(
+        {
+            str(m.subject or m.group)
+            for m in manifest.members
+            if (m.subject or m.group)
+        }
+    )
     return {
         "name": manifest.name,
         "n_members": len(manifest.members),
@@ -258,4 +320,9 @@ def inspect_manifest_light(manifest: DatasetManifest) -> dict[str, Any]:
         "filename_class_files": hints,
         "sfreq": manifest.meta.get("sfreq"),
         "warnings": list(manifest.meta.get("warnings") or []),
+        "about_summary": manifest.about.summary,
+        "montage": manifest.montage.name or manifest.montage.custom_path,
+        "n_subjects": len(subjects),
+        "subjects": subjects,
+        "n_aux": len(manifest.aux),
     }
