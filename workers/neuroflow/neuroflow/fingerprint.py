@@ -95,7 +95,7 @@ def fingerprint_file(path: str | Path) -> dict[str, Any]:
         "annotation_labels": annotations["labels"],
         "has_events": annotations["has_events"],
         "task_hint": _task_hint(file_path, annotations["labels"]),
-        "mne_version": getattr(mne, "__version__", "unknown"),
+        "mne_version": str(getattr(mne, "__version__", "unknown")),
     }
 
 

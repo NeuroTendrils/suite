@@ -96,7 +96,12 @@ def run_plan(
             }
         )
         try:
-            data = apply_step(data, step_id, params)
+            data = apply_step(
+                data,
+                step_id,
+                params,
+                artifacts_dir=str(out_path.parent),
+            )
         except ApplyError as exc:
             raise RunError(
                 exc.code,
@@ -131,7 +136,7 @@ def run_plan(
         "output_kind": kind,
         "n_steps": len(applied),
         "steps_applied": applied,
-        "mne_version": getattr(mne, "__version__", "unknown"),
+        "mne_version": str(getattr(mne, "__version__", "unknown")),
         "reproducibility": run_reproducibility(plan, applied),
     }
     summary.update(_data_summary(data))

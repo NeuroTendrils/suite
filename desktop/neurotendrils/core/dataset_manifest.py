@@ -154,7 +154,11 @@ def save_manifest(manifest: DatasetManifest, directory: str | Path) -> Path:
     root = Path(directory)
     root.mkdir(parents=True, exist_ok=True)
     out = root / MANIFEST_NAME
-    out.write_text(json.dumps(manifest.to_dict(), indent=2), encoding="utf-8")
+    from neurotendrils.core.jsonutil import json_safe
+
+    out.write_text(
+        json.dumps(json_safe(manifest.to_dict()), indent=2), encoding="utf-8"
+    )
     manifest.meta["_root_dir"] = root
     return out
 

@@ -256,7 +256,9 @@ def save_plan(plan: dict[str, Any], suggested_name: str = "plan") -> Path:
             "note": "ICA uses a fixed random_state for reproducible components.",
         },
     )
-    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    from neurotendrils.core.jsonutil import json_safe
+
+    path.write_text(json.dumps(json_safe(payload), indent=2), encoding="utf-8")
     return path
 
 
@@ -316,4 +318,6 @@ def write_run_metadata(
     if plan_path:
         payload["plan_path"] = plan_path
     safe_meta.parent.mkdir(parents=True, exist_ok=True)
-    safe_meta.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    from neurotendrils.core.jsonutil import json_safe
+
+    safe_meta.write_text(json.dumps(json_safe(payload), indent=2), encoding="utf-8")

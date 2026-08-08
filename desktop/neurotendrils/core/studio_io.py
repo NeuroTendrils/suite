@@ -71,7 +71,9 @@ def save_template_config(
     }
     if dataset_path:
         payload["dataset_path"] = dataset_path
-    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    from neurotendrils.core.jsonutil import json_safe
+
+    path.write_text(json.dumps(json_safe(payload), indent=2), encoding="utf-8")
     return path
 
 
@@ -231,5 +233,7 @@ def ensure_model_hub_fields(model_dir: Path) -> Path:
     else:
         publish.setdefault("status", "local")
     payload.setdefault("exported_at", datetime.now(timezone.utc).isoformat())
-    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    from neurotendrils.core.jsonutil import json_safe
+
+    path.write_text(json.dumps(json_safe(payload), indent=2), encoding="utf-8")
     return path
