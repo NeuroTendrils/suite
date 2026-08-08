@@ -100,22 +100,45 @@ def ica_component_summary(raw_path: str, *, n_components: float | int = 0.99) ->
 
 
 def erp_averages(epochs_path: str) -> dict[str, Any]:
-    """Grand-average ERP per event id from an epoched FIF."""
+    """Grand-average ERP per event id from an epoched FIF.
+
+    Also returns ``channel_series`` (time × channel) for the first condition
+    so the UI can draw an EEGLAB-style ERP map series.
+    """
     import mne
 
     epochs = mne.read_epochs(epochs_path, preload=True, verbose="ERROR")
-    times = epochs.times.tolist()
+    times = [float(t) for t in epochs.times.tolist()]
     averages: dict[str, list[float]] = {}
+    channel_series: list[list[float]] = []
+    series_condition = ""
     for name in epochs.event_id:
         evoked = epochs[name].average()
         data = evoked.data.mean(axis=0)
         averages[str(name)] = [float(v) for v in data.tolist()]
+        if not channel_series:
+            # (n_ch, n_times) → list of time rows for map series
+            channel_series = [
+                [float(v) for v in evoked.data[:, t]]
+                for t in range(evoked.data.shape[1])
+            ]
+            series_condition = str(name)
+    from .apply import _channel_xy
+
+    positions: list[list[float]] = []
+    try:
+        positions = _channel_xy(epochs)
+    except Exception:  # noqa: BLE001
+        positions = []
     return {
-        "times": [float(t) for t in times],
+        "times": times,
         "averages": averages,
         "ch_names": list(epochs.ch_names),
         "n_epochs": int(len(epochs)),
         "event_id": {str(k): int(v) for k, v in epochs.event_id.items()},
+        "channel_series": channel_series,
+        "series_condition": series_condition,
+        "positions": positions,
     }
 
 

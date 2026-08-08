@@ -69,6 +69,10 @@ def _read_numeric_txt(path: Path, *, sfreq: float = 500.0, n_eeg: int = 32) -> A
     n_cols = int(arr.shape[1])
     eeg_cols = min(n_eeg, n_cols)
     data = arr[:, :eeg_cols].T
+    # Lab TXT is often µV; MNE expects Volts. Convert when magnitude looks like µV.
+    peak = float(np.nanmax(np.abs(data))) if data.size else 0.0
+    if peak > 1.0:  # clearly not already in volts
+        data = data * 1e-6
     ch_names = [f"EEG{i+1:02d}" for i in range(eeg_cols)]
     info = mne.create_info(ch_names, sfreq=float(sfreq), ch_types="eeg")
     raw = mne.io.RawArray(data, info, verbose="ERROR")

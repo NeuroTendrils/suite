@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
 )
 
 from neurotendrils.widgets.erp_image import ErpImage
+from neurotendrils.widgets.erp_map_series import ErpMapSeries
 from neurotendrils.widgets.erp_plot import ErpPlot
 from neurotendrils.widgets.ica_maps import IcaMapBrowser
 from neurotendrils.widgets.spectra_plot import SpectraPlot
@@ -63,6 +64,10 @@ class PlotHub(QWidget):
         # ERP image
         self._erp_image = ErpImage(self._tabs)
         self._tabs.addTab(self._erp_image, "ERP image")
+
+        # ERP map series (2D topo over latency)
+        self._erp_maps = ErpMapSeries(self._tabs)
+        self._tabs.addTab(self._erp_maps, "ERP maps")
 
         # ICA maps
         self._ica = IcaMapBrowser(self._tabs)
@@ -128,6 +133,22 @@ class PlotHub(QWidget):
 
     def set_erp(self, payload: dict) -> None:
         self._erp.set_erp(payload)
+        series = payload.get("channel_series") or []
+        times = list(payload.get("times") or [])
+        ch_names = list(payload.get("ch_names") or [])
+        if series and times and ch_names:
+            positions = None
+            raw_pos = payload.get("positions") or []
+            if raw_pos:
+                positions = [(float(p[0]), float(p[1])) for p in raw_pos]
+            cond = str(payload.get("series_condition") or "")
+            self._erp_maps.set_series(
+                times,
+                series,
+                ch_names,
+                positions,
+                title=f"ERP map series · {cond}" if cond else "ERP map series",
+            )
 
     def set_erp_image(
         self,
@@ -145,7 +166,14 @@ class PlotHub(QWidget):
         return self._ica
 
     def show_tab(self, name: str) -> None:
-        labels = ["Channels", "Spectra", "ERP", "ERP image", "ICA maps"]
+        labels = [
+            "Channels",
+            "Spectra",
+            "ERP",
+            "ERP image",
+            "ERP maps",
+            "ICA maps",
+        ]
         key = name.strip().lower()
         for i, label in enumerate(labels):
             if label.lower() == key or key in label.lower():

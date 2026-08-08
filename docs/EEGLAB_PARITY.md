@@ -10,7 +10,7 @@ NeuroTendrils is a Qt/Python Raw→Ready pipeline. This document records what we
 |---|---|---|
 | File → Import data | NeuroFlow **Recording** (EDF/BDF/FIF/SET/BrainVision/CNT/GDF/TXT) | Done |
 | Edit → Channel locations | Inspect **Apply montage** + Plot hub **Channels** | Done (standard montages) |
-| Plot → Channel data (scroll) | Inspect **EegViewer** (scroll, amp, window) | Done |
+| Plot → Channel data (scroll) | Inspect **EegViewer** (scroll, amp, window; demeaned auto-scale) | Done |
 | Tools → Reject continuous data by eye | Inspect **Paint bad** + Save BAD marks | Done |
 | Edit → Select data / drop channels | Inspect channel list → **Drop selected channels** | Done |
 | Edit → Event values / labels | Inspect **Trial labels** + dataset manifest events | Partial |
@@ -22,7 +22,7 @@ NeuroTendrils is a Qt/Python Raw→Ready pipeline. This document records what we
 | Plot → Channel spectra and maps (`spectopo`) | Review **Plot → Spectra** (PSD lines; topo-at-freq later) | Partial |
 | Plot → Channel ERPs | Review **Plot → ERP** | Done |
 | Plot → Channel ERP image | Review **Plot → ERP image** | Done |
-| Plot → ERP map series (2D/3D) | — | Not yet |
+| Plot → ERP map series (2D) | Review **Plot → ERP maps** | Done (2D; 3D later) |
 | Plot → Component ERPs / spectra / time-frequency | Properties PSD + waveforms; ERSP/ITC later | Partial |
 | Tools → DIPFIT / eLoreta | — | Not yet |
 | File → Create STUDY | Project = Study; dataset.json multi-subject | Partial |
