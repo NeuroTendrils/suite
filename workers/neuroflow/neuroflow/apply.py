@@ -20,8 +20,18 @@ class ApplyError(Exception):
         self.message = message
 
 
-def apply_step(data: Any, step_id: str, params: dict[str, Any]) -> Any:
-    """Apply one catalog step. *data* is mne.io.BaseRaw or mne.Epochs."""
+def apply_step(
+    data: Any,
+    step_id: str,
+    params: dict[str, Any],
+    *,
+    artifacts_dir: str | None = None,
+) -> Any:
+    """Apply one catalog step. *data* is mne.io.BaseRaw or mne.Epochs.
+
+    When *artifacts_dir* is set, ICA writes ``ica.fif`` + ``ica_summary.json``
+    there so Review can visualize components without refitting.
+    """
     error = validate_params(step_id, params)
     if error:
         raise ApplyError("invalid_params", error)
@@ -39,6 +49,8 @@ def apply_step(data: Any, step_id: str, params: dict[str, Any]) -> Any:
     handler = handlers.get(step_id)
     if handler is None:
         raise ApplyError("unknown_step", f"unknown step: {step_id}")
+    if step_id == "ica":
+        return handler(data, params, artifacts_dir=artifacts_dir)
     return handler(data, params)
 
 
@@ -139,7 +151,11 @@ def _parse_exclude(text: str) -> list[int]:
     return out
 
 
-def _apply_ica(data: Any, params: dict[str, Any]) -> Any:
+def _apply_ica(
+    data: Any, params: dict[str, Any], *, artifacts_dir: str | None = None
+) -> Any:
+    from pathlib import Path
+
     from mne.preprocessing import ICA
 
     raw = _ensure_preloaded(_require_raw(data, "ica"))
@@ -173,10 +189,55 @@ def _apply_ica(data: Any, params: dict[str, Any]) -> Any:
         exclude.update(int(i) for i in eog_indices)
 
     ica.exclude = sorted(exclude)
+
+    if artifacts_dir:
+        try:
+            _write_ica_artifacts(ica, fit_raw, Path(artifacts_dir), exclude=list(ica.exclude))
+        except Exception:  # noqa: BLE001
+            # Cleaning still succeeds if artifact write fails.
+            pass
+
     try:
         return ica.apply(raw, verbose="ERROR")
     except Exception as exc:  # noqa: BLE001
         raise ApplyError("step_failed", f"ica apply failed: {exc}") from exc
+
+
+def _write_ica_artifacts(
+    ica: Any, fit_raw: Any, artifacts_dir: Path, *, exclude: list[int]
+) -> None:
+    """Persist ICA solution + compact summary for the Review stage."""
+    import json
+
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
+    ica_path = artifacts_dir / "ica.fif"
+    ica.save(str(ica_path), overwrite=True)
+
+    sources = ica.get_sources(fit_raw).get_data()
+    contrib = np.mean(np.abs(sources), axis=1)
+    total = float(np.sum(contrib)) or 1.0
+    fractions = (contrib / total).tolist()
+
+    # ~2s of each component at ~50 Hz for sparkline plots in the UI.
+    sfreq = float(fit_raw.info["sfreq"])
+    n_keep = min(sources.shape[1], int(sfreq * 2.0))
+    step = max(1, int(round(sfreq / 50.0)))
+    waveforms = [
+        [float(v) for v in sources[i, :n_keep:step]] for i in range(sources.shape[0])
+    ]
+
+    summary = {
+        "n_components": int(ica.n_components_),
+        "contributions": [float(x) for x in fractions],
+        "suggested_exclude": [int(i) for i in exclude],
+        "ch_names": list(fit_raw.ch_names),
+        "waveforms": waveforms,
+        "sfreq": float(sfreq / step),
+        "ica_path": str(ica_path),
+    }
+    (artifacts_dir / "ica_summary.json").write_text(
+        json.dumps(summary, indent=2), encoding="utf-8"
+    )
 
 
 def _apply_epoch(data: Any, params: dict[str, Any]) -> Any:

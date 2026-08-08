@@ -7,11 +7,14 @@ from typing import Any
 
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
+    QComboBox,
     QFileDialog,
     QFrame,
     QGridLayout,
     QHBoxLayout,
     QLabel,
+    QListWidget,
+    QListWidgetItem,
     QPushButton,
     QSizePolicy,
     QStackedWidget,
@@ -31,11 +34,17 @@ from neurotendrils.core.eeg_formats import (
     import_format_hint,
 )
 from neurotendrils.core.formatting import format_bytes, format_number, format_relative
+from neurotendrils.core.ingestion.montage import STANDARD_MONTAGES
 from neurotendrils.core.jobs import (
     WorkerJob,
+    apply_montage_job,
     cancel_bound_job,
+    drop_channels_job,
     fingerprint_job,
     import_recording_job,
+    persist_bad_spans_job,
+    preview_recording_job,
+    review_qa_job,
     run_dataset_plan_job,
     run_plan_job,
     start_bound_job,
@@ -69,11 +78,14 @@ from neurotendrils.widgets.rows import ListRow, RowList
 from neurotendrils.widgets.section import SectionHeader
 from neurotendrils.widgets.skeleton import SkeletonLoader
 from neurotendrils.widgets.augment_review import AugmentReview
+from neurotendrils.widgets.eeg_viewer import EegViewer, ViewerEvent
 from neurotendrils.widgets.erp_plot import ErpPlot
 from neurotendrils.widgets.ica_browser import IcaBrowser
 from neurotendrils.widgets.stage_flow import StageFlow
+from neurotendrils.widgets.trial_labels import TrialLabelEditor
 
 RECORDING = "recording"
+INSPECT = "inspect"
 FINGERPRINT = "fingerprint"
 PLAN = "plan"
 RUN = "run"
@@ -226,14 +238,19 @@ class NeuroFlowPage(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
+        self._inspect_path = ""
+        self._pending_bads: list[dict[str, Any]] = []
+
         self.flow = StageFlow(
             "NeuroFlow",
-            "Import a recording, shape a plan, then run it. "
-            "Each run saves cleaned output under runs/.",
+            "Import → inspect & reject → recipe plan → run → ICA/ERP review → train.",
             self,
         )
         self.flow.add_stage(
             RECORDING, "Recording", self._build_recording(), primary="Choose file"
+        )
+        self.flow.add_stage(
+            INSPECT, "Inspect", self._build_inspect(), primary="Continue"
         )
         self.flow.add_stage(
             FINGERPRINT, "Fingerprint", self._build_fingerprint(), primary="Continue"
@@ -331,6 +348,68 @@ class NeuroFlowPage(QWidget):
         layout.addWidget(recent_header)
         self._dataset_rows = RowList(host)
         layout.addWidget(self._dataset_rows)
+        return host
+
+    def _build_inspect(self) -> QWidget:
+        """EEGLAB-like browse: scroll traces, paint BAD, montage, channel drop, labels."""
+        host, layout = _stage_widget(self)
+
+        self._inspect_status = QLabel(
+            "Scroll the traces, toggle Paint bad and drag to reject spans, "
+            "apply a montage, drop bad channels, and map event labels.",
+            host,
+        )
+        self._inspect_status.setObjectName("fileMetaLabel")
+        self._inspect_status.setWordWrap(True)
+        layout.addWidget(self._inspect_status)
+
+        tools = QHBoxLayout()
+        tools.addWidget(QLabel("Montage", host))
+        self._inspect_montage = QComboBox(host)
+        self._inspect_montage.addItem("(none)", None)
+        for name in STANDARD_MONTAGES:
+            self._inspect_montage.addItem(name, name)
+        tools.addWidget(self._inspect_montage)
+        self._inspect_apply_montage = QPushButton("Apply montage", host)
+        self._inspect_apply_montage.setObjectName("secondaryButton")
+        self._inspect_apply_montage.clicked.connect(self._apply_inspect_montage)
+        tools.addWidget(self._inspect_apply_montage)
+        self._inspect_save_bads = QPushButton("Save BAD marks", host)
+        self._inspect_save_bads.setObjectName("secondaryButton")
+        self._inspect_save_bads.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._inspect_save_bads.clicked.connect(self._save_inspect_bads)
+        tools.addWidget(self._inspect_save_bads)
+        self._inspect_drop_ch = QPushButton("Drop selected channels", host)
+        self._inspect_drop_ch.setObjectName("secondaryButton")
+        self._inspect_drop_ch.clicked.connect(self._drop_inspect_channels)
+        tools.addWidget(self._inspect_drop_ch)
+        self._inspect_reload = QPushButton("Reload preview", host)
+        self._inspect_reload.setObjectName("ghostButton")
+        self._inspect_reload.clicked.connect(self._load_inspect_preview)
+        tools.addWidget(self._inspect_reload)
+        tools.addStretch(1)
+        layout.addLayout(tools)
+
+        body = QHBoxLayout()
+        self._inspect_viewer = EegViewer(host)
+        self._inspect_viewer.badSpanPainted.connect(self._on_bad_painted)
+        self._inspect_viewer.setMinimumHeight(320)
+        body.addWidget(self._inspect_viewer, 1)
+
+        ch_col = QVBoxLayout()
+        ch_col.addWidget(QLabel("Channels (select to drop)", host))
+        self._inspect_channels = QListWidget(host)
+        self._inspect_channels.setSelectionMode(
+            QListWidget.SelectionMode.ExtendedSelection
+        )
+        self._inspect_channels.setMaximumWidth(160)
+        ch_col.addWidget(self._inspect_channels, 1)
+        body.addLayout(ch_col)
+        layout.addLayout(body, 1)
+
+        self._inspect_labels = TrialLabelEditor(host)
+        self._inspect_labels.setMaximumHeight(180)
+        layout.addWidget(self._inspect_labels)
         return host
 
     def _build_fingerprint(self) -> QWidget:
@@ -500,6 +579,14 @@ class NeuroFlowPage(QWidget):
         self._augment_review = AugmentReview(host)
         layout.addWidget(self._augment_review)
 
+        review_actions = QHBoxLayout()
+        self._review_apply_ica = QPushButton("Apply ICA exclude to plan", host)
+        self._review_apply_ica.setObjectName("secondaryButton")
+        self._review_apply_ica.clicked.connect(self._on_apply_ica_clicked)
+        review_actions.addWidget(self._review_apply_ica)
+        review_actions.addStretch(1)
+        layout.addLayout(review_actions)
+
         train_hint = QLabel(
             "When satisfied, continue to NeuroStudio to train on the cleaned epochs.",
             host,
@@ -518,6 +605,8 @@ class NeuroFlowPage(QWidget):
     def _on_stage_changed(self, key: str) -> None:
         if key in {RECORDING, RUN}:
             self._refresh_pickers()
+        if key == INSPECT and self._dataset_path:
+            self._load_inspect_preview()
         if key == REVIEW and self._run_done and not self._review_loaded:
             self._load_review()
         self._refresh_actions()
@@ -527,7 +616,12 @@ class NeuroFlowPage(QWidget):
             if not self._dataset_path:
                 self.import_recording()
             else:
-                self.flow.advance()
+                self.flow.go_to(INSPECT)
+            return
+        if key == INSPECT:
+            self._apply_inspect_prep()
+            self.flow.go_to(FINGERPRINT)
+            QTimer.singleShot(0, self.request_fingerprint)
             return
         if key == FINGERPRINT:
             if not self._fingerprint and self._dataset_path:
@@ -545,6 +639,7 @@ class NeuroFlowPage(QWidget):
                 self.run_plan()
             return
         if key == REVIEW:
+            self._apply_review_ica_to_plan()
             self.trainInStudioRequested.emit(self._run_output or self._dataset_path)
             return
 
@@ -624,11 +719,13 @@ class NeuroFlowPage(QWidget):
         has_plan = bool(self._plan.get("steps"))
 
         self.flow.set_complete(RECORDING, has_data)
+        self.flow.set_complete(INSPECT, has_data and bool(self._inspect_path))
         self.flow.set_complete(FINGERPRINT, bool(self._fingerprint))
         self.flow.set_complete(PLAN, has_plan)
         self.flow.set_complete(RUN, self._run_done)
         self.flow.set_complete(REVIEW, self._review_loaded)
 
+        self.flow.set_unlocked(INSPECT, has_data)
         self.flow.set_unlocked(FINGERPRINT, has_data)
         self.flow.set_unlocked(PLAN, has_data)
         self.flow.set_unlocked(RUN, has_data and has_plan)
@@ -641,10 +738,16 @@ class NeuroFlowPage(QWidget):
             if busy:
                 self.flow.set_primary("Working…", enabled=False)
             elif has_data:
-                self.flow.set_primary("Continue", enabled=True)
+                self.flow.set_primary("Inspect data", enabled=True)
             else:
                 self.flow.set_primary("Choose file", enabled=True)
             self.flow.set_status(self._fp_status.text() if busy else "")
+        elif stage == INSPECT:
+            loading = busy and self._job_kind == "preview"
+            self.flow.set_primary(
+                "Continue to plan", enabled=has_data and not loading
+            )
+            self.flow.set_status(self._inspect_status.text() if loading else "")
         elif stage == FINGERPRINT:
             if busy:
                 self.flow.set_primary("Reading…", enabled=False)
@@ -747,9 +850,9 @@ class NeuroFlowPage(QWidget):
         if copied:
             notify_library_changed()
         self._refresh_pickers()
-        # Move to the fingerprint stage and read metadata once the import thread is done.
-        self.flow.go_to(FINGERPRINT)
-        QTimer.singleShot(0, self.request_fingerprint)
+        # Inspect first (visualize / reject) — fingerprint comes after Continue.
+        self.flow.go_to(INSPECT)
+        QTimer.singleShot(0, self._load_inspect_preview)
         self._refresh_actions()
 
     def clear_all(self) -> None:
@@ -1142,8 +1245,245 @@ class NeuroFlowPage(QWidget):
         self._refresh_actions()
         self.flow.go_to(REVIEW)
 
+    def _resolve_preview_path(self) -> str:
+        path = self._dataset_path
+        if not path:
+            return ""
+        if is_dataset_manifest(path):
+            try:
+                manifest = load_manifest(path)
+                if not manifest.members:
+                    return ""
+                return str(_fingerprint_member_path(manifest))
+            except (OSError, ValueError):
+                return ""
+        return path
+
+    def _load_inspect_preview(self) -> None:
+        path = self._resolve_preview_path()
+        if not path:
+            self._inspect_status.setText("No recording to preview.")
+            return
+        if self._job and self._job.is_running():
+            return
+        self._inspect_path = path
+        self._inspect_status.setText(f"Loading preview (first 30s)… {Path(path).name}")
+        self._job_kind = "preview"
+        job = preview_recording_job(path, max_sec=30.0, max_ch=16)
+        start_bound_job(
+            self,
+            "_job",
+            job,
+            self._on_preview_ok,
+            self._on_preview_fail,
+            self._refresh_actions,
+        )
+
+    def _on_preview_ok(self, result: dict[str, Any]) -> None:
+        import numpy as np
+
+        data = result.get("data")
+        if data is None:
+            self._inspect_status.setText("Preview empty.")
+            return
+        arr = np.asarray(data, dtype=np.float32)
+        events = [
+            ViewerEvent(
+                float(e["onset"]),
+                float(e["duration"]),
+                str(e["label"]),
+                kind=str(e.get("kind") or "event"),
+            )
+            for e in (result.get("events") or [])
+        ]
+        ch_names = list(result.get("ch_names") or [])
+        self._inspect_viewer.set_array(
+            arr,
+            sfreq=float(result.get("sfreq") or 100.0),
+            ch_names=ch_names,
+            events=events,
+        )
+        all_names = list(result.get("all_ch_names") or ch_names)
+        self._inspect_channels.clear()
+        bads = set(result.get("bads") or [])
+        for name in all_names:
+            item = QListWidgetItem(name)
+            if name in bads:
+                item.setText(f"{name} (bad)")
+            self._inspect_channels.addItem(item)
+        codes = sorted(
+            {
+                ev.label
+                for ev in events
+                if ev.kind != "bad" and not ev.label.upper().startswith("BAD")
+            }
+        )
+        if codes and not self._inspect_labels.mapping():
+            self._inspect_labels.set_codes(codes)
+        self._inspect_status.setText(
+            f"Preview ready · {arr.shape[0]} ch shown / {len(all_names)} total · "
+            f"{float(result.get('duration_sec') or 0):.1f}s · "
+            "Paint bad → drag spans · Save BAD marks · Drop channels as needed."
+        )
+        self._refresh_actions()
+
+    def _on_preview_fail(self, code: str, message: str) -> None:
+        self._inspect_status.setText(f"Preview failed ({code}): {message}")
+        self._refresh_actions()
+
+    def _on_bad_painted(self, tmin: float, tmax: float) -> None:
+        self._pending_bads.append(
+            {"onset": float(tmin), "duration": float(tmax - tmin)}
+        )
+        self._inspect_status.setText(
+            f"{len(self._pending_bads)} BAD span(s) pending — click Save BAD marks."
+        )
+
+    def _save_inspect_bads(self) -> None:
+        if not self._pending_bads or not self._inspect_path:
+            return
+        if self._job and self._job.is_running():
+            return
+        self._inspect_status.setText("Saving BAD annotations…")
+        self._job_kind = "persist_bads"
+        spans = list(self._pending_bads)
+        job = persist_bad_spans_job(self._inspect_path, spans)
+        start_bound_job(
+            self,
+            "_job",
+            job,
+            lambda result: self._on_bads_saved(result, len(spans)),
+            lambda code, msg: self._inspect_status.setText(f"Save BAD failed: {msg}"),
+            self._refresh_actions,
+        )
+
+    def _on_bads_saved(self, result: dict[str, Any], n: int) -> None:
+        self._pending_bads.clear()
+        if result.get("path"):
+            self._inspect_path = str(result["path"])
+        self._inspect_status.setText(f"Saved {n} BAD span(s) onto recording.")
+        notify("BAD marks saved", f"{n} span(s)", level="success")
+        self._load_inspect_preview()
+
+    def _apply_inspect_montage(self) -> None:
+        name = self._inspect_montage.currentData()
+        if not name or not self._inspect_path:
+            alert(self, "Montage", "Choose a montage and load a recording first.")
+            return
+        if self._job and self._job.is_running():
+            return
+        self._inspect_status.setText(f"Applying montage {name}…")
+        self._job_kind = "montage"
+        job = apply_montage_job(self._inspect_path, str(name))
+        start_bound_job(
+            self,
+            "_job",
+            job,
+            lambda result: self._on_montage_applied(result),
+            lambda code, msg: self._inspect_status.setText(f"Montage failed: {msg}"),
+            self._refresh_actions,
+        )
+
+    def _on_montage_applied(self, result: dict[str, Any]) -> None:
+        if result.get("path"):
+            self._inspect_path = str(result["path"])
+            # Prefer the FIF path for the rest of Flow when we converted.
+            if not is_dataset_manifest(self._dataset_path):
+                self._dataset_path = self._inspect_path
+        self._inspect_status.setText(
+            f"Montage applied: {result.get('montage') or '—'}"
+        )
+        notify("Montage applied", str(result.get("montage") or ""), level="success")
+        self._load_inspect_preview()
+
+    def _drop_inspect_channels(self) -> None:
+        selected = [
+            item.text().split(" ", 1)[0]
+            for item in self._inspect_channels.selectedItems()
+        ]
+        if not selected or not self._inspect_path:
+            return
+        if self._job and self._job.is_running():
+            return
+        self._inspect_status.setText(f"Dropping {len(selected)} channel(s)…")
+        self._job_kind = "drop_ch"
+        job = drop_channels_job(self._inspect_path, selected)
+        start_bound_job(
+            self,
+            "_job",
+            job,
+            lambda result: self._on_channels_dropped(result),
+            lambda code, msg: self._inspect_status.setText(f"Drop failed: {msg}"),
+            self._refresh_actions,
+        )
+
+    def _on_channels_dropped(self, result: dict[str, Any]) -> None:
+        dropped = result.get("dropped") or []
+        if result.get("path"):
+            self._inspect_path = str(result["path"])
+            if not is_dataset_manifest(self._dataset_path):
+                self._dataset_path = self._inspect_path
+        self._inspect_status.setText(f"Dropped {len(dropped)} channel(s).")
+        notify("Channels dropped", ", ".join(dropped) or "—", level="success")
+        self._load_inspect_preview()
+
+    def _apply_inspect_prep(self) -> None:
+        """Persist montage + label map onto dataset manifest when applicable."""
+        if not is_dataset_manifest(self._dataset_path):
+            return
+        try:
+            manifest = load_manifest(self._dataset_path)
+        except (OSError, ValueError):
+            return
+        from neurotendrils.core.ingestion.schema import EventsConfig, MontageConfig
+        from neurotendrils.core.dataset_manifest import save_manifest
+
+        name = self._inspect_montage.currentData()
+        manifest.montage = MontageConfig(name=str(name) if name else None)
+        mapping = self._inspect_labels.mapping()
+        if mapping:
+            manifest.events = EventsConfig(source="manual", code_map=mapping)
+            manifest.label.map = dict(mapping)
+            manifest.label.class_names = self._inspect_labels.class_names()
+        root = manifest.root_dir or Path(self._dataset_path).parent
+        try:
+            save_manifest(manifest, root)
+        except OSError:
+            return
+
+    def _apply_review_ica_to_plan(self) -> bool:
+        """Write exclude indices from the ICA browser into the plan's ICA step."""
+        csv = self._ica_browser.exclude_csv()
+        steps = self._plan.get("steps") or []
+        for step in steps:
+            if isinstance(step, dict) and step.get("step_id") == "ica":
+                params = dict(step.get("params") or {})
+                params["exclude"] = csv
+                step["params"] = params
+                self._plan_user_owned = True
+                self.render_plan()
+                return True
+        return False
+
+    def _on_apply_ica_clicked(self) -> None:
+        if self._apply_review_ica_to_plan():
+            notify(
+                "ICA exclude saved",
+                self._ica_browser.exclude_csv() or "(none)",
+                level="success",
+            )
+            self._review_status.setText(
+                "ICA exclude written into plan — re-run to apply, or continue to train."
+            )
+        else:
+            alert(
+                self,
+                "No ICA step",
+                "This plan has no ICA step to update. Add ICA in Plan, then re-run.",
+            )
+
     def _load_review(self) -> None:
-        """Best-effort ICA / ERP / augment previews from run output."""
+        """ICA / ERP / augment previews — always off the GUI thread."""
         out = self._run_output or ""
         path = Path(out)
         if is_dataset_manifest(out):
@@ -1151,53 +1491,50 @@ class NeuroFlowPage(QWidget):
                 manifest = load_manifest(out)
                 path = resolve_member_path(manifest, manifest.members[0])
             except Exception:  # noqa: BLE001
-                self._review_status.setText("Review: could not open cleaned dataset member.")
+                self._review_status.setText(
+                    "Review: could not open cleaned dataset member."
+                )
                 return
+        if self._job and self._job.is_running():
+            return
+        self._review_status.setText(f"Computing ICA / ERP / augment… {path.name}")
+        self._job_kind = "review"
+        job = review_qa_job(str(path))
+        start_bound_job(
+            self,
+            "_job",
+            job,
+            self._on_review_ok,
+            self._on_review_fail,
+            self._refresh_actions,
+        )
 
-        self._review_status.setText(f"Reviewing {path.name}…")
-        # ICA on continuous cleaned output when available.
-        try:
-            if path.is_file() and "-epo" not in path.name.lower():
-                from neuroflow.qa import ica_component_summary
-
-                summary = ica_component_summary(str(path))
-                self._ica_browser.set_summary(summary)
-            else:
-                self._review_status.setText("ICA review skipped (epoched output).")
-        except Exception as exc:  # noqa: BLE001
-            self._review_status.setText(f"ICA review unavailable: {exc}")
-
-        # ERP + augment when epoched.
-        epo_path = path
-        if path.is_file() and "-epo" not in path.name.lower():
-            sibling = path.with_name("cleaned-epo.fif")
-            if sibling.is_file():
-                epo_path = sibling
-            else:
-                epo_path = path
-        try:
-            if epo_path.is_file() and (
-                "-epo" in epo_path.name.lower() or epo_path.suffix == ".fif"
-            ):
-                from neuroflow.qa import augment_preview_pairs, erp_averages
-
-                try:
-                    erp = erp_averages(str(epo_path))
-                    self._erp_plot.set_erp(erp)
-                except Exception:  # noqa: BLE001
-                    pass
-                try:
-                    preview = augment_preview_pairs(str(epo_path))
-                    self._augment_review.set_preview(preview)
-                except Exception:  # noqa: BLE001
-                    pass
-        except Exception as exc:  # noqa: BLE001
-            self._review_status.setText(
-                (self._review_status.text() + f" · ERP/augment: {exc}").strip()
-            )
-
+    def _on_review_ok(self, result: dict[str, Any]) -> None:
+        if result.get("ica"):
+            self._ica_browser.set_summary(result["ica"])
+        if result.get("erp"):
+            self._erp_plot.set_erp(result["erp"])
+        if result.get("augment"):
+            self._augment_review.set_preview(result["augment"])
+        bits = []
+        if result.get("ica"):
+            bits.append("ICA")
+        elif result.get("ica_error"):
+            bits.append(f"ICA skipped ({result['ica_error'][:60]})")
+        if result.get("erp"):
+            bits.append("ERP")
+        elif result.get("erp_error"):
+            bits.append("ERP skipped")
+        if result.get("augment"):
+            bits.append("augment")
+        self._review_status.setText(
+            "Review ready · " + (" · ".join(bits) if bits else "no QA artifacts")
+        )
         self._review_loaded = True
-        self._review_status.setText(f"Review ready · {path.name}")
+        self._refresh_actions()
+
+    def _on_review_fail(self, code: str, message: str) -> None:
+        self._review_status.setText(f"Review failed ({code}): {message}")
         self._refresh_actions()
 
     def _on_run_fail(self, code: str, message: str) -> None:

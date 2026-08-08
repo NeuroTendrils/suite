@@ -139,20 +139,56 @@ class PrepPanel(QWidget):
             preview_path = path
 
         if preview_path is not None:
-            err = self._viewer.load_path(str(preview_path))
-            if err:
-                self._subtitle.setText(err)
-            else:
-                # Seed label rows from annotation labels found in the viewer events.
-                codes = sorted(
-                    {
-                        ev.label
-                        for ev in self._viewer.events()
-                        if ev.kind != "bad" and not ev.label.upper().startswith("BAD")
-                    }
-                )
-                if codes and not self._labels.mapping():
-                    self._labels.set_codes(codes)
+            self._member_path = preview_path
+            self._subtitle.setText(f"{self._subtitle.text()} · loading preview…")
+            from neurotendrils.core.jobs import preview_recording_job, start_bound_job
+
+            self._job = None
+            job = preview_recording_job(str(preview_path), max_sec=30.0, max_ch=16)
+            start_bound_job(
+                self,
+                "_job",
+                job,
+                self._on_preview_ok,
+                lambda _c, msg: self._subtitle.setText(f"Preview failed: {msg}"),
+            )
+
+    def _on_preview_ok(self, result: dict) -> None:
+        import numpy as np
+
+        from neurotendrils.widgets.eeg_viewer import ViewerEvent
+
+        data = result.get("data")
+        if data is None:
+            self._subtitle.setText("Preview empty.")
+            return
+        events = [
+            ViewerEvent(
+                float(e["onset"]),
+                float(e["duration"]),
+                str(e["label"]),
+                kind=str(e.get("kind") or "event"),
+            )
+            for e in (result.get("events") or [])
+        ]
+        self._viewer.set_array(
+            np.asarray(data, dtype=np.float32),
+            sfreq=float(result.get("sfreq") or 100.0),
+            ch_names=list(result.get("ch_names") or []),
+            events=events,
+        )
+        codes = sorted(
+            {
+                ev.label
+                for ev in events
+                if ev.kind != "bad" and not ev.label.upper().startswith("BAD")
+            }
+        )
+        if codes and not self._labels.mapping():
+            self._labels.set_codes(codes)
+        self._subtitle.setText(
+            f"{self._path.name} · {float(result.get('duration_sec') or 0):.1f}s preview"
+        )
 
     def _save(self) -> None:
         montage_name = self._montage.currentData()
@@ -191,13 +227,17 @@ class PrepPanel(QWidget):
             sidecar = self._path.with_suffix(self._path.suffix + ".prep.json")
             import json
 
+            from neurotendrils.core.jsonutil import json_safe
+
             payload = {
                 "about": about.to_dict(),
                 "montage": {"name": montage_name, "custom_path": None},
                 "events": events.to_dict(),
             }
             try:
-                sidecar.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+                sidecar.write_text(
+                    json.dumps(json_safe(payload), indent=2), encoding="utf-8"
+                )
             except OSError as exc:
                 modals.alert(self, "Save failed", str(exc))
                 return

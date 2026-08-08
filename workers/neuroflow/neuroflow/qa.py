@@ -5,13 +5,38 @@ Copyright 2026 NeuroTendrils
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from typing import Any
 
 import numpy as np
 
 
+def _load_saved_ica_summary(raw_path: str) -> dict[str, Any] | None:
+    """Prefer artifacts written during the NeuroFlow run (no ICA refit)."""
+    p = Path(raw_path)
+    candidates = [
+        p.parent / "ica_summary.json",
+        p.with_name("ica_summary.json"),
+    ]
+    for path in candidates:
+        if not path.is_file():
+            continue
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if isinstance(data, dict) and data.get("contributions") is not None:
+            return data
+    return None
+
+
 def ica_component_summary(raw_path: str, *, n_components: float | int = 0.99) -> dict[str, Any]:
-    """Fit ICA and return JSON-serializable component contributions (no full mixing)."""
+    """Return ICA contributions; load run artifacts when present (fast path)."""
+    saved = _load_saved_ica_summary(raw_path)
+    if saved is not None:
+        return saved
+
     import mne
     from mne.preprocessing import ICA
 
@@ -31,7 +56,6 @@ def ica_component_summary(raw_path: str, *, n_components: float | int = 0.99) ->
         fit_raw = raw.copy().crop(tmin=0.0, tmax=60.0, include_tmax=True)
     ica.fit(fit_raw, decim=decim, verbose="ERROR")
 
-    # Explained variance proxy: mean abs mixing weights per component.
     sources = ica.get_sources(fit_raw).get_data()
     contrib = np.mean(np.abs(sources), axis=1)
     total = float(np.sum(contrib)) or 1.0
@@ -43,11 +67,19 @@ def ica_component_summary(raw_path: str, *, n_components: float | int = 0.99) ->
     except Exception:  # noqa: BLE001
         eog_indices = []
 
+    n_keep = min(sources.shape[1], int(sfreq * 2.0))
+    step = max(1, int(round(sfreq / 50.0)))
+    waveforms = [
+        [float(v) for v in sources[i, :n_keep:step]] for i in range(sources.shape[0])
+    ]
+
     return {
         "n_components": int(ica.n_components_),
         "contributions": [float(x) for x in fractions],
         "suggested_exclude": [int(i) for i in eog_indices],
         "ch_names": list(raw.ch_names),
+        "waveforms": waveforms,
+        "sfreq": float(sfreq / step),
     }
 
 
@@ -57,7 +89,7 @@ def erp_averages(epochs_path: str) -> dict[str, Any]:
 
     epochs = mne.read_epochs(epochs_path, preload=True, verbose="ERROR")
     times = epochs.times.tolist()
-    averages: dict[str, list[list[float]]] = {}
+    averages: dict[str, list[float]] = {}
     for name in epochs.event_id:
         evoked = epochs[name].average()
         # Mean across channels for a compact plot; keep per-ch optional later.

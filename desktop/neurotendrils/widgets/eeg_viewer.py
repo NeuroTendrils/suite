@@ -322,20 +322,25 @@ class EegViewer(QWidget):
         else:
             picks = mne.pick_types(raw.info, eeg=True, eog=True, meg=False, exclude=[])
             if len(picks) == 0:
-                picks = np.arange(min(32, len(raw.ch_names)))
+                picks = np.arange(min(16, len(raw.ch_names)))
             else:
-                picks = picks[:32]
-            data = raw.get_data(picks=picks)
-            # Cap preview length for UI responsiveness (~5 min @ native sfreq).
-            max_samples = int(float(raw.info["sfreq"]) * 300)
-            if data.shape[1] > max_samples:
-                data = data[:, :max_samples]
+                picks = picks[:16]
             sfreq = float(raw.info["sfreq"])
+            # Cap preview: 30s @ native rate, then decimate toward ~100 Hz for paint.
+            max_samples = int(sfreq * 30)
+            data = raw.get_data(
+                picks=picks, start=0, stop=min(max_samples, raw.n_times)
+            )
+            decim = max(1, int(round(sfreq / 100.0)))
+            data = data[:, ::decim]
+            sfreq = sfreq / decim
             ch_names = [raw.ch_names[i] for i in picks]
             events = []
             ann = getattr(raw, "annotations", None)
             if ann is not None:
                 for onset, duration, desc in zip(ann.onset, ann.duration, ann.description):
+                    if float(onset) > 30.0:
+                        break
                     kind = "bad" if str(desc).upper().startswith("BAD") else "event"
                     events.append(
                         ViewerEvent(float(onset), float(duration), str(desc), kind=kind)
