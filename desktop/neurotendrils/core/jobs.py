@@ -274,6 +274,7 @@ def preview_recording_job(
         import mne
 
         events: list[dict[str, Any]] = []
+        # Nested lists — QueuedConnection cannot reliably deliver ndarray.
         if isinstance(raw, mne.Epochs):
             data = raw.get_data()
             data = data[: min(8, len(data))]
@@ -283,8 +284,7 @@ def preview_recording_job(
             flat = flat[:max_ch]
             decim = max(1, int(round(sfreq / 100.0)))
             preview = flat[:, ::decim]
-            # Nested lists — QueuedConnection cannot reliably deliver ndarray.
-        return {
+            return {
                 "data": preview.astype(np.float32).tolist(),
                 "sfreq": sfreq / decim,
                 "ch_names": ch_names,
