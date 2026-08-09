@@ -26,11 +26,15 @@ source .venv/bin/activate
 pip install -e "backend[dev]"
 pytest backend/tests -q
 
-# Desktop (requires Rust)
+# Desktop (requires Rust/cargo on PATH)
+# If `cargo` is missing: curl https://sh.rustup.rs -sSf | sh
+# then: source "$HOME/.cargo/env"   (or restart the terminal)
 export SUITE_PYTHON="$PWD/.venv/bin/python"
 cd apps/desktop
 npm install
 npm run tauri:dev
 ```
+
+`npm run tauri:dev` also prepends `$HOME/.cargo/bin` so cargo is found even if your shell profile was not updated.
 
 Workspace data is stored under the app data directory (`workspace/studies/...`).
