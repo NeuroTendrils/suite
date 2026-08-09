@@ -9,9 +9,10 @@
     "lint": "oxlint",
     "preview": "vite preview",
     "setup": "PATH=\"$HOME/.cargo/bin:$PATH\" bash ../../scripts/ensure_dev.sh && PATH=\"$HOME/.cargo/bin:$PATH\" bash ../../scripts/ensure_sidecar_stub.sh",
+    "free-port": "bash ../../scripts/free_vite_port.sh 5173",
     "sidecar": "PATH=\"$HOME/.cargo/bin:$PATH\" bash ../../scripts/build_sidecar.sh",
     "tauri": "PATH=\"$HOME/.cargo/bin:$PATH\" tauri",
-    "tauri:dev": "npm run setup && PATH=\"$HOME/.cargo/bin:$PATH\" tauri dev",
+    "tauri:dev": "npm run setup && npm run free-port && PATH=\"$HOME/.cargo/bin:$PATH\" tauri dev",
     "tauri:build": "npm run sidecar && PATH=\"$HOME/.cargo/bin:$PATH\" tauri build"
   },
   "dependencies": {

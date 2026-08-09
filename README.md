@@ -36,6 +36,7 @@ npm run tauri:dev
 ```
 
 Use the **NeuroTendrils Suite desktop window**, not a browser tab on `localhost:5173`.
+Vite only serves the UI into that window; if you only see “Local: http://localhost:5173/”, wait for the Rust build — or free a stuck port with `npm run free-port` and retry.
 
 ## Ship backend without requiring a system Python
 
