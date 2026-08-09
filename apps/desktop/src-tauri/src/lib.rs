@@ -110,6 +110,39 @@ fn suite_call(
     call_python_ipc(&backend.ipc_path, &command, params.unwrap_or(json!({})))
 }
 
+fn resolve_python() -> Result<PathBuf, String> {
+    if let Ok(explicit) = std::env::var("SUITE_PYTHON") {
+        let path = PathBuf::from(&explicit);
+        if path.is_file() {
+            return Ok(path);
+        }
+        return Err(format!(
+            "SUITE_PYTHON is set to '{explicit}' but that file does not exist. \
+             Point it at the repo venv, e.g. /Users/you/Projects/suite/.venv/bin/python"
+        ));
+    }
+
+    // Walk up from cwd: apps/desktop -> apps -> repo root (.venv lives at repo root).
+    let mut dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    for _ in 0..6 {
+        let candidate = dir.join(".venv/bin/python");
+        if candidate.is_file() {
+            return Ok(candidate);
+        }
+        // Also accept python3 inside the venv.
+        let candidate3 = dir.join(".venv/bin/python3");
+        if candidate3.is_file() {
+            return Ok(candidate3);
+        }
+        if !dir.pop() {
+            break;
+        }
+    }
+
+    // Last resort: PATH
+    Ok(PathBuf::from("python3"))
+}
+
 fn spawn_backend(workspace: PathBuf) -> Result<BackendState, String> {
     let ipc_path = PathBuf::from(format!(
         "/tmp/neurotendrils-{}.sock",
@@ -119,7 +152,7 @@ fn spawn_backend(workspace: PathBuf) -> Result<BackendState, String> {
         let _ = std::fs::remove_file(&ipc_path);
     }
 
-    let python = std::env::var("SUITE_PYTHON").unwrap_or_else(|_| "python3".into());
+    let python = resolve_python()?;
     let mut child = Command::new(&python)
         .args([
             "-m",
@@ -134,7 +167,9 @@ fn spawn_backend(workspace: PathBuf) -> Result<BackendState, String> {
         .spawn()
         .map_err(|e| {
             format!(
-                "failed to spawn python backend ({python}): {e}. Set SUITE_PYTHON to your venv python."
+                "failed to spawn python backend ({}): {e}. \
+                 Create the repo venv: python3 -m venv .venv && .venv/bin/pip install -e backend[dev]",
+                python.display()
             )
         })?;
 

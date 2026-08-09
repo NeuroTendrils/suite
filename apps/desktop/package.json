@@ -9,8 +9,8 @@
     "lint": "oxlint",
     "preview": "vite preview",
     "tauri": "PATH=\"$HOME/.cargo/bin:$PATH\" tauri",
-    "tauri:dev": "PATH=\"$HOME/.cargo/bin:$PATH\" tauri dev",
-    "tauri:build": "PATH=\"$HOME/.cargo/bin:$PATH\" tauri build"
+    "tauri:dev": "PATH=\"$HOME/.cargo/bin:$PATH\" SUITE_PYTHON=\"${SUITE_PYTHON:-$PWD/../../.venv/bin/python}\" tauri dev",
+    "tauri:build": "PATH=\"$HOME/.cargo/bin:$PATH\" SUITE_PYTHON=\"${SUITE_PYTHON:-$PWD/../../.venv/bin/python}\" tauri build"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.11.1",

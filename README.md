@@ -27,16 +27,14 @@ pip install -e "backend[dev]"
 pytest backend/tests -q
 
 # Desktop (requires Rust/cargo on PATH)
-# If `cargo` is missing: curl https://sh.rustup.rs -sSf | sh
-# then: source "$HOME/.cargo/env"   (or restart the terminal)
-export SUITE_PYTHON="$PWD/.venv/bin/python"
+# If `cargo` is missing: curl https://sh.rustup.rs -sSf | sh && source "$HOME/.cargo/env"
 cd apps/desktop
 npm install
 npm run tauri:dev
 ```
 
-Use the **NeuroTendrils Suite desktop window**. Do not open `http://localhost:5173` in Chrome/Safari — that page has no Tauri IPC (`invoke` will fail).
+`npm run tauri:dev` sets `SUITE_PYTHON` to the **repo-root** `.venv` (`../../.venv/bin/python` from `apps/desktop`). Do not point it at `apps/desktop/.venv`.
 
-`npm run tauri:dev` also prepends `$HOME/.cargo/bin` so cargo is found even if your shell profile was not updated.
+Use the **NeuroTendrils Suite desktop window**. Do not open `http://localhost:5173` in Chrome/Safari — that page has no Tauri IPC (`invoke` will fail).
 
 Workspace data is stored under the app data directory (`workspace/studies/...`).
