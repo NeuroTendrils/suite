@@ -71,6 +71,7 @@ class MneImporter:
         subject_id: str,
         session_id: str,
         run_id: str,
+        **_: Any,
     ) -> tuple[Recording, DatasetArtifact, Any]:
         import hashlib
 
@@ -189,23 +190,49 @@ class MatInspectImporter:
         raise NotImplementedError("MAT import requires content-specific mapping (not yet implemented)")
 
 
-class TextInspectImporter:
-    name = "text_ambiguous"
+class TextMatrixImporter:
+    """Numeric matrix .txt/.csv/.tsv — requires sfreq on import."""
+
+    name = "text_matrix"
 
     def can_handle(self, source: str | Path) -> bool:
         path = Path(source)
         return path.suffix.lower() in {".txt", ".csv", ".tsv"} and path.exists()
 
     def inspect(self, source: str | Path) -> dict[str, Any]:
-        return {
-            "format": self.name,
-            "path": str(Path(source).resolve()),
-            "status": "needs_content_inspection",
-            "warning": "Text files are ambiguous; content inspection required before import",
-        }
+        from suite_backend.scientific.io.text_matrix import inspect_text_matrix
 
-    def import_recording(self, *args, **kwargs):
-        raise NotImplementedError("Text import requires content-specific mapping (not yet implemented)")
+        return inspect_text_matrix(source)
+
+    def import_recording(
+        self,
+        source: str | Path,
+        *,
+        subject_id: str,
+        session_id: str,
+        run_id: str,
+        sfreq: float | None = None,
+        transpose: bool = False,
+        channel_names: list[str] | None = None,
+        artifact_dir: Path | None = None,
+        **_: Any,
+    ) -> tuple[Recording, DatasetArtifact, Any]:
+        from suite_backend.scientific.io.text_matrix import import_text_recording
+
+        if sfreq is None:
+            raise ValueError(
+                "text imports require sfreq (Hz). Pass sfreq when importing .txt/.csv/.tsv."
+            )
+        return import_text_recording(
+            source,
+            subject_id=subject_id,
+            session_id=session_id,
+            run_id=run_id,
+            sfreq=float(sfreq),
+            transpose=bool(transpose),
+            channel_names=channel_names,
+            artifact_dir=artifact_dir,
+        )
 
 
 class ImporterRegistry:
@@ -236,6 +263,6 @@ def get_default_registry() -> ImporterRegistry:
             MneImporter("brainvision", (".vhdr",)),
             MneImporter("eeglab", (".set",)),
             MatInspectImporter(),
-            TextInspectImporter(),
+            TextMatrixImporter(),
         ]
     )

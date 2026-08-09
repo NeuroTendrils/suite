@@ -25,6 +25,11 @@ class ImportRecordingParams(BaseModel):
     session_id: str
     run_id: str
     path: str
+    # Required for .txt/.csv/.tsv matrix imports (not embedded in file).
+    sfreq: float | None = None
+    # If true: rows=channels, cols=samples. Default: rows=samples, cols=channels.
+    transpose: bool = False
+    channel_names: list[str] | None = None
 
 
 class RecordingIdParams(BaseModel):
@@ -106,12 +111,20 @@ def import_recording(params: ImportRecordingParams, ctx: AppContext) -> dict:
     if importer is None:
         raise ValueError(f"no importer for {path}")
     study = ctx.studies.get_study(params.study_id)
-    recording, artifact, _raw = importer.import_recording(
-        path,
-        subject_id=params.subject_id,
-        session_id=params.session_id,
-        run_id=params.run_id,
-    )
+    artifact_dir = ctx.workspace.study_dir(study.id) / "artifacts" / "imports"
+    kwargs: dict = {
+        "subject_id": params.subject_id,
+        "session_id": params.session_id,
+        "run_id": params.run_id,
+        "artifact_dir": artifact_dir,
+    }
+    if params.sfreq is not None:
+        kwargs["sfreq"] = params.sfreq
+    if params.transpose:
+        kwargs["transpose"] = True
+    if params.channel_names:
+        kwargs["channel_names"] = params.channel_names
+    recording, artifact, _raw = importer.import_recording(path, **kwargs)
     artifact.study_id = study.id
     placed = False
     for subject in study.subjects:
@@ -132,6 +145,7 @@ def import_recording(params: ImportRecordingParams, ctx: AppContext) -> dict:
     return {
         "recording": recording.model_dump(mode="json"),
         "artifact": artifact.model_dump(mode="json"),
+        "inspect": registry.inspect(path),
     }
 
 

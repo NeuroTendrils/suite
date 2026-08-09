@@ -39,6 +39,9 @@ function App() {
   const [studyName, setStudyName] = useState("Motor Imagery");
   const [selectedStudyId, setSelectedStudyId] = useState<string | null>(null);
   const [importPath, setImportPath] = useState("");
+  const [importSfreq, setImportSfreq] = useState("250");
+  const [importTranspose, setImportTranspose] = useState(false);
+  const [importInspect, setImportInspect] = useState<any>(null);
   const [subjectLabel, setSubjectLabel] = useState("S001");
   const [signal, setSignal] = useState<any>(null);
   const [erp, setErp] = useState<any>(null);
@@ -109,6 +112,8 @@ function App() {
     await refresh();
   }
 
+  const isTextImport = /\.(txt|csv|tsv)$/i.test(importPath);
+
   async function browseRecording() {
     try {
       const selected = await open({
@@ -117,13 +122,21 @@ function App() {
         filters: [
           {
             name: "EEG recordings",
-            extensions: ["fif", "edf", "bdf", "set", "vhdr"],
+            extensions: ["txt", "csv", "tsv", "fif", "edf", "bdf", "set", "vhdr"],
           },
         ],
       });
       if (typeof selected === "string" && selected) {
         setImportPath(selected);
         appendLog(`selected file ${selected}`);
+        try {
+          const inspected = await suiteCall("import.inspect", { path: selected });
+          setImportInspect(inspected);
+          appendLog(`inspect: ${JSON.stringify(inspected).slice(0, 240)}…`);
+        } catch (e) {
+          setImportInspect(null);
+          appendLog(`inspect failed: ${String(e)}`);
+        }
       }
     } catch (e) {
       setError(String(e));
@@ -134,6 +147,13 @@ function App() {
     if (!selectedStudyId || !importPath) {
       setError("Choose a recording file first (Browse…)");
       return;
+    }
+    if (isTextImport) {
+      const hz = Number(importSfreq);
+      if (!Number.isFinite(hz) || hz <= 0) {
+        setError("Text imports need sampling rate (Hz), e.g. 250");
+        return;
+      }
     }
     try {
       const study = await suiteCall<Study>("studies.get", { study_id: selectedStudyId });
@@ -148,13 +168,18 @@ function App() {
       }
       const session = subject.sessions[0];
       const run = session.runs[0];
-      const res = await suiteCall<any>("import.recording", {
+      const payload: Record<string, unknown> = {
         study_id: selectedStudyId,
         subject_id: subject.id,
         session_id: session.id,
         run_id: run.id,
         path: importPath,
-      });
+      };
+      if (isTextImport) {
+        payload.sfreq = Number(importSfreq);
+        payload.transpose = importTranspose;
+      }
+      const res = await suiteCall<any>("import.recording", payload);
       appendLog(`imported recording ${res.recording.id}`);
       setError(null);
       await refresh();
@@ -320,12 +345,51 @@ function App() {
                   style={{ flex: 1 }}
                   value={importPath}
                   onChange={(e) => setImportPath(e.target.value)}
-                  placeholder="No file selected — click Browse…"
+                  placeholder="No file selected — click Browse… (.txt ok)"
                 />
                 <button onClick={() => void importRecording()} disabled={!importPath}>
                   Import into study
                 </button>
               </div>
+              {isTextImport && (
+                <div className="row">
+                  <label>
+                    Sampling rate (Hz){" "}
+                    <input
+                      style={{ width: 80 }}
+                      value={importSfreq}
+                      onChange={(e) => setImportSfreq(e.target.value)}
+                    />
+                  </label>
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={importTranspose}
+                      onChange={(e) => setImportTranspose(e.target.checked)}
+                    />{" "}
+                    Rows are channels (transpose)
+                  </label>
+                  <span className="muted">
+                    Default: rows = samples, columns = channels. .txt has no Hz — enter it.
+                  </span>
+                </div>
+              )}
+              {importInspect && (
+                <pre className="log">
+                  {JSON.stringify(
+                    {
+                      format: importInspect.format,
+                      n_rows: importInspect.n_rows,
+                      n_cols: importInspect.n_cols,
+                      has_header: importInspect.has_header,
+                      channel_names: importInspect.channel_names,
+                      warnings: importInspect.warnings,
+                    },
+                    null,
+                    2,
+                  )}
+                </pre>
+              )}
               <h3>3. Inspect</h3>
               <div className="row">
                 <button disabled={!firstRecording} onClick={() => void loadSignal()}>
