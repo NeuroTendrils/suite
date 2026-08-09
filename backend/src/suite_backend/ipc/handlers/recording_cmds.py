@@ -19,6 +19,12 @@ class ImportInspectParams(BaseModel):
     path: str
 
 
+class ColumnSpec(BaseModel):
+    index: int
+    name: str
+    role: str = "eeg"  # eeg | stim | misc | ignore | time
+
+
 class ImportRecordingParams(BaseModel):
     study_id: str
     subject_id: str
@@ -30,6 +36,10 @@ class ImportRecordingParams(BaseModel):
     # If true: rows=channels, cols=samples. Default: rows=samples, cols=channels.
     transpose: bool = False
     channel_names: list[str] | None = None
+    include_columns: list[int] | None = None
+    column_selection: list[ColumnSpec] | None = None
+    # MNE standard montage name, e.g. standard_1020 / biosemi32
+    montage: str | None = None
 
 
 class RecordingIdParams(BaseModel):
@@ -124,6 +134,12 @@ def import_recording(params: ImportRecordingParams, ctx: AppContext) -> dict:
         kwargs["transpose"] = True
     if params.channel_names:
         kwargs["channel_names"] = params.channel_names
+    if params.include_columns is not None:
+        kwargs["include_columns"] = params.include_columns
+    if params.column_selection is not None:
+        kwargs["column_selection"] = [c.model_dump() for c in params.column_selection]
+    if params.montage:
+        kwargs["montage"] = params.montage
     recording, artifact, _raw = importer.import_recording(path, **kwargs)
     artifact.study_id = study.id
     placed = False

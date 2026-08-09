@@ -214,6 +214,9 @@ class TextMatrixImporter:
         sfreq: float | None = None,
         transpose: bool = False,
         channel_names: list[str] | None = None,
+        include_columns: list[int] | None = None,
+        column_selection: list[dict[str, Any]] | None = None,
+        montage: str | None = None,
         artifact_dir: Path | None = None,
         **_: Any,
     ) -> tuple[Recording, DatasetArtifact, Any]:
@@ -231,6 +234,9 @@ class TextMatrixImporter:
             sfreq=float(sfreq),
             transpose=bool(transpose),
             channel_names=channel_names,
+            include_columns=include_columns,
+            column_selection=column_selection,
+            montage=montage,
             artifact_dir=artifact_dir,
         )
 
