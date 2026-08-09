@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { open } from "@tauri-apps/plugin-dialog";
 import { suiteCall, waitForSuiteRuntime } from "./ipc";
 import "./App.css";
 
@@ -108,25 +109,59 @@ function App() {
     await refresh();
   }
 
+  async function browseRecording() {
+    try {
+      const selected = await open({
+        multiple: false,
+        title: "Select EEG recording",
+        filters: [
+          {
+            name: "EEG recordings",
+            extensions: ["fif", "edf", "bdf", "set", "vhdr"],
+          },
+        ],
+      });
+      if (typeof selected === "string" && selected) {
+        setImportPath(selected);
+        appendLog(`selected file ${selected}`);
+      }
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
   async function importRecording() {
-    if (!selectedStudyId || !importPath) return;
-    const study = await suiteCall<Study>("studies.get", { study_id: selectedStudyId });
-    const subject = study.subjects.find((s) => s.label === subjectLabel) ?? study.subjects[0];
-    if (!subject) {
-      setError("add a subject first");
+    if (!selectedStudyId || !importPath) {
+      setError("Choose a recording file first (Browse…)");
       return;
     }
-    const session = subject.sessions[0];
-    const run = session.runs[0];
-    const res = await suiteCall<any>("import.recording", {
-      study_id: selectedStudyId,
-      subject_id: subject.id,
-      session_id: session.id,
-      run_id: run.id,
-      path: importPath,
-    });
-    appendLog(`imported recording ${res.recording.id}`);
-    await refresh();
+    try {
+      const study = await suiteCall<Study>("studies.get", { study_id: selectedStudyId });
+      let subject = study.subjects.find((s) => s.label === subjectLabel) ?? study.subjects[0];
+      if (!subject) {
+        const added = await suiteCall<any>("subjects.add", {
+          study_id: selectedStudyId,
+          label: subjectLabel || "S001",
+        });
+        appendLog(`auto-added subject ${added.subject.label}`);
+        subject = added.subject;
+      }
+      const session = subject.sessions[0];
+      const run = session.runs[0];
+      const res = await suiteCall<any>("import.recording", {
+        study_id: selectedStudyId,
+        subject_id: subject.id,
+        session_id: session.id,
+        run_id: run.id,
+        path: importPath,
+      });
+      appendLog(`imported recording ${res.recording.id}`);
+      setError(null);
+      await refresh();
+      setTab("neuroflow");
+    } catch (e) {
+      setError(String(e));
+    }
   }
 
   async function loadSignal() {
@@ -229,14 +264,26 @@ function App() {
       {tab === "home" && (
         <section>
           <h2>Studies</h2>
+          <p className="muted">
+            1) Create or select a study → 2) open <strong>neuroflow</strong> → 3) Browse… a recording
+            file (.fif / .edf / .set / .vhdr).
+          </p>
           <div className="row">
             <input value={studyName} onChange={(e) => setStudyName(e.target.value)} />
             <button onClick={() => void createStudy()}>Create study</button>
+            {selectedStudyId && (
+              <button onClick={() => setTab("neuroflow")}>Open NeuroFlow →</button>
+            )}
           </div>
           <ul>
             {studies.map((s) => (
               <li key={s.id}>
-                <button onClick={() => setSelectedStudyId(s.id)}>
+                <button
+                  onClick={() => {
+                    setSelectedStudyId(s.id);
+                    setTab("neuroflow");
+                  }}
+                >
                   {s.name} ({s.subjects.length} subjects) — {s.id}
                 </button>
               </li>
@@ -249,31 +296,37 @@ function App() {
         <section>
           <h2>NeuroFlow</h2>
           <p className="muted">
-            Inspect / visualize EEG, manual reject, plans, ERP, ICA. Utilitarian UI only.
+            Import a recording here, then inspect signal / ERP / ICA. Utilitarian UI only.
           </p>
-          {!selectedStudy && <p>Select or create a study on Home.</p>}
+          {!selectedStudy && <p>Select or create a study on Home first.</p>}
           {selectedStudy && (
             <>
               <p>
                 Study: <code>{selectedStudy.name}</code>
               </p>
+              <h3>1. Subject</h3>
               <div className="row">
                 <input
                   value={subjectLabel}
                   onChange={(e) => setSubjectLabel(e.target.value)}
-                  placeholder="subject label"
+                  placeholder="subject label e.g. S001"
                 />
                 <button onClick={() => void addSubject()}>Add subject</button>
               </div>
+              <h3>2. Select dataset / recording</h3>
               <div className="row">
+                <button onClick={() => void browseRecording()}>Browse…</button>
                 <input
                   style={{ flex: 1 }}
                   value={importPath}
                   onChange={(e) => setImportPath(e.target.value)}
-                  placeholder="/absolute/path/to/file.fif|.edf|.set|.vhdr"
+                  placeholder="No file selected — click Browse…"
                 />
-                <button onClick={() => void importRecording()}>Import recording</button>
+                <button onClick={() => void importRecording()} disabled={!importPath}>
+                  Import into study
+                </button>
               </div>
+              <h3>3. Inspect</h3>
               <div className="row">
                 <button disabled={!firstRecording} onClick={() => void loadSignal()}>
                   Load signal window
