@@ -1,0 +1,39 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "suite-backend"
+version = "0.1.0"
+description = "NeuroTendrils Suite local scientific runtime"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "pydantic>=2.7",
+  "numpy>=1.26",
+  "mne>=1.7",
+]
+
+[project.optional-dependencies]
+ml = [
+  "braindecode>=0.8",
+  "torch",
+]
+dev = [
+  "pytest>=8.0",
+  "ruff>=0.6",
+]
+
+[project.scripts]
+suite-backend = "suite_backend.__main__:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/suite_backend"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
