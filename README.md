@@ -35,6 +35,8 @@ npm install
 npm run tauri:dev
 ```
 
+Use the **NeuroTendrils Suite desktop window**. Do not open `http://localhost:5173` in Chrome/Safari — that page has no Tauri IPC (`invoke` will fail).
+
 `npm run tauri:dev` also prepends `$HOME/.cargo/bin` so cargo is found even if your shell profile was not updated.
 
 Workspace data is stored under the app data directory (`workspace/studies/...`).

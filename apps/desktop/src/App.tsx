@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { suiteCall } from "./ipc";
+import { suiteCall, waitForSuiteRuntime } from "./ipc";
 import "./App.css";
 
 type Study = {
@@ -66,6 +66,7 @@ function App() {
 
   async function refresh() {
     try {
+      await waitForSuiteRuntime();
       const health = await suiteCall<{ status: string; version: string }>("health");
       setStatus(`backend ${health.status} v${health.version}`);
       const listed = await suiteCall<{ studies: Study[] }>("studies.list");
@@ -78,6 +79,7 @@ function App() {
       setError(null);
     } catch (e) {
       setError(String(e));
+      setStatus("offline");
     }
   }
 

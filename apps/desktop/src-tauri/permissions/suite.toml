@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-suite-call"
+description = "Allow the UI to call the allowlisted Python IPC bridge command."
+commands.allow = ["suite_call"]
