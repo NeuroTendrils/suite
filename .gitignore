@@ -32,6 +32,7 @@ build/
 packaging/*.toc
 apps/desktop/src-tauri/binaries/suite-backend*
 !apps/desktop/src-tauri/binaries/.gitkeep
+# stub marker files are local-only too
 
 # Workspace data (local studies)
 workspace/

@@ -8,11 +8,11 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",
-    "setup": "bash ../../scripts/ensure_dev.sh",
-    "sidecar": "bash ../../scripts/build_sidecar.sh",
+    "setup": "PATH=\"$HOME/.cargo/bin:$PATH\" bash ../../scripts/ensure_dev.sh && PATH=\"$HOME/.cargo/bin:$PATH\" bash ../../scripts/ensure_sidecar_stub.sh",
+    "sidecar": "PATH=\"$HOME/.cargo/bin:$PATH\" bash ../../scripts/build_sidecar.sh",
     "tauri": "PATH=\"$HOME/.cargo/bin:$PATH\" tauri",
     "tauri:dev": "npm run setup && PATH=\"$HOME/.cargo/bin:$PATH\" tauri dev",
-    "tauri:build": "npm run setup && npm run sidecar && PATH=\"$HOME/.cargo/bin:$PATH\" tauri build"
+    "tauri:build": "npm run sidecar && PATH=\"$HOME/.cargo/bin:$PATH\" tauri build"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.11.1",

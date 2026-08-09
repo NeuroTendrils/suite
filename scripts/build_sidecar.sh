@@ -4,6 +4,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 bash "$ROOT/scripts/ensure_dev.sh"
+# Do not call ensure_sidecar_stub here — we replace it with a frozen binary.
 
 PY="$ROOT/.venv/bin/python"
 "$PY" -m pip install -U "pyinstaller>=6.0"
