@@ -30,6 +30,8 @@ dist/
 build/
 *.spec.bak
 packaging/*.toc
+apps/desktop/src-tauri/binaries/suite-backend*
+!apps/desktop/src-tauri/binaries/.gitkeep
 
 # Workspace data (local studies)
 workspace/

@@ -12,29 +12,41 @@ Proprietary local-first EEG research environment.
 ## Architecture
 
 ```text
-React UI → Tauri allowlisted invoke → Unix socket IPC → Python (MNE / our algorithms)
+React UI → Tauri allowlisted invoke → Unix socket IPC → Backend sidecar
 ```
+
+Backend launch order (no hardcoded machine paths):
+
+1. **PyInstaller sidecar** `suite-backend-<target>` (shipping / `npm run sidecar`)
+2. **Repo `.venv`** via `python -m suite_backend` (dev; auto-created by `npm run setup`)
+3. Optional overrides: `SUITE_BACKEND` (sidecar path) or `SUITE_PYTHON` (python path)
 
 No localhost TCP API. Python never evaluates UI-supplied code.
 
 ## Develop
 
 ```bash
-# Backend
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -e "backend[dev]"
-pytest backend/tests -q
+# Once (or anytime): creates .venv and installs backend
+./scripts/ensure_dev.sh
 
-# Desktop (requires Rust/cargo on PATH)
-# If `cargo` is missing: curl https://sh.rustup.rs -sSf | sh && source "$HOME/.cargo/env"
+# Desktop — setup runs automatically
 cd apps/desktop
 npm install
 npm run tauri:dev
 ```
 
-`npm run tauri:dev` sets `SUITE_PYTHON` to the **repo-root** `.venv` (`../../.venv/bin/python` from `apps/desktop`). Do not point it at `apps/desktop/.venv`.
+Use the **NeuroTendrils Suite desktop window**, not a browser tab on `localhost:5173`.
 
-Use the **NeuroTendrils Suite desktop window**. Do not open `http://localhost:5173` in Chrome/Safari — that page has no Tauri IPC (`invoke` will fail).
+## Ship backend without requiring a system Python
 
-Workspace data is stored under the app data directory (`workspace/studies/...`).
+```bash
+./scripts/build_sidecar.sh
+# writes apps/desktop/src-tauri/binaries/suite-backend-$(rustc host)
+
+cd apps/desktop
+npm run tauri:build
+```
+
+Tauri bundles `binaries/suite-backend` as `externalBin`. The app prefers that sidecar at runtime.
+
+Workspace data lives under the OS app data directory (`…/workspace/studies/...`).

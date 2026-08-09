@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use std::io::{BufRead, BufReader, Write};
 use std::net::Shutdown;
 use std::os::unix::net::UnixStream;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
 use std::thread;
@@ -18,6 +18,13 @@ struct BackendState {
 
 struct AppState {
     backend: Mutex<Option<BackendState>>,
+}
+
+enum BackendCmd {
+    /// Frozen PyInstaller (or similar) sidecar — argv is just IPC flags.
+    Sidecar(PathBuf),
+    /// Dev: python -m suite_backend …
+    Module(PathBuf),
 }
 
 fn allowlisted_commands() -> HashSet<&'static str> {
@@ -110,40 +117,119 @@ fn suite_call(
     call_python_ipc(&backend.ipc_path, &command, params.unwrap_or(json!({})))
 }
 
-fn resolve_python() -> Result<PathBuf, String> {
+fn host_target_triple() -> String {
+    // Matches rustc host / Tauri externalBin suffix convention.
+    std::env::consts::ARCH.to_string()
+        + "-"
+        + match std::env::consts::OS {
+            "macos" => "apple-darwin",
+            "linux" => "unknown-linux-gnu",
+            "windows" => "pc-windows-msvc",
+            other => other,
+        }
+}
+
+fn find_sidecar_near(dir: &Path) -> Option<PathBuf> {
+    let triple = host_target_triple();
+    let names = [
+        format!("suite-backend-{triple}"),
+        "suite-backend".to_string(),
+        format!("suite-backend-{triple}.exe"),
+        "suite-backend.exe".to_string(),
+    ];
+    for name in names {
+        let candidate = dir.join(&name);
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+        let nested = dir.join("binaries").join(&name);
+        if nested.is_file() {
+            return Some(nested);
+        }
+    }
+    None
+}
+
+fn resolve_backend(app: &tauri::App) -> Result<BackendCmd, String> {
+    // 1) Explicit override (absolute path to sidecar OR python)
+    if let Ok(explicit) = std::env::var("SUITE_BACKEND") {
+        let path = PathBuf::from(&explicit);
+        if !path.is_file() {
+            return Err(format!("SUITE_BACKEND={explicit} does not exist"));
+        }
+        let is_python = path
+            .file_name()
+            .and_then(|s| s.to_str())
+            .is_some_and(|n| n.starts_with("python"));
+        return Ok(if is_python {
+            BackendCmd::Module(path)
+        } else {
+            BackendCmd::Sidecar(path)
+        });
+    }
     if let Ok(explicit) = std::env::var("SUITE_PYTHON") {
         let path = PathBuf::from(&explicit);
         if path.is_file() {
-            return Ok(path);
+            return Ok(BackendCmd::Module(path));
         }
-        return Err(format!(
-            "SUITE_PYTHON is set to '{explicit}' but that file does not exist. \
-             Point it at the repo venv, e.g. /Users/you/Projects/suite/.venv/bin/python"
-        ));
+        return Err(format!("SUITE_PYTHON={explicit} does not exist"));
     }
 
-    // Walk up from cwd: apps/desktop -> apps -> repo root (.venv lives at repo root).
-    let mut dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    for _ in 0..6 {
-        let candidate = dir.join(".venv/bin/python");
-        if candidate.is_file() {
-            return Ok(candidate);
+    // 2) Bundled / local PyInstaller sidecar (preferred for shipping)
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            if let Some(bin) = find_sidecar_near(dir) {
+                return Ok(BackendCmd::Sidecar(bin));
+            }
+            // macOS .app: Contents/MacOS -> Contents/Resources
+            if let Some(contents) = dir.parent() {
+                let resources = contents.join("Resources");
+                if let Some(bin) = find_sidecar_near(&resources) {
+                    return Ok(BackendCmd::Sidecar(bin));
+                }
+            }
         }
-        // Also accept python3 inside the venv.
-        let candidate3 = dir.join(".venv/bin/python3");
-        if candidate3.is_file() {
-            return Ok(candidate3);
+    }
+    if let Ok(resource_dir) = app.path().resource_dir() {
+        if let Some(bin) = find_sidecar_near(&resource_dir) {
+            return Ok(BackendCmd::Sidecar(bin));
+        }
+    }
+    // Dev tree: apps/desktop/src-tauri/binaries
+    let mut dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    for _ in 0..8 {
+        if let Some(bin) = find_sidecar_near(&dir.join("src-tauri")) {
+            return Ok(BackendCmd::Sidecar(bin));
+        }
+        if let Some(bin) = find_sidecar_near(&dir.join("apps/desktop/src-tauri")) {
+            return Ok(BackendCmd::Sidecar(bin));
         }
         if !dir.pop() {
             break;
         }
     }
 
-    // Last resort: PATH
-    Ok(PathBuf::from("python3"))
+    // 3) Repo-root venv (dev) — created by scripts/ensure_dev.sh
+    let mut dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    for _ in 0..8 {
+        for name in ["python", "python3"] {
+            let candidate = dir.join(".venv/bin").join(name);
+            if candidate.is_file() {
+                return Ok(BackendCmd::Module(candidate));
+            }
+        }
+        if !dir.pop() {
+            break;
+        }
+    }
+
+    Err(
+        "No backend found. Run `./scripts/ensure_dev.sh` (dev) or `./scripts/build_sidecar.sh` (PyInstaller)."
+            .into(),
+    )
 }
 
-fn spawn_backend(workspace: PathBuf) -> Result<BackendState, String> {
+fn spawn_backend(app: &tauri::App, workspace: PathBuf) -> Result<BackendState, String> {
     let ipc_path = PathBuf::from(format!(
         "/tmp/neurotendrils-{}.sock",
         Uuid::new_v4().simple()
@@ -152,40 +238,55 @@ fn spawn_backend(workspace: PathBuf) -> Result<BackendState, String> {
         let _ = std::fs::remove_file(&ipc_path);
     }
 
-    let python = resolve_python()?;
-    let mut child = Command::new(&python)
-        .args([
-            "-m",
-            "suite_backend",
-            "--ipc",
-            ipc_path.to_str().unwrap(),
-            "--workspace",
-            workspace.to_str().unwrap(),
-        ])
+    let launch = resolve_backend(app)?;
+    let mut command = match &launch {
+        BackendCmd::Sidecar(path) => {
+            let mut cmd = Command::new(path);
+            cmd.args([
+                "--ipc",
+                ipc_path.to_str().unwrap(),
+                "--workspace",
+                workspace.to_str().unwrap(),
+            ]);
+            cmd
+        }
+        BackendCmd::Module(python) => {
+            let mut cmd = Command::new(python);
+            cmd.args([
+                "-m",
+                "suite_backend",
+                "--ipc",
+                ipc_path.to_str().unwrap(),
+                "--workspace",
+                workspace.to_str().unwrap(),
+            ]);
+            cmd
+        }
+    };
+
+    let label = match &launch {
+        BackendCmd::Sidecar(p) => format!("sidecar {}", p.display()),
+        BackendCmd::Module(p) => format!("module {}", p.display()),
+    };
+
+    let mut child = command
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|e| {
-            format!(
-                "failed to spawn python backend ({}): {e}. \
-                 Create the repo venv: python3 -m venv .venv && .venv/bin/pip install -e backend[dev]",
-                python.display()
-            )
-        })?;
+        .map_err(|e| format!("failed to spawn backend ({label}): {e}"))?;
 
-    // Wait until socket exists or process dies.
     let start = Instant::now();
-    while start.elapsed() < Duration::from_secs(20) {
+    while start.elapsed() < Duration::from_secs(30) {
         if ipc_path.exists() {
             return Ok(BackendState { child, ipc_path });
         }
         if let Ok(Some(status)) = child.try_wait() {
-            return Err(format!("python backend exited early: {status}"));
+            return Err(format!("backend exited early ({label}): {status}"));
         }
         thread::sleep(Duration::from_millis(50));
     }
     let _ = child.kill();
-    Err("timed out waiting for python backend socket".into())
+    Err(format!("timed out waiting for backend socket ({label})"))
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -210,7 +311,7 @@ pub fn run() {
                 .join("workspace");
             std::fs::create_dir_all(&workspace).map_err(|e| e.to_string())?;
 
-            let backend = spawn_backend(workspace)?;
+            let backend = spawn_backend(app, workspace)?;
             let state = app.state::<AppState>();
             let mut guard = state.backend.lock().unwrap();
             *guard = Some(backend);
