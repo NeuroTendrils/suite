@@ -1,0 +1,76 @@
+:root {
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  color: #111;
+  background: #f6f6f6;
+}
+
+body {
+  margin: 0;
+}
+
+.app {
+  padding: 12px 16px 40px;
+  max-width: 960px;
+}
+
+header {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  margin-bottom: 8px;
+}
+
+nav {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+button {
+  cursor: pointer;
+}
+
+button.active {
+  font-weight: 700;
+}
+
+.row {
+  display: flex;
+  gap: 8px;
+  margin: 8px 0;
+  flex-wrap: wrap;
+}
+
+.muted {
+  color: #666;
+  font-size: 0.9rem;
+}
+
+.error {
+  background: #fee;
+  border: 1px solid #c66;
+  padding: 8px;
+}
+
+.log {
+  background: #111;
+  color: #ddd;
+  padding: 8px;
+  max-height: 180px;
+  overflow: auto;
+  font-size: 12px;
+}
+
+.sketch {
+  background: #fff;
+  border: 1px solid #ccc;
+}
+
+code {
+  font-size: 0.85em;
+}
+
+ul {
+  padding-left: 18px;
+}
