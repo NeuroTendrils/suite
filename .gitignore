@@ -3,21 +3,46 @@
 *.user
 .venv/
 venv/
-python/.venv/
-__pycache__/
+**/__pycache__/
 *.py[cod]
 .Python
 *.egg-info/
 .venv-setup.log
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
 
-# Dev-only UI screenshot harness (tools/ui_screens.py)
-desktop/.ui-screens/
+# Node / frontend
+node_modules/
+apps/desktop/dist/
+apps/desktop/dist-ssr/
+*.local
 
-# PyInstaller output
+# Tauri / Rust
+apps/desktop/src-tauri/target/
+apps/desktop/src-tauri/gen/
+**/Cargo.lock.bak
+
+# PyInstaller / packaging
 dist/
 build/
 *.spec.bak
 packaging/*.toc
 
-# Testing data (dev)
+# Workspace data (local studies)
+workspace/
 data/
+*.fif
+*.edf
+*.set
+*.fdt
+*.vhdr
+*.vmrk
+*.eeg
+
+# IDE
+.idea/
+.vscode/
+!.vscode/extensions.json
