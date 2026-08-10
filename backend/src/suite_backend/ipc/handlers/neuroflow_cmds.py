@@ -6,6 +6,7 @@ from suite_backend.app_context import AppContext
 from suite_backend.domain.models import ProcessingPlan, ProcessingStep
 from suite_backend.domain.queries import find_recording
 from suite_backend.ipc.registry import REGISTRY
+from suite_backend.neuroflow.default_plan import default_preprocessing_plan
 from suite_backend.neuroflow.plan_executor import execute_plan
 from suite_backend.scientific.algorithms.artifact_detection import detect_artifacts
 from suite_backend.scientific.algorithms.augmentation import augment_dataset
@@ -36,6 +37,17 @@ class PlanExecuteParams(BaseModel):
     recording_id: str
 
 
+class PlanGetParams(BaseModel):
+    study_id: str
+    plan_id: str
+
+
+class PlanDefaultParams(BaseModel):
+    study_id: str
+    persist: bool = True
+    name: str = "default_placeholder"
+
+
 class ArtifactDetectParams(BaseModel):
     study_id: str
     recording_id: str
@@ -59,7 +71,8 @@ def recommend(params: RecommendPreprocessingParams, ctx: AppContext) -> dict:
 def artifacts(params: ArtifactDetectParams, ctx: AppContext) -> dict:
     study = ctx.studies.get_study(params.study_id)
     rec = find_recording(study, params.recording_id)
-    return detect_artifacts(rec).model_dump(mode="json")
+    streams = ctx.studies.list_streams(params.study_id, recording_id=rec.id)
+    return detect_artifacts(rec, streams=streams).model_dump(mode="json")
 
 
 @REGISTRY.register("neuroflow.detect_lab_interference", ArtifactDetectParams)
@@ -106,6 +119,28 @@ def plans_execute(params: PlanExecuteParams, ctx: AppContext) -> dict:
         repo=ctx.studies,
     )
     return {"artifacts": [a.model_dump(mode="json") for a in artifacts]}
+
+
+@REGISTRY.register("plans.get", PlanGetParams)
+def plans_get(params: PlanGetParams, ctx: AppContext) -> dict:
+    plans = {p.id: p for p in ctx.studies.list_plans(params.study_id)}
+    if params.plan_id not in plans:
+        raise KeyError(f"plan not found: {params.plan_id}")
+    return plans[params.plan_id].model_dump(mode="json")
+
+
+@REGISTRY.register("plans.default", PlanDefaultParams)
+def plans_default(params: PlanDefaultParams, ctx: AppContext) -> dict:
+    """Create/return the honest placeholder default preprocessing plan."""
+    ctx.studies.get_study(params.study_id)
+    plan = default_preprocessing_plan(name=params.name)
+    if params.persist:
+        ctx.studies.save_plan(params.study_id, plan)
+    return {
+        "plan": plan.model_dump(mode="json"),
+        "placeholder": True,
+        "warning": "not data-adaptive — fixed placeholder steps only",
+    }
 
 
 @REGISTRY.register("augmentation.run", AugmentParams)

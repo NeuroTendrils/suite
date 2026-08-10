@@ -12,12 +12,12 @@ Study-centric multimodal research OS. After each phase: review → approve → c
 | 6 | Validation | done |
 | 7 | Subject/session manager | done |
 | 8 | Timeline viewer | done |
-| 8a | Artifact rejection | pending |
-| 9 | Channel/data management | pending |
-| 10 | Events/annotations | pending |
-| 11 | NeuroFlow preprocessing | pending |
-| 12 | Epochs/trials | pending |
-| 13 | Feature extraction | pending |
+| 8a | Artifact rejection | done |
+| 9 | Channel/data management | done |
+| 10 | Events/annotations | done |
+| 11 | NeuroFlow preprocessing | done |
+| 12 | Epochs/trials | done |
+| 13 | Feature extraction | done |
 | 14 | Analysis/statistics | pending |
 | 15 | ML dataset builder | pending |
 | 16 | Leakage-safe splits | pending |
@@ -86,3 +86,39 @@ Study-centric multimodal research OS. After each phase: review → approve → c
 - `neuroflow/timeline.py` + IPC `recordings.timeline`
 - Applies SyncGroup offsets onto a shared reference timeline
 - UI: utilitarian multimodal sparkline viewer + event list
+
+## Phase 8a notes
+
+- Heuristic `detect_artifacts` (std / PTP); never mutates raw
+- IPC: `artifacts.detect/apply/list/revert` → Annotation + HumanDecision masks
+- UI: Reject tab
+
+## Phase 9 notes
+
+- IPC: `channels.list/update/reorder/apply_montage` (stream-owned, decisions for reversibility)
+- UI: Channels tab
+
+## Phase 10 notes
+
+- IPC: `events.list/create/delete`, `annotations.list/delete` (+ existing create)
+- Study `event_definitions` mapped on list
+- UI: Events tab
+
+## Phase 11 notes
+
+- `plans.default` fixed placeholder plan (filter→notch→reref); not data-adaptive
+- Executor ops: `mark_bad_channels`, `interpolate_bads`
+- `neuroflow.recommend_preprocessing` returns same placeholder plan
+- UI: Preprocess tab
+
+## Phase 12 notes
+
+- Domain: `EpochSet` / `Trial` with subject/session/condition/stream refs
+- IPC: `epochs.create/list/get`; optional FIF under `epochs/`
+- UI: Epochs tab
+
+## Phase 13 notes
+
+- Domain: `FeatureSet` with provenance + CSV export hooks
+- IPC: `features.extract/list/get` (`band_power`, `psd`, connectivity placeholder)
+- UI: Features tab
