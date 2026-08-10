@@ -5,11 +5,18 @@ from pathlib import Path
 
 from suite_backend.domain.migrate import migrate_study_dict, needs_migration
 from suite_backend.domain.models import (
+    AnalysisReport,
+    DataSplit,
     DataStream,
     DatasetArtifact,
     EpochSet,
+    Experiment,
     FeatureSet,
+    MLDataset,
+    ModelRecord,
+    Prediction,
     ProcessingPlan,
+    Result,
     Study,
     SyncGroup,
 )
@@ -266,3 +273,121 @@ class LocalStudyRepository:
         if recording_id is not None:
             sets = [f for f in sets if f.recording_id == recording_id]
         return sets
+
+    def save_analysis(self, study_id: str, report: AnalysisReport) -> AnalysisReport:
+        path = self.workspace.study_dir(study_id) / "reports" / f"{report.id}.json"
+        _write_json(path, report.model_dump(mode="json"))
+        return report
+
+    def get_analysis(self, study_id: str, report_id: str) -> AnalysisReport:
+        path = self.workspace.study_dir(study_id) / "reports" / f"{report_id}.json"
+        if not path.exists():
+            raise KeyError(f"analysis report not found: {report_id}")
+        return AnalysisReport.model_validate(_read_json(path))
+
+    def list_analyses(
+        self, study_id: str, *, recording_id: str | None = None
+    ) -> list[AnalysisReport]:
+        root = self.workspace.study_dir(study_id) / "reports"
+        reports = [
+            AnalysisReport.model_validate(_read_json(p))
+            for p in sorted(root.glob("anl_*.json"))
+        ]
+        if recording_id is not None:
+            reports = [r for r in reports if r.recording_id == recording_id]
+        return reports
+
+    def save_mldataset(self, study_id: str, dataset: MLDataset) -> MLDataset:
+        path = self.workspace.study_dir(study_id) / "datasets" / f"{dataset.id}.json"
+        _write_json(path, dataset.model_dump(mode="json"))
+        return dataset
+
+    def get_mldataset(self, study_id: str, dataset_id: str) -> MLDataset:
+        path = self.workspace.study_dir(study_id) / "datasets" / f"{dataset_id}.json"
+        if not path.exists():
+            raise KeyError(f"dataset not found: {dataset_id}")
+        return MLDataset.model_validate(_read_json(path))
+
+    def list_mldatasets(self, study_id: str) -> list[MLDataset]:
+        root = self.workspace.study_dir(study_id) / "datasets"
+        return [
+            MLDataset.model_validate(_read_json(p))
+            for p in sorted(root.glob("mlds_*.json"))
+        ]
+
+    def save_split(self, study_id: str, split: DataSplit) -> DataSplit:
+        path = self.workspace.study_dir(study_id) / "datasets" / f"{split.id}.json"
+        _write_json(path, split.model_dump(mode="json"))
+        return split
+
+    def get_split(self, study_id: str, split_id: str) -> DataSplit:
+        path = self.workspace.study_dir(study_id) / "datasets" / f"{split_id}.json"
+        if not path.exists():
+            raise KeyError(f"split not found: {split_id}")
+        return DataSplit.model_validate(_read_json(path))
+
+    def list_splits(self, study_id: str, *, dataset_id: str | None = None) -> list[DataSplit]:
+        root = self.workspace.study_dir(study_id) / "datasets"
+        splits = [
+            DataSplit.model_validate(_read_json(p))
+            for p in sorted(root.glob("split_*.json"))
+        ]
+        if dataset_id is not None:
+            splits = [s for s in splits if s.dataset_id == dataset_id]
+        return splits
+
+    def save_experiment(self, study_id: str, experiment: Experiment) -> Experiment:
+        path = self.workspace.study_dir(study_id) / "experiments" / f"{experiment.id}.json"
+        _write_json(path, experiment.model_dump(mode="json"))
+        return experiment
+
+    def get_experiment(self, study_id: str, experiment_id: str) -> Experiment:
+        path = self.workspace.study_dir(study_id) / "experiments" / f"{experiment_id}.json"
+        if not path.exists():
+            raise KeyError(f"experiment not found: {experiment_id}")
+        return Experiment.model_validate(_read_json(path))
+
+    def list_experiments(self, study_id: str) -> list[Experiment]:
+        root = self.workspace.study_dir(study_id) / "experiments"
+        return [
+            Experiment.model_validate(_read_json(p)) for p in sorted(root.glob("*.json"))
+        ]
+
+    def save_model(self, study_id: str, model: ModelRecord) -> ModelRecord:
+        path = self.workspace.study_dir(study_id) / "models" / f"{model.id}.json"
+        _write_json(path, model.model_dump(mode="json"))
+        return model
+
+    def get_model(self, study_id: str, model_id: str) -> ModelRecord:
+        path = self.workspace.study_dir(study_id) / "models" / f"{model_id}.json"
+        if not path.exists():
+            raise KeyError(f"model not found: {model_id}")
+        return ModelRecord.model_validate(_read_json(path))
+
+    def list_models(self, study_id: str, *, experiment_id: str | None = None) -> list[ModelRecord]:
+        root = self.workspace.study_dir(study_id) / "models"
+        models = [
+            ModelRecord.model_validate(_read_json(p)) for p in sorted(root.glob("mdl_*.json"))
+        ]
+        if experiment_id is not None:
+            models = [m for m in models if m.experiment_id == experiment_id]
+        return models
+
+    def save_prediction(self, study_id: str, prediction: Prediction) -> Prediction:
+        path = self.workspace.study_dir(study_id) / "results" / f"{prediction.id}.json"
+        _write_json(path, prediction.model_dump(mode="json"))
+        return prediction
+
+    def save_result(self, study_id: str, result: Result) -> Result:
+        path = self.workspace.study_dir(study_id) / "results" / f"{result.id}.json"
+        _write_json(path, result.model_dump(mode="json"))
+        return result
+
+    def list_results(self, study_id: str, *, experiment_id: str | None = None) -> list[Result]:
+        root = self.workspace.study_dir(study_id) / "results"
+        results = [
+            Result.model_validate(_read_json(p)) for p in sorted(root.glob("res_*.json"))
+        ]
+        if experiment_id is not None:
+            results = [r for r in results if r.experiment_id == experiment_id]
+        return results

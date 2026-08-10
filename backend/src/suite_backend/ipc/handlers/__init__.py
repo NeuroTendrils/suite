@@ -1,7 +1,9 @@
 from suite_backend.ipc.handlers import (
+    analysis_cmds,
     artifact_cmds,
     channel_cmds,
     core,
+    dataset_cmds,
     epoch_cmds,
     event_cmds,
     feature_cmds,
@@ -15,9 +17,11 @@ from suite_backend.ipc.handlers import (
 )
 
 __all__ = [
+    "analysis_cmds",
     "artifact_cmds",
     "channel_cmds",
     "core",
+    "dataset_cmds",
     "epoch_cmds",
     "event_cmds",
     "feature_cmds",

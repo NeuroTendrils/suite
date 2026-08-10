@@ -122,7 +122,12 @@ type Tab =
   | "events"
   | "preprocess"
   | "epochs"
-  | "features";
+  | "features"
+  | "analysis"
+  | "dataset"
+  | "studio"
+  | "report"
+  | "export";
 
 const EVENT_COLORS = ["#3dcf6a", "#e85d5d", "#5db0e8", "#e8c55d", "#c77dff"];
 
@@ -1382,6 +1387,11 @@ function App() {
                     ["preprocess", "Preprocess"],
                     ["epochs", "Epochs"],
                     ["features", "Features"],
+                    ["analysis", "Analysis"],
+                    ["dataset", "Dataset"],
+                    ["studio", "Studio"],
+                    ["report", "Report"],
+                    ["export", "Export"],
                   ] as const
                 ).map(([id, label]) => (
                   <button
@@ -1850,6 +1860,238 @@ function App() {
                     </button>
                     <button type="button" onClick={() => void runFlow("features.list")}>
                       List
+                    </button>
+                  </div>
+                  <pre className="log">{flowJson || "—"}</pre>
+                </section>
+              )}
+
+              {tab === "analysis" && (
+                <section>
+                  <h2>Analysis / statistics</h2>
+                  <div className="row">
+                    <button
+                      type="button"
+                      onClick={() => void runFlow("analysis.run", { kind: "descriptive" })}
+                    >
+                      Descriptive (features)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void runFlow("analysis.run", { kind: "compare_conditions" })}
+                    >
+                      Compare conditions
+                    </button>
+                    <button type="button" onClick={() => void runFlow("analysis.list")}>
+                      List
+                    </button>
+                  </div>
+                  <pre className="log">{flowJson || "—"}</pre>
+                </section>
+              )}
+
+              {tab === "dataset" && (
+                <section>
+                  <h2>ML dataset + splits</h2>
+                  <div className="row">
+                    <button
+                      type="button"
+                      onClick={() => void runFlow("datasets.build", { source: "epochs" })}
+                    >
+                      Build from epochs
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void runFlow("datasets.build", { source: "multimodal" })}
+                    >
+                      Build multimodal
+                    </button>
+                    <button type="button" onClick={() => void runFlow("datasets.list")}>
+                      List datasets
+                    </button>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const listed = await runFlow("datasets.list");
+                        const id = listed?.datasets?.[0]?.id;
+                        if (!id) {
+                          setError("Build a dataset first");
+                          return;
+                        }
+                        void runFlow("datasets.splits.create", {
+                          dataset_id: id,
+                          method: "subject",
+                        });
+                      }}
+                    >
+                      Create subject split
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void runFlow("neurostudio.leakage.check", {
+                        split_definition: {
+                          train_subjects: ["S1"],
+                          test_subjects: ["S1"],
+                        },
+                      })}
+                    >
+                      Demo leakage check
+                    </button>
+                  </div>
+                  <pre className="log">{flowJson || "—"}</pre>
+                </section>
+              )}
+
+              {tab === "studio" && (
+                <section>
+                  <h2>NeuroStudio</h2>
+                  <p className="muted tiny">
+                    Recommend always returns EEGNet placeholder. Training uses sklearn LogReg on
+                    the ML dataset (Braindecode train not wired yet).
+                  </p>
+                  <div className="row">
+                    <button
+                      type="button"
+                      onClick={() => void runFlow("neurostudio.templates.recommend")}
+                    >
+                      Recommend template
+                    </button>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const ds = await runFlow("datasets.list");
+                        const datasetId = ds?.datasets?.[0]?.id;
+                        if (!datasetId) {
+                          setError("Build dataset first");
+                          return;
+                        }
+                        const splits = await runFlow("datasets.splits.list", {
+                          dataset_id: datasetId,
+                        });
+                        let splitId = splits?.splits?.[0]?.id;
+                        if (!splitId) {
+                          const created = await runFlow("datasets.splits.create", {
+                            dataset_id: datasetId,
+                            method: "stratified_trial",
+                          });
+                          splitId = created?.split?.id;
+                        }
+                        void runFlow("neurostudio.experiments.create", {
+                          template_id: "eegnet",
+                          input_artifact_id: datasetId,
+                          split_definition: { split_id: splitId },
+                        });
+                      }}
+                    >
+                      Create experiment
+                    </button>
+                    <button type="button" onClick={() => void runFlow("neurostudio.experiments.list")}>
+                      List experiments
+                    </button>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const listed = await runFlow("neurostudio.experiments.list");
+                        const id = listed?.experiments?.[0]?.id;
+                        if (!id) {
+                          setError("Create experiment first");
+                          return;
+                        }
+                        void runFlow("neurostudio.train.start", { experiment_id: id });
+                      }}
+                    >
+                      Train
+                    </button>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const listed = await runFlow("neurostudio.experiments.list");
+                        const id = listed?.experiments?.[0]?.id;
+                        if (!id) return;
+                        void runFlow("neurostudio.eval.run", { experiment_id: id, split: "test" });
+                      }}
+                    >
+                      Eval
+                    </button>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const listed = await runFlow("neurostudio.experiments.list");
+                        const id = listed?.experiments?.[0]?.id;
+                        if (!id) return;
+                        void runFlow("neurostudio.explain.run", { experiment_id: id });
+                      }}
+                    >
+                      Explain
+                    </button>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const listed = await runFlow("neurostudio.experiments.list");
+                        const id = listed?.experiments?.[0]?.id;
+                        if (!id) return;
+                        void runFlow("neurostudio.infer.run", { experiment_id: id });
+                      }}
+                    >
+                      Infer
+                    </button>
+                  </div>
+                  <pre className="log">{flowJson || "—"}</pre>
+                </section>
+              )}
+
+              {tab === "report" && (
+                <section>
+                  <h2>Results / reporting</h2>
+                  <div className="row">
+                    <button
+                      type="button"
+                      onClick={() => void runFlow("neurostudio.report.build", {})}
+                    >
+                      Study summary
+                    </button>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const listed = await runFlow("neurostudio.experiments.list");
+                        const id = listed?.experiments?.[0]?.id;
+                        if (!id) {
+                          setError("No experiment");
+                          return;
+                        }
+                        void runFlow("neurostudio.report.build", { experiment_id: id });
+                      }}
+                    >
+                      Experiment report
+                    </button>
+                  </div>
+                  <pre className="log">{flowJson || "—"}</pre>
+                </section>
+              )}
+
+              {tab === "export" && (
+                <section>
+                  <h2>Save / export</h2>
+                  <div className="row">
+                    <button
+                      type="button"
+                      onClick={() => void runFlow("study.export", { include_samples: false })}
+                    >
+                      Export study package
+                    </button>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const listed = await runFlow("neurostudio.experiments.list");
+                        const id = listed?.experiments?.[0]?.id;
+                        if (!id) {
+                          setError("Train/export needs an experiment");
+                          return;
+                        }
+                        void runFlow("neurostudio.model.export", { experiment_id: id });
+                      }}
+                    >
+                      Export model bundle
                     </button>
                   </div>
                   <pre className="log">{flowJson || "—"}</pre>

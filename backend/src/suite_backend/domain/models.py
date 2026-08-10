@@ -395,6 +395,63 @@ class FeatureSet(BaseModel):
     created_at: datetime = Field(default_factory=_now)
 
 
+class AnalysisReport(BaseModel):
+    """Phase 14 — descriptive / group statistics over features or ERP."""
+
+    id: str = Field(default_factory=lambda: _id("anl"))
+    study_id: str
+    recording_id: str | None = None
+    name: str = "analysis"
+    kind: str = "descriptive"  # descriptive | compare_conditions | erp_peak
+    summary: dict[str, Any] = Field(default_factory=dict)
+    tests: list[dict[str, Any]] = Field(default_factory=list)
+    tables: dict[str, Any] = Field(default_factory=dict)
+    provenance: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=_now)
+
+
+class MLDataset(BaseModel):
+    """Phase 15 — tabular ML dataset (X, y) with subject/trial provenance."""
+
+    id: str = Field(default_factory=lambda: _id("mlds"))
+    study_id: str
+    name: str = "dataset"
+    source: str = "epochs"  # epochs | featureset | multimodal
+    epochset_id: str | None = None
+    featureset_ids: list[str] = Field(default_factory=list)
+    feature_names: list[str] = Field(default_factory=list)
+    label_names: list[str] = Field(default_factory=list)
+    n_samples: int = 0
+    n_features: int = 0
+    subject_ids: list[str] = Field(default_factory=list)
+    session_ids: list[str] = Field(default_factory=list)
+    trial_ids: list[str] = Field(default_factory=list)
+    labels: list[str] = Field(default_factory=list)
+    modalities: list[str] = Field(default_factory=list)
+    paths: dict[str, str] = Field(default_factory=dict)  # X.npy, y.npy, meta.json
+    split_ids: list[str] = Field(default_factory=list)
+    provenance: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=_now)
+
+
+class DataSplit(BaseModel):
+    """Phase 16 — leakage-aware train/val/test indices."""
+
+    id: str = Field(default_factory=lambda: _id("split"))
+    study_id: str
+    dataset_id: str
+    method: str = "subject"  # subject | stratified_trial | manual
+    train_indices: list[int] = Field(default_factory=list)
+    val_indices: list[int] = Field(default_factory=list)
+    test_indices: list[int] = Field(default_factory=list)
+    train_subjects: list[str] = Field(default_factory=list)
+    val_subjects: list[str] = Field(default_factory=list)
+    test_subjects: list[str] = Field(default_factory=list)
+    leakage_check: dict[str, Any] = Field(default_factory=dict)
+    parameters: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=_now)
+
+
 class InspectionReport(BaseModel):
     study_id: str | None = None
     subjects: int = 0
