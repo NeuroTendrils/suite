@@ -7,6 +7,8 @@ from suite_backend.domain.migrate import migrate_study_dict, needs_migration
 from suite_backend.domain.models import (
     DataStream,
     DatasetArtifact,
+    EpochSet,
+    FeatureSet,
     ProcessingPlan,
     Study,
     SyncGroup,
@@ -220,3 +222,47 @@ class LocalStudyRepository:
         if recording_id is not None:
             groups = [g for g in groups if g.recording_id == recording_id]
         return groups
+
+    def save_epochset(self, study_id: str, epochset: EpochSet) -> EpochSet:
+        path = self.workspace.study_dir(study_id) / "epochs" / f"{epochset.id}.json"
+        _write_json(path, epochset.model_dump(mode="json"))
+        return epochset
+
+    def get_epochset(self, study_id: str, epochset_id: str) -> EpochSet:
+        path = self.workspace.study_dir(study_id) / "epochs" / f"{epochset_id}.json"
+        if not path.exists():
+            raise KeyError(f"epochset not found: {epochset_id}")
+        return EpochSet.model_validate(_read_json(path))
+
+    def list_epochsets(
+        self, study_id: str, *, recording_id: str | None = None
+    ) -> list[EpochSet]:
+        root = self.workspace.study_dir(study_id) / "epochs"
+        sets = [
+            EpochSet.model_validate(_read_json(p)) for p in sorted(root.glob("*.json"))
+        ]
+        if recording_id is not None:
+            sets = [e for e in sets if e.recording_id == recording_id]
+        return sets
+
+    def save_featureset(self, study_id: str, featureset: FeatureSet) -> FeatureSet:
+        path = self.workspace.study_dir(study_id) / "features" / f"{featureset.id}.json"
+        _write_json(path, featureset.model_dump(mode="json"))
+        return featureset
+
+    def get_featureset(self, study_id: str, featureset_id: str) -> FeatureSet:
+        path = self.workspace.study_dir(study_id) / "features" / f"{featureset_id}.json"
+        if not path.exists():
+            raise KeyError(f"featureset not found: {featureset_id}")
+        return FeatureSet.model_validate(_read_json(path))
+
+    def list_featuresets(
+        self, study_id: str, *, recording_id: str | None = None
+    ) -> list[FeatureSet]:
+        root = self.workspace.study_dir(study_id) / "features"
+        sets = [
+            FeatureSet.model_validate(_read_json(p)) for p in sorted(root.glob("*.json"))
+        ]
+        if recording_id is not None:
+            sets = [f for f in sets if f.recording_id == recording_id]
+        return sets

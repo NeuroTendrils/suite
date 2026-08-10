@@ -336,6 +336,65 @@ class RecommendationResult(BaseModel):
     explanation: str | None = None
 
 
+class Trial(BaseModel):
+    """One epoched trial with provenance for joint multimodal analysis."""
+
+    id: str = Field(default_factory=lambda: _id("trial"))
+    index: int = 0
+    subject_id: str
+    session_id: str
+    run_id: str | None = None
+    recording_id: str
+    condition: str | None = None
+    event_name: str | None = None
+    event_id: str | None = None
+    onset: float = 0.0  # absolute time in recording
+    tmin: float = -0.2
+    tmax: float = 0.8
+    stream_ids: list[str] = Field(default_factory=list)
+    modalities: list[str] = Field(default_factory=list)
+    rejected: bool = False
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class EpochSet(BaseModel):
+    """Persisted set of trials from events or fixed windows."""
+
+    id: str = Field(default_factory=lambda: _id("epset"))
+    study_id: str
+    recording_id: str
+    name: str = "epochs"
+    tmin: float = -0.2
+    tmax: float = 0.8
+    baseline: list[float | None] = Field(default_factory=lambda: [None, 0.0])
+    event_names: list[str] = Field(default_factory=list)
+    trials: list[Trial] = Field(default_factory=list)
+    stream_ids: list[str] = Field(default_factory=list)
+    artifact_paths: dict[str, str] = Field(default_factory=dict)  # e.g. fif
+    provenance: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=_now)
+
+
+class FeatureSet(BaseModel):
+    """Extracted features with full provenance."""
+
+    id: str = Field(default_factory=lambda: _id("fset"))
+    study_id: str
+    recording_id: str
+    name: str = "features"
+    kind: str = "band_power"  # band_power | psd | erp | connectivity | external
+    parent_epochset_id: str | None = None
+    stream_ids: list[str] = Field(default_factory=list)
+    feature_names: list[str] = Field(default_factory=list)
+    # rows aligned with trials or channels depending on kind
+    values: list[list[float]] = Field(default_factory=list)
+    trial_ids: list[str] = Field(default_factory=list)
+    parameters: dict[str, Any] = Field(default_factory=dict)
+    provenance: dict[str, Any] = Field(default_factory=dict)
+    export_paths: dict[str, str] = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=_now)
+
+
 class InspectionReport(BaseModel):
     study_id: str | None = None
     subjects: int = 0
