@@ -233,6 +233,31 @@ ul.plain {
   margin-top: 6px;
 }
 
+.epoch-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  max-height: 240px;
+  overflow: auto;
+  margin-top: 8px;
+}
+
+.epoch-chip {
+  min-width: 2.2rem;
+  padding: 2px 6px;
+  font-size: 12px;
+}
+
+.epoch-chip.pending {
+  outline: 2px solid #c90;
+  background: #332;
+}
+
+.epoch-chip.rejected {
+  opacity: 0.45;
+  text-decoration: line-through;
+}
+
 .ica-card {
   background: #111;
   border: 1px solid #333;

@@ -17,8 +17,8 @@ def default_preprocessing_plan(*, name: str = "eeglab_tutorial_aligned") -> Proc
         name=name,
         notes=(
             "EEGLAB-tutorial-aligned placeholder (Tools → Filter / Re-reference). "
-            "After execute: Visualizer → mark bad channels/segments → ICA → Epochs. "
-            "Does NOT auto-run CleanRawdata/ASR or remove ICA components."
+            "After execute: Visualizer → mark bad channels/segments → optional "
+            "clean_continuous → ICA (apply) → Epochs → epoch reject."
         ),
         steps=[
             # EEGLAB: Tools → Filter (high-pass ~1 Hz; we also low-pass for practicality)
@@ -78,8 +78,8 @@ def eeglab_tutorial_checklist() -> list[dict[str, str]]:
         },
         {
             "eeglab": "Clean Rawdata / ASR",
-            "suite": "Not implemented (placeholder detector only)",
-            "status": "gap",
+            "suite": "Visualizer → Clean continuous (amplitude z-windows → new FIF; not ASR)",
+            "status": "partial",
         },
         {
             "eeglab": "Run ICA (runica/fastica)",
@@ -93,22 +93,22 @@ def eeglab_tutorial_checklist() -> list[dict[str, str]]:
         },
         {
             "eeglab": "Remove components (apply)",
-            "suite": "Decision stored; apply-to-new-artifact not wired yet",
-            "status": "partial",
+            "suite": "Visualizer → ICA → Apply removals (new FIF; source untouched)",
+            "status": "ok",
         },
         {
             "eeglab": "Extract epochs + baseline",
-            "suite": "Epochs tab → epochs.create",
+            "suite": "Epochs tab / Visualizer → epochs.create",
             "status": "ok",
         },
         {
             "eeglab": "Reject epochs (by eye / methods)",
-            "suite": "Epoch reject UI not yet (marks only on continuous)",
-            "status": "gap",
+            "suite": "Visualizer → Epochs → mark trials + REJECT (metadata + clean FIF)",
+            "status": "ok",
         },
         {
             "eeglab": "Plot Channel ERPs / ERP image",
-            "suite": "Visualizer → ERP (butterfly + channel trace; no ERPimage yet)",
-            "status": "partial",
+            "suite": "Visualizer → ERP (butterfly + channel ERPimage heatmap)",
+            "status": "ok",
         },
     ]

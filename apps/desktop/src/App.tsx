@@ -112,7 +112,7 @@ type Timeline = {
   sync: { sync_group_id: string; method: string } | null;
 };
 
-type VizMode = "signal" | "ica" | "erp";
+type VizMode = "signal" | "ica" | "erp" | "epochs";
 
 type Tab =
   | "import"
@@ -361,6 +361,85 @@ function StackedStreamPlot({
 }
 
 /** EEGLAB-ish Channel ERPs: butterfly overlay + optional single-channel average. */
+function ErpImagePlot({
+  times,
+  trials,
+  vmin,
+  vmax,
+  width = 720,
+  height = 220,
+}: {
+  times: number[];
+  trials: number[][];
+  vmin: number;
+  vmax: number;
+  width?: number;
+  height?: number;
+}) {
+  const padL = 40;
+  const padR = 12;
+  const padT = 8;
+  const padB = 24;
+  const plotW = width - padL - padR;
+  const plotH = height - padT - padB;
+  const nT = times.length || 1;
+  const nE = trials.length || 1;
+  const t0 = times[0] ?? 0;
+  const t1 = times[times.length - 1] ?? 1;
+  const span = vmax - vmin || 1;
+  const cellW = plotW / nT;
+  const cellH = plotH / nE;
+  const colorAt = (v: number) => {
+    const x = Math.max(0, Math.min(1, (v - vmin) / span));
+    // blue → white → red
+    if (x < 0.5) {
+      const t = x * 2;
+      const r = Math.round(40 + t * 200);
+      const g = Math.round(80 + t * 160);
+      const b = Math.round(180 + t * 60);
+      return `rgb(${r},${g},${b})`;
+    }
+    const t = (x - 0.5) * 2;
+    const r = Math.round(240);
+    const g = Math.round(240 - t * 160);
+    const b = Math.round(240 - t * 180);
+    return `rgb(${r},${g},${b})`;
+  };
+
+  return (
+    <svg width={width} height={height} className="eegplot">
+      <rect x={0} y={0} width={width} height={height} fill="#0a0a0a" />
+      {trials.map((row, ei) =>
+        row.map((v, ti) => (
+          <rect
+            key={`${ei}-${ti}`}
+            x={padL + ti * cellW}
+            y={padT + ei * cellH}
+            width={Math.max(1, cellW + 0.5)}
+            height={Math.max(1, cellH + 0.5)}
+            fill={colorAt(v)}
+          />
+        )),
+      )}
+      <line
+        x1={padL + ((0 - t0) / (t1 - t0 || 1)) * plotW}
+        x2={padL + ((0 - t0) / (t1 - t0 || 1)) * plotW}
+        y1={padT}
+        y2={height - padB}
+        stroke="#e85d5d"
+        strokeWidth={1}
+        strokeDasharray="3 2"
+      />
+      <text x={4} y={padT + 10} fill="#888" fontSize={10}>
+        trial
+      </text>
+      <text x={width / 2} y={height - 4} fill="#666" fontSize={9} textAnchor="middle">
+        time (ms) · ERPimage
+      </text>
+    </svg>
+  );
+}
+
 function ErpButterflyPlot({
   times,
   data,
@@ -513,9 +592,13 @@ function App() {
   const [erpChannel, setErpChannel] = useState<string>("");
   const [icaData, setIcaData] = useState<any | null>(null);
   const [icaBusy, setIcaBusy] = useState(false);
+  const [icaApplyBusy, setIcaApplyBusy] = useState(false);
   const [erpData, setErpData] = useState<any | null>(null);
   const [erpBusy, setErpBusy] = useState(false);
   const [erpEvent, setErpEvent] = useState("");
+  const [epochSet, setEpochSet] = useState<any | null>(null);
+  const [pendingEpochReject, setPendingEpochReject] = useState<number[]>([]);
+  const [cleanBusy, setCleanBusy] = useState(false);
   const [flowJson, setFlowJson] = useState("");
   const [eventName, setEventName] = useState("manual");
   const [eventTime, setEventTime] = useState("1.0");
@@ -983,8 +1066,12 @@ function App() {
         event_name: erpEvent || null,
         tmin: -0.2,
         tmax: 0.8,
+        erpimage_channel: erpChannel || null,
       });
       setErpData(res);
+      if (!erpChannel && res.channels?.length) {
+        // keep butterfly default; erpimage uses first channel when null on backend
+      }
       appendLog(`ERP status=${res.status} nave=${res.nave ?? 0}`);
       setError(null);
     } catch (e) {
@@ -992,6 +1079,100 @@ function App() {
     } finally {
       setErpBusy(false);
     }
+  }
+
+  async function applyIcaRemovals() {
+    if (!selectedId || !selectedRecId) return;
+    setIcaApplyBusy(true);
+    try {
+      const res = await suiteCall<any>("ica.apply", {
+        study_id: selectedId,
+        recording_id: selectedRecId,
+        n_components: 15,
+        use_as_working: true,
+      });
+      appendLog(
+        `ICA apply excluded=[${(res.excluded || []).join(",")}] → ${res.artifact?.paths?.fif || "fif"}`,
+      );
+      setTlRev((n) => n + 1);
+      setIcaData(null);
+      setError(null);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setIcaApplyBusy(false);
+    }
+  }
+
+  async function runCleanContinuous() {
+    if (!selectedId || !selectedRecId) return;
+    setCleanBusy(true);
+    try {
+      const res = await suiteCall<any>("neuroflow.clean_continuous", {
+        study_id: selectedId,
+        recording_id: selectedRecId,
+        z_thresh: 5,
+        use_as_working: true,
+      });
+      appendLog(
+        `Clean continuous: ${res.n_bad_spans} bad spans, ${res.duration_before?.toFixed?.(2)}→${res.duration_after?.toFixed?.(2)}s (${res.warning})`,
+      );
+      setTlRev((n) => n + 1);
+      setError(null);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setCleanBusy(false);
+    }
+  }
+
+  async function loadEpochSet() {
+    if (!selectedId || !selectedRecId) return;
+    try {
+      const listed = await suiteCall<any>("epochs.list", {
+        study_id: selectedId,
+        recording_id: selectedRecId,
+      });
+      const id = listed.epochsets?.[0]?.id;
+      if (!id) {
+        setEpochSet(null);
+        appendLog("No epochsets — create epochs first");
+        return;
+      }
+      const full = await suiteCall<any>("epochs.get", {
+        study_id: selectedId,
+        epochset_id: id,
+      });
+      setEpochSet(full);
+      setPendingEpochReject([]);
+      appendLog(`Loaded epochset ${full.name} · ${full.trials?.length || 0} trials`);
+      setError(null);
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
+  function togglePendingEpoch(index: number) {
+    setPendingEpochReject((prev) =>
+      prev.includes(index) ? prev.filter((i) => i !== index) : [...prev, index],
+    );
+  }
+
+  async function applyEpochReject() {
+    if (!selectedId || !epochSet?.id) return;
+    if (!pendingEpochReject.length) {
+      setError("Click trials to mark them, then REJECT");
+      return;
+    }
+    await runFlow("epochs.reject", {
+      epochset_id: epochSet.id,
+      trial_indices: pendingEpochReject,
+      rejected: true,
+      rewrite_fif: true,
+    });
+    setPendingEpochReject([]);
+    await loadEpochSet();
+    appendLog("Epoch REJECT applied");
   }
 
   const needsConfig = inspect?.status === "needs_config" || inspect?.self_describing === false;
@@ -1619,6 +1800,7 @@ function App() {
                             ["signal", "Signal"],
                             ["ica", "ICA"],
                             ["erp", "ERP"],
+                            ["epochs", "Epochs"],
                           ] as const
                         ).map(([id, label]) => (
                           <button
@@ -1629,6 +1811,7 @@ function App() {
                               setVizMode(id);
                               if (id === "ica" && !icaData) void loadIca();
                               if (id === "erp" && !erpData) void loadErp();
+                              if (id === "epochs" && !epochSet) void loadEpochSet();
                             }}
                           >
                             {label}
@@ -1728,6 +1911,14 @@ function App() {
                             >
                               Montage 10–20
                             </button>
+                            <button
+                              type="button"
+                              onClick={() => void runCleanContinuous()}
+                              disabled={cleanBusy}
+                              title="Amplitude z-score window drop → new FIF (not ASR)"
+                            >
+                              {cleanBusy ? "Cleaning…" : "Clean continuous"}
+                            </button>
                             <span className="muted tiny">
                               {tlBusy ? "loading…" : ""}{" "}
                               {timeline
@@ -1807,8 +1998,16 @@ function App() {
                             <button type="button" onClick={() => void loadIca()} disabled={icaBusy}>
                               {icaBusy ? "Fitting ICA…" : "Fit / refresh ICA"}
                             </button>
+                            <button
+                              type="button"
+                              className="reject-btn"
+                              onClick={() => void applyIcaRemovals()}
+                              disabled={icaApplyBusy || !icaData}
+                            >
+                              {icaApplyBusy ? "Applying…" : "Apply removals → new FIF"}
+                            </button>
                             <span className="muted tiny">
-                              Click IC label to toggle reject (annotation only).
+                              Click IC to mark reject, then Apply (source raw untouched).
                             </span>
                           </div>
                           {icaData?.components?.length ? (
@@ -1890,8 +2089,7 @@ function App() {
                       {vizMode === "erp" && (
                         <>
                           <p className="muted tiny">
-                            Channel ERPs (EEGLAB Plot → Channel ERPs style): butterfly of all
-                            channels, or pick one. ERPimage / topo maps not yet.
+                            Channel ERPs + ERPimage (trials × time). Pick a channel for the heatmap.
                           </p>
                           <div className="row">
                             <label>
@@ -1911,7 +2109,9 @@ function App() {
                                 channel{" "}
                                 <select
                                   value={erpChannel}
-                                  onChange={(e) => setErpChannel(e.target.value)}
+                                  onChange={(e) => {
+                                    setErpChannel(e.target.value);
+                                  }}
                                 >
                                   <option value="">(butterfly all)</option>
                                   {erpData.channels.map((c: string) => (
@@ -1927,21 +2127,39 @@ function App() {
                             </span>
                           </div>
                           {erpData?.status === "ok" && erpData.data?.length ? (
-                            <div className="track">
-                              <div className="track-head">
-                                {erpChannel
-                                  ? `ERP at ${erpChannel}`
-                                  : `Channel ERPs (butterfly) · ${erpData.channels.length} ch`}
+                            <>
+                              <div className="track">
+                                <div className="track-head">
+                                  {erpChannel
+                                    ? `ERP at ${erpChannel}`
+                                    : `Channel ERPs (butterfly) · ${erpData.channels.length} ch`}
+                                </div>
+                                <ErpButterflyPlot
+                                  times={erpData.times}
+                                  data={erpData.data}
+                                  channels={erpData.channels}
+                                  highlight={erpChannel || undefined}
+                                  width={720}
+                                  height={260}
+                                />
                               </div>
-                              <ErpButterflyPlot
-                                times={erpData.times}
-                                data={erpData.data}
-                                channels={erpData.channels}
-                                highlight={erpChannel || undefined}
-                                width={720}
-                                height={300}
-                              />
-                            </div>
+                              {erpData.erpimage?.trials?.length ? (
+                                <div className="track">
+                                  <div className="track-head">
+                                    ERPimage · {erpData.erpimage.channel} ·{" "}
+                                    {erpData.erpimage.n_trials} trials
+                                  </div>
+                                  <ErpImagePlot
+                                    times={erpData.erpimage.times}
+                                    trials={erpData.erpimage.trials}
+                                    vmin={erpData.erpimage.vmin}
+                                    vmax={erpData.erpimage.vmax}
+                                    width={720}
+                                    height={220}
+                                  />
+                                </div>
+                              ) : null}
+                            </>
                           ) : (
                             <p className="muted">
                               {erpData?.status === "no_events"
@@ -1950,6 +2168,79 @@ function App() {
                                   ? "Computing…"
                                   : "Compute ERP from events."}
                             </p>
+                          )}
+                        </>
+                      )}
+
+                      {vizMode === "epochs" && (
+                        <>
+                          <p className="muted tiny">
+                            Reject epochs by eye: click trial chips, then REJECT. Writes clean FIF;
+                            original epochs FIF kept.
+                          </p>
+                          <div className="row">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                void runFlow("epochs.create", {
+                                  tmin: -0.2,
+                                  tmax: 0.8,
+                                  name: "epochs",
+                                }).then(() => loadEpochSet())
+                              }
+                            >
+                              Create epochs
+                            </button>
+                            <button type="button" onClick={() => void loadEpochSet()}>
+                              Refresh
+                            </button>
+                            <button
+                              type="button"
+                              className="reject-btn"
+                              onClick={() => void applyEpochReject()}
+                            >
+                              REJECT
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setPendingEpochReject([])}
+                            >
+                              Clear marks
+                            </button>
+                            <span className="muted tiny">
+                              {epochSet
+                                ? `${epochSet.trials?.filter((t: any) => t.rejected).length || 0} rejected / ${epochSet.trials?.length || 0}`
+                                : ""}
+                              {pendingEpochReject.length
+                                ? ` · pending ${pendingEpochReject.length}`
+                                : ""}
+                            </span>
+                          </div>
+                          {epochSet?.trials?.length ? (
+                            <div className="epoch-chips">
+                              {epochSet.trials.map((t: any) => {
+                                const pending = pendingEpochReject.includes(t.index);
+                                const cls = t.rejected
+                                  ? "epoch-chip rejected"
+                                  : pending
+                                    ? "epoch-chip pending"
+                                    : "epoch-chip";
+                                return (
+                                  <button
+                                    key={t.index}
+                                    type="button"
+                                    className={cls}
+                                    onClick={() => togglePendingEpoch(t.index)}
+                                    title={`${t.event_name} @ ${Number(t.onset).toFixed(2)}s`}
+                                  >
+                                    {t.index}
+                                    {t.rejected ? "×" : ""}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          ) : (
+                            <p className="muted">No epochset yet — Create epochs from events.</p>
                           )}
                         </>
                       )}

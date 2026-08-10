@@ -15,9 +15,11 @@ from suite_backend.domain.models import (
 )
 from suite_backend.domain.queries import find_recording
 from suite_backend.ipc.registry import REGISTRY
+from suite_backend.neuroflow.clean_continuous import clean_continuous
 from suite_backend.neuroflow.erp import compute_erp
-from suite_backend.neuroflow.ica_ops import list_ica_components
+from suite_backend.neuroflow.ica_ops import apply_ica_rejection, list_ica_components
 from suite_backend.neuroflow.signal import signal_window
+from suite_backend.neuroflow.working_fif import promote_working_fif
 from suite_backend.scientific.io.importers import get_default_registry
 
 
@@ -184,6 +186,7 @@ class ErpParams(BaseModel):
     event_name: str | None = None
     tmin: float = -0.2
     tmax: float = 0.8
+    erpimage_channel: str | None = None
 
 
 class IcaListParams(BaseModel):
@@ -197,6 +200,21 @@ class IcaRejectParams(BaseModel):
     recording_id: str
     component_indices: list[int]
     action: str = "reject"  # reject | keep
+
+
+class IcaApplyParams(BaseModel):
+    study_id: str
+    recording_id: str
+    n_components: int | None = 15
+    exclude: list[int] | None = None
+    use_as_working: bool = True
+
+
+class CleanContinuousParams(BaseModel):
+    study_id: str
+    recording_id: str
+    z_thresh: float = 5.0
+    use_as_working: bool = True
 
 
 def _save_recording(ctx: AppContext, study_id: str, recording_id: str, mutate) -> dict:
@@ -453,6 +471,7 @@ def erp_compute(params: ErpParams, ctx: AppContext) -> dict:
         tmin=params.tmin,
         tmax=params.tmax,
         streams=streams,
+        erpimage_channel=params.erpimage_channel,
     )
 
 
@@ -485,3 +504,106 @@ def ica_set_rejection(params: IcaRejectParams, ctx: AppContext) -> dict:
             )
 
     return {"recording": _save_recording(ctx, params.study_id, params.recording_id, mutate)}
+
+
+@REGISTRY.register("ica.apply", IcaApplyParams)
+def ica_apply(params: IcaApplyParams, ctx: AppContext) -> dict:
+    study = ctx.studies.get_study(params.study_id)
+    rec = find_recording(study, params.recording_id)
+    streams = ctx.studies.list_streams(params.study_id, recording_id=rec.id)
+    art_dir = ctx.workspace.study_dir(params.study_id) / "artifacts" / "ica"
+    result = apply_ica_rejection(
+        rec,
+        study_id=params.study_id,
+        artifact_dir=art_dir,
+        streams=streams,
+        n_components=params.n_components,
+        exclude=params.exclude,
+    )
+    artifact = result["artifact"]
+    ctx.studies.save_artifact(artifact)
+    promoted: list[str] = []
+    if params.use_as_working:
+        promoted = promote_working_fif(
+            ctx,
+            study_id=params.study_id,
+            recording_id=rec.id,
+            fif_path=result["fif"],
+        )
+
+    def mutate(recording):
+        recording.decisions.append(
+            HumanDecision(
+                target_kind="ica_apply",
+                target_id=artifact.id,
+                action="apply",
+                reason=f"exclude={result['excluded']}",
+                label="ica.apply",
+            )
+        )
+        recording.preprocessing_state = {
+            **(recording.preprocessing_state or {}),
+            "ica_applied_artifact_id": artifact.id,
+            "ica_excluded": result["excluded"],
+        }
+
+    rec_dump = _save_recording(ctx, params.study_id, params.recording_id, mutate)
+    return {
+        "artifact": artifact.model_dump(mode="json"),
+        "excluded": result["excluded"],
+        "promoted_streams": promoted,
+        "recording": rec_dump,
+        "note": "ICA removed components → new FIF; source import untouched",
+    }
+
+
+@REGISTRY.register("neuroflow.clean_continuous", CleanContinuousParams)
+def neuroflow_clean_continuous(params: CleanContinuousParams, ctx: AppContext) -> dict:
+    study = ctx.studies.get_study(params.study_id)
+    rec = find_recording(study, params.recording_id)
+    streams = ctx.studies.list_streams(params.study_id, recording_id=rec.id)
+    art_dir = ctx.workspace.study_dir(params.study_id) / "artifacts" / "clean"
+    result = clean_continuous(
+        rec,
+        study_id=params.study_id,
+        artifact_dir=art_dir,
+        streams=streams,
+        z_thresh=params.z_thresh,
+    )
+    artifact = result["artifact"]
+    ctx.studies.save_artifact(artifact)
+    promoted: list[str] = []
+    if params.use_as_working:
+        promoted = promote_working_fif(
+            ctx,
+            study_id=params.study_id,
+            recording_id=rec.id,
+            fif_path=artifact.paths["fif"],
+        )
+
+    def mutate(recording):
+        recording.decisions.append(
+            HumanDecision(
+                target_kind="clean_continuous",
+                target_id=artifact.id,
+                action="apply",
+                reason=f"z_thresh={params.z_thresh}; bad_spans={result['n_bad_spans']}",
+                label="neuroflow.clean_continuous",
+            )
+        )
+        recording.preprocessing_state = {
+            **(recording.preprocessing_state or {}),
+            "clean_artifact_id": artifact.id,
+        }
+
+    rec_dump = _save_recording(ctx, params.study_id, params.recording_id, mutate)
+    return {
+        "artifact": artifact.model_dump(mode="json"),
+        "n_bad_spans": result["n_bad_spans"],
+        "bad_spans": result["bad_spans"],
+        "duration_before": result["duration_before"],
+        "duration_after": result["duration_after"],
+        "promoted_streams": promoted,
+        "recording": rec_dump,
+        "warning": result["warning"],
+    }

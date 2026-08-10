@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from pydantic import BaseModel, Field
 
 from suite_backend.app_context import AppContext
-from suite_backend.domain.models import EpochSet, Modality, Trial
+from suite_backend.domain.models import EpochSet, HumanDecision, Modality, Trial
 from suite_backend.domain.queries import find_recording
 from suite_backend.ipc.registry import REGISTRY
 from suite_backend.scientific.io.canonical import load_primary_eeg_raw
@@ -31,6 +33,14 @@ class EpochListParams(BaseModel):
 class EpochGetParams(BaseModel):
     study_id: str
     epochset_id: str
+
+
+class EpochRejectParams(BaseModel):
+    study_id: str
+    epochset_id: str
+    trial_indices: list[int]
+    rejected: bool = True
+    rewrite_fif: bool = True
 
 
 @REGISTRY.register("epochs.create", EpochCreateParams)
@@ -129,6 +139,7 @@ def epochs_create(params: EpochCreateParams, ctx: AppContext) -> dict:
         fif_path = ctx.workspace.study_dir(params.study_id) / "epochs" / f"{epset.id}_epo.fif"
         epochs.save(fif_path, overwrite=True, verbose=False)
         artifact_paths["fif"] = str(fif_path)
+        artifact_paths["fif_original"] = str(fif_path)
         epset.artifact_paths = artifact_paths
 
     ctx.studies.save_epochset(params.study_id, epset)
@@ -162,3 +173,77 @@ def epochs_list(params: EpochListParams, ctx: AppContext) -> dict:
 def epochs_get(params: EpochGetParams, ctx: AppContext) -> dict:
     ctx.studies.get_study(params.study_id)
     return ctx.studies.get_epochset(params.study_id, params.epochset_id).model_dump(mode="json")
+
+
+@REGISTRY.register("epochs.reject", EpochRejectParams)
+def epochs_reject(params: EpochRejectParams, ctx: AppContext) -> dict:
+    """Mark trials rejected (by eye). Optionally drop from saved epochs FIF."""
+    ctx.studies.get_study(params.study_id)
+    epset = ctx.studies.get_epochset(params.study_id, params.epochset_id)
+    wanted = set(params.trial_indices)
+    n_changed = 0
+    for t in epset.trials:
+        if t.index in wanted:
+            t.rejected = params.rejected
+            n_changed += 1
+    epset.provenance = dict(epset.provenance or {})
+    epset.provenance["reject_ops"] = list(epset.provenance.get("reject_ops") or []) + [
+        {
+            "trial_indices": list(params.trial_indices),
+            "rejected": params.rejected,
+        }
+    ]
+
+    fif_note = None
+    paths = dict(epset.artifact_paths or {})
+    orig = paths.get("fif_original") or paths.get("fif")
+    if params.rewrite_fif and orig and Path(orig).exists():
+        import mne
+
+        if "fif_original" not in paths:
+            paths["fif_original"] = orig
+        epochs = mne.read_epochs(orig, preload=True, verbose=False)
+        keep_mask = [not t.rejected for t in sorted(epset.trials, key=lambda x: x.index)]
+        if len(keep_mask) == len(epochs) and any(keep_mask):
+            cleaned = epochs[keep_mask]
+            out = Path(orig).with_name(Path(orig).stem.replace("_epo", "") + "_clean_epo.fif")
+            if out == Path(orig):
+                out = Path(orig).with_name(Path(orig).stem + "_clean.fif")
+            cleaned.save(out, overwrite=True, verbose=False)
+            paths["fif"] = str(out)
+            epset.artifact_paths = paths
+            fif_note = f"wrote clean FIF with {len(cleaned)} / {len(epochs)} trials"
+        elif not any(keep_mask):
+            fif_note = "all trials rejected — original FIF kept; no clean FIF written"
+        else:
+            fif_note = "FIF length mismatch — metadata updated only"
+
+    ctx.studies.save_epochset(params.study_id, epset)
+    try:
+        study = ctx.studies.get_study(params.study_id)
+        rec = find_recording(study, epset.recording_id)
+        rec.decisions.append(
+            HumanDecision(
+                target_kind="epoch",
+                target_id=epset.id,
+                action="reject" if params.rejected else "keep",
+                reason=f"trials={params.trial_indices}",
+                label="epochs.reject",
+            )
+        )
+        for subject in study.subjects:
+            for session in subject.sessions:
+                for run in session.runs:
+                    for i, r in enumerate(run.recordings):
+                        if r.id == rec.id:
+                            run.recordings[i] = rec
+        ctx.studies.save_study(study)
+    except KeyError:
+        pass
+
+    return {
+        "epochset": epset.model_dump(mode="json"),
+        "n_changed": n_changed,
+        "n_rejected": sum(1 for t in epset.trials if t.rejected),
+        "fif_note": fif_note,
+    }
