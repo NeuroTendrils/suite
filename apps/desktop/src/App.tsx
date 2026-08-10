@@ -103,7 +103,17 @@ type Timeline = {
   sync: { sync_group_id: string; method: string } | null;
 };
 
-type Tab = "import" | "sync" | "validate" | "timeline";
+type Tab =
+  | "import"
+  | "sync"
+  | "validate"
+  | "timeline"
+  | "reject"
+  | "channels"
+  | "events"
+  | "preprocess"
+  | "epochs"
+  | "features";
 
 const EVENT_COLORS = ["#3dcf6a", "#e85d5d", "#5db0e8", "#e8c55d", "#c77dff"];
 
@@ -289,6 +299,9 @@ function App() {
   const [tlGain, setTlGain] = useState(1);
   const [tlBusy, setTlBusy] = useState(false);
   const [timeline, setTimeline] = useState<Timeline | null>(null);
+  const [flowJson, setFlowJson] = useState("");
+  const [eventName, setEventName] = useState("manual");
+  const [eventTime, setEventTime] = useState("1.0");
   const [log, setLog] = useState("");
 
   function appendLog(msg: string) {
@@ -653,6 +666,26 @@ function App() {
     setTlStart((s) => Math.max(0, +(s + delta).toFixed(4)));
   }
 
+  async function runFlow(cmd: string, params: Record<string, unknown> = {}) {
+    if (!selectedId) {
+      setError("Select a study");
+      return;
+    }
+    try {
+      const res = await suiteCall<any>(cmd, {
+        study_id: selectedId,
+        ...(selectedRecId ? { recording_id: selectedRecId } : {}),
+        ...params,
+      });
+      setFlowJson(JSON.stringify(res, null, 2));
+      appendLog(`${cmd} ok`);
+      setError(null);
+      await refresh();
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
   const needsConfig = inspect?.status === "needs_config" || inspect?.self_describing === false;
 
   const recordingOptions =
@@ -786,6 +819,12 @@ function App() {
                     ["sync", "Sync"],
                     ["validate", "Validate"],
                     ["timeline", "Timeline"],
+                    ["reject", "Reject"],
+                    ["channels", "Channels"],
+                    ["events", "Events"],
+                    ["preprocess", "Preprocess"],
+                    ["epochs", "Epochs"],
+                    ["features", "Features"],
                   ] as const
                 ).map(([id, label]) => (
                   <button
@@ -1129,6 +1168,208 @@ function App() {
                     </p>
                   )}
                   <pre className="log">{validationJson || "Run validation to see report."}</pre>
+                </section>
+              )}
+
+              {tab === "reject" && (
+                <section>
+                  <h2>Artifact rejection</h2>
+                  <p className="muted">
+                    Heuristic suggestions only — apply writes annotations/decisions, never raw.
+                  </p>
+                  <div className="row">
+                    <button type="button" onClick={() => void runFlow("artifacts.detect")}>
+                      Detect
+                    </button>
+                    <button type="button" onClick={() => void runFlow("artifacts.list")}>
+                      List applied
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        let sug: Record<string, unknown> | null = null;
+                        try {
+                          const parsed = JSON.parse(flowJson || "{}");
+                          sug = parsed.recommendations?.[0] ?? null;
+                        } catch {
+                          sug = null;
+                        }
+                        if (!sug) {
+                          setError("Run Detect first, then Apply first suggestion");
+                          return;
+                        }
+                        void runFlow("artifacts.apply", { suggestion: sug });
+                      }}
+                    >
+                      Apply first suggestion
+                    </button>
+                  </div>
+                  <pre className="log">{flowJson || "—"}</pre>
+                </section>
+              )}
+
+              {tab === "channels" && (
+                <section>
+                  <h2>Channel management</h2>
+                  <div className="row">
+                    <button type="button" onClick={() => void runFlow("channels.list")}>
+                      List
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        void runFlow("channels.apply_montage", { montage: "standard_1020" })
+                      }
+                    >
+                      Apply standard_1020
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        let name = "Fz";
+                        try {
+                          name = JSON.parse(flowJson || "{}").channels?.[0]?.name || "Fz";
+                        } catch {
+                          /* keep Fz */
+                        }
+                        void runFlow("channels.update", {
+                          channel_name: name,
+                          bad: true,
+                        });
+                      }}
+                    >
+                      Mark first listed bad
+                    </button>
+                  </div>
+                  <pre className="log">{flowJson || "—"}</pre>
+                </section>
+              )}
+
+              {tab === "events" && (
+                <section>
+                  <h2>Events / annotations</h2>
+                  <div className="row">
+                    <button type="button" onClick={() => void runFlow("events.list")}>
+                      List events
+                    </button>
+                    <button type="button" onClick={() => void runFlow("annotations.list")}>
+                      List annotations
+                    </button>
+                    <label>
+                      t{" "}
+                      <input
+                        style={{ width: 60 }}
+                        value={eventTime}
+                        onChange={(e) => setEventTime(e.target.value)}
+                      />
+                    </label>
+                    <label>
+                      name{" "}
+                      <input
+                        style={{ width: 100 }}
+                        value={eventName}
+                        onChange={(e) => setEventName(e.target.value)}
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        void runFlow("events.create", {
+                          timestamp: Number(eventTime) || 0,
+                          name: eventName || "manual",
+                          source: "manual",
+                        })
+                      }
+                    >
+                      Add event
+                    </button>
+                  </div>
+                  <pre className="log">{flowJson || "—"}</pre>
+                </section>
+              )}
+
+              {tab === "preprocess" && (
+                <section>
+                  <h2>NeuroFlow plans</h2>
+                  <p className="muted">Default plan is a fixed placeholder (not data-adaptive).</p>
+                  <div className="row">
+                    <button type="button" onClick={() => void runFlow("plans.default")}>
+                      Create default plan
+                    </button>
+                    <button type="button" onClick={() => void runFlow("plans.list")}>
+                      List plans
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        let planId = "";
+                        try {
+                          const parsed = JSON.parse(flowJson || "{}");
+                          planId = parsed.plan?.id || parsed.plans?.[0]?.id || "";
+                        } catch {
+                          planId = "";
+                        }
+                        if (!planId) {
+                          setError("Create/list a plan first");
+                          return;
+                        }
+                        void runFlow("plans.execute", { plan_id: planId });
+                      }}
+                    >
+                      Execute plan
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void runFlow("neuroflow.recommend_preprocessing")}
+                    >
+                      Recommend (placeholder)
+                    </button>
+                  </div>
+                  <pre className="log">{flowJson || "—"}</pre>
+                </section>
+              )}
+
+              {tab === "epochs" && (
+                <section>
+                  <h2>Epochs / trials</h2>
+                  <div className="row">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        void runFlow("epochs.create", { tmin: -0.2, tmax: 0.8, name: "epochs" })
+                      }
+                    >
+                      Create from events
+                    </button>
+                    <button type="button" onClick={() => void runFlow("epochs.list")}>
+                      List
+                    </button>
+                  </div>
+                  <pre className="log">{flowJson || "—"}</pre>
+                </section>
+              )}
+
+              {tab === "features" && (
+                <section>
+                  <h2>Feature extraction</h2>
+                  <div className="row">
+                    <button
+                      type="button"
+                      onClick={() => void runFlow("features.extract", { kind: "band_power" })}
+                    >
+                      Band power
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void runFlow("features.extract", { kind: "psd" })}
+                    >
+                      PSD summary
+                    </button>
+                    <button type="button" onClick={() => void runFlow("features.list")}>
+                      List
+                    </button>
+                  </div>
+                  <pre className="log">{flowJson || "—"}</pre>
                 </section>
               )}
 
