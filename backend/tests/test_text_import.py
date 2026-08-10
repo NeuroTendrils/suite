@@ -76,3 +76,7 @@ def test_column_selection_drops_extra_columns(tmp_path: Path) -> None:
     assert recording.channel_count == 33
     assert raw.get_channel_types().count("eeg") == 32
     assert raw.get_channel_types().count("stim") == 1
+    # stim column → Event markers (same role as .set annotations in the timeline)
+    assert len(recording.events) >= 1
+    assert abs(recording.events[0].timestamp - (50 / 250.0)) < 1e-6
+    assert recording.events[0].name in {"1", "Marker", "stim"}

@@ -10,7 +10,6 @@ from suite_backend.domain.models import (
     ChannelStatus,
     ChannelType,
     DatasetArtifact,
-    Event,
     Recording,
 )
 
@@ -152,27 +151,9 @@ class MneImporter:
                 )
             )
 
-        events: list[Event] = []
-        try:
-            found = mne.events_from_annotations(raw, verbose=False)
-            mne_events, event_id = found
-            id_to_name = {v: k for k, v in event_id.items()}
-            sfreq = float(raw.info["sfreq"])
-            for row in mne_events:
-                sample = int(row[0])
-                code = int(row[2])
-                name = id_to_name.get(code, str(code))
-                events.append(
-                    Event(
-                        timestamp=sample / sfreq,
-                        sample_index=sample,
-                        code=str(code),
-                        name=name,
-                        source="eeg_trigger",
-                    )
-                )
-        except Exception:  # noqa: BLE001
-            pass
+        from suite_backend.scientific.io.stim_events import extract_events_from_raw
+
+        events = extract_events_from_raw(raw)
 
         fif_path: Path | None = None
         if artifact_dir is not None:

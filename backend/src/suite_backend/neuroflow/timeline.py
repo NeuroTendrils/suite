@@ -10,6 +10,10 @@ import numpy as np
 from suite_backend.domain.models import ChannelType, DataStream, Recording, SyncGroup
 from suite_backend.neuroflow.sync import offset_map
 from suite_backend.scientific.io.canonical import load_stream_samples
+from suite_backend.scientific.io.stim_events import (
+    events_from_stim_series,
+    is_stim_channel_name,
+)
 
 _NON_CHANNEL_NAME = re.compile(
     r"^(time|times|timestamp|t|sample|samples|index|latency|stim|trigger)$",
@@ -87,6 +91,23 @@ def timeline_window(
         local_start = start - off
         local_stop = stop - off
         sfreq = samples.sfreq
+        type_by_name = {c.name: c.type for c in stream.channels}
+
+        # If import never stored Events (older .txt), derive markers from stim columns.
+        stream_events = list(stream.events)
+        if not stream_events:
+            for ci, name in enumerate(samples.channel_names):
+                ctype = type_by_name.get(name)
+                ctype_s = (
+                    ctype.value if hasattr(ctype, "value") else (str(ctype) if ctype else None)
+                )
+                if ctype_s in {"trigger", "stim"} or is_stim_channel_name(name):
+                    stream_events.extend(
+                        events_from_stim_series(
+                            samples.data[ci], samples.times, channel_name=name
+                        )
+                    )
+
         # index into samples
         i0 = int(max(0, np.searchsorted(samples.times, local_start, side="left")))
         i1 = int(min(samples.n_times, np.searchsorted(samples.times, local_stop, side="right")))
@@ -106,7 +127,6 @@ def timeline_window(
                 times_ref = times_ref[idx]
 
             # Drop time/stim columns — events are markers, not plotted rows
-            type_by_name = {c.name: c.type for c in stream.channels}
             keep_idx: list[int] = []
             keep_names: list[str] = []
             for ci, name in enumerate(ch_names):
@@ -124,7 +144,7 @@ def timeline_window(
                 data = np.zeros((0, data.shape[1] if data.ndim == 2 else 0))
                 ch_names = []
 
-        for e in stream.events:
+        for e in stream_events:
             t_ref = e.timestamp + off
             if start <= t_ref <= stop:
                 all_events.append(

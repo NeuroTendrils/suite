@@ -17,6 +17,10 @@ from suite_backend.domain.models import (
     DatasetArtifact,
     Recording,
 )
+from suite_backend.scientific.io.stim_events import (
+    apply_events_as_annotations,
+    extract_events_from_raw,
+)
 
 ROLE_EEG = "eeg"
 ROLE_STIM = "stim"
@@ -521,6 +525,10 @@ def import_text_recording(
         montage=montage,
     )
 
+    # .set gets events from EEGLAB annotations; .txt keeps a stim column — convert to Events.
+    events = extract_events_from_raw(raw)
+    apply_events_as_annotations(raw, events)
+
     fif_path: Path | None = None
     if artifact_dir is not None:
         artifact_dir.mkdir(parents=True, exist_ok=True)
@@ -542,9 +550,11 @@ def import_text_recording(
         duration=float(raw.n_times / raw.info["sfreq"]),
         channel_count=len(channels),
         channels=channels,
+        events=events,
         acquisition_metadata={
             "original_path": str(path),
             "text_import": meta,
+            "n_events": len(events),
         },
     )
     artifact = DatasetArtifact(
