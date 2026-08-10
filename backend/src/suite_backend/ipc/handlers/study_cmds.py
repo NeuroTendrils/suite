@@ -110,6 +110,100 @@ def studies_tree(params: StudyGetParams, ctx: AppContext) -> dict:
     return study_tree_summary(study, streams)
 
 
+@REGISTRY.register("studies.manager", StudyGetParams)
+def studies_manager(params: StudyGetParams, ctx: AppContext) -> dict:
+    """Subject/session manager payload: modalities + processing/validation/sync state."""
+    study = ctx.studies.get_study(params.study_id)
+    streams = ctx.studies.list_streams(params.study_id)
+    by_rec: dict[str, list] = {}
+    for s in streams:
+        by_rec.setdefault(s.recording_id, []).append(s)
+
+    subjects_out = []
+    for subject in study.subjects:
+        sessions_out = []
+        for session in subject.sessions:
+            runs_out = []
+            for run in session.runs:
+                recs_out = []
+                for rec in run.recordings:
+                    rec_streams = by_rec.get(rec.id, [])
+                    sync_groups = ctx.studies.list_sync_groups(
+                        params.study_id, recording_id=rec.id
+                    )
+                    recs_out.append(
+                        {
+                            "id": rec.id,
+                            "name": rec.name,
+                            "source_format": rec.source_format,
+                            "sampling_rate": rec.sampling_rate,
+                            "duration": rec.duration,
+                            "channel_count": rec.channel_count,
+                            "modalities": [s.modality.value for s in rec_streams],
+                            "stream_ids": list(rec.stream_ids),
+                            "streams": [
+                                {
+                                    "id": s.id,
+                                    "name": s.name,
+                                    "modality": s.modality.value,
+                                    "sfreq": s.sampling_rate,
+                                    "n_channels": len(s.channels),
+                                    "units": s.units,
+                                    "normalized": bool((s.provenance or {}).get("normalized")),
+                                }
+                                for s in rec_streams
+                            ],
+                            "preprocessing_state": rec.preprocessing_state,
+                            "validation_ok": (rec.validation or {}).get("ok"),
+                            "validation_errors": len(
+                                (rec.validation or {}).get("blocking_errors") or []
+                            ),
+                            "validation_warnings": len(
+                                (rec.validation or {}).get("warnings") or []
+                            ),
+                            "sync_group_ids": list(rec.sync_group_ids),
+                            "sync_confidence": (
+                                (sync_groups[-1].quality or {}).get("mean_confidence")
+                                if sync_groups
+                                else None
+                            ),
+                        }
+                    )
+                runs_out.append({"id": run.id, "name": run.name, "recordings": recs_out})
+            sessions_out.append(
+                {
+                    "id": session.id,
+                    "name": session.name,
+                    "metadata": session.metadata,
+                    "runs": runs_out,
+                }
+            )
+        subjects_out.append(
+            {
+                "id": subject.id,
+                "label": subject.label,
+                "metadata": subject.metadata,
+                "n_sessions": len(subject.sessions),
+                "n_recordings": sum(
+                    len(r.recordings) for ses in subject.sessions for r in ses.runs
+                ),
+                "sessions": sessions_out,
+            }
+        )
+    return {
+        "study_id": study.id,
+        "name": study.name,
+        "schema_version": study.schema_version,
+        "task_name": study.task_name,
+        "subjects": subjects_out,
+        "totals": {
+            "subjects": len(subjects_out),
+            "streams": len(streams),
+            "recordings": sum(s["n_recordings"] for s in subjects_out),
+        },
+    }
+
+
 @REGISTRY.register("studies.inspect", StudyGetParams)
 def studies_inspect(params: StudyGetParams, ctx: AppContext) -> dict:
     study = ctx.studies.get_study(params.study_id)

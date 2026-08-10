@@ -10,7 +10,7 @@ Study-centric multimodal research OS. After each phase: review → approve → c
 | 4 | Normalize common representation | done |
 | 5 | Synchronization | done |
 | 6 | Validation | done |
-| 7 | Subject/session manager | pending |
+| 7 | Subject/session manager | done |
 | 8 | Timeline viewer | pending |
 | 8a | Artifact rejection | pending |
 | 9 | Channel/data management | pending |
@@ -75,3 +75,8 @@ Study-centric multimodal research OS. After each phase: review → approve → c
 - Warns on multi-stream without SyncGroup; blocks invalid sync assumptions
 - IPC: `validate.stream`, `validate.recording`, `validate.study`
 - Recording.validation summary persisted
+
+## Phase 7 notes
+
+- IPC: `studies.manager` — subject/session tree with modalities, sync, validation rollups
+- UI: sidebar manager + Import/Sync/Validate/Timeline tabs (utilitarian)

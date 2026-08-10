@@ -39,6 +39,7 @@ fn allowlisted_commands() -> HashSet<&'static str> {
         "studies.set_event_map",
         "studies.set_visibility",
         "studies.tree",
+        "studies.manager",
         "subjects.add",
         "subjects.set_metadata",
         "sessions.add",

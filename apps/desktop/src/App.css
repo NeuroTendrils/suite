@@ -1,7 +1,7 @@
 :root {
   font-family: ui-sans-serif, system-ui, sans-serif;
   color: #111;
-  background: #f6f6f6;
+  background: #f0f0f0;
 }
 
 body {
@@ -9,67 +9,144 @@ body {
 }
 
 .app {
-  padding: 12px 16px 40px;
-  max-width: 960px;
+  padding: 8px 10px 24px;
+  min-height: 100vh;
+  box-sizing: border-box;
 }
 
 header {
   display: flex;
-  gap: 12px;
-  align-items: baseline;
+  gap: 10px;
+  align-items: center;
   margin-bottom: 8px;
 }
 
 header h1 {
   margin: 0;
-  font-size: 1.25rem;
+  font-size: 1.1rem;
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  gap: 12px;
+  align-items: start;
+}
+
+@media (max-width: 800px) {
+  .layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.sidebar {
+  background: #fff;
+  border: 1px solid #ccc;
+  padding: 8px;
+  max-height: calc(100vh - 60px);
+  overflow: auto;
+}
+
+.main {
+  min-width: 0;
+}
+
+.sidebar h2,
+.main h2 {
+  margin: 10px 0 6px;
+  font-size: 0.95rem;
 }
 
 .row {
   display: flex;
-  gap: 8px;
-  margin: 8px 0;
+  gap: 6px;
+  margin: 6px 0;
   flex-wrap: wrap;
   align-items: center;
 }
 
 .muted {
   color: #666;
-  font-size: 0.9rem;
+  font-size: 0.85rem;
+}
+
+.tiny {
+  font-size: 0.75rem;
 }
 
 .error {
   background: #fee;
   border: 1px solid #c66;
   padding: 8px;
+  margin-bottom: 8px;
 }
 
 .log {
   background: #111;
   color: #ddd;
   padding: 8px;
-  max-height: 360px;
+  max-height: 220px;
   overflow: auto;
-  font-size: 12px;
-}
-
-button.active {
-  font-weight: 700;
+  font-size: 11px;
 }
 
 button {
   cursor: pointer;
 }
 
-ul {
-  padding-left: 18px;
+button.active {
+  font-weight: 700;
+  outline: 2px solid #333;
 }
 
-code {
-  font-size: 0.85em;
+ul.study-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
 }
 
-.inspect-box {
+ul.study-list li button,
+.tree-rec {
+  display: block;
+  width: 100%;
+  text-align: left;
+  margin: 2px 0;
+  padding: 4px 6px;
+  border: 1px solid #ddd;
+  background: #fafafa;
+}
+
+.tree-sub {
+  margin: 8px 0;
+  padding-left: 4px;
+  border-left: 2px solid #ccc;
+}
+
+.tree-label {
+  font-weight: 600;
+  font-size: 0.9rem;
+  margin-bottom: 4px;
+}
+
+.tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+.tabs button {
+  padding: 6px 10px;
+}
+
+.rec-banner {
+  background: #e8e8e8;
+  padding: 6px 8px;
+  margin: 0 0 8px;
+  font-size: 0.9rem;
+}
+
+.box {
   margin: 8px 0;
   padding: 8px;
   background: #fff;
@@ -77,26 +154,50 @@ code {
 }
 
 .chan-table-wrap {
-  max-height: 220px;
+  max-height: 200px;
   overflow: auto;
-  margin-top: 8px;
-  border: 1px solid #ddd;
 }
 
 .chan-table {
-  width: 100%;
   border-collapse: collapse;
+  width: 100%;
   font-size: 12px;
 }
 
 .chan-table th,
 .chan-table td {
-  border-bottom: 1px solid #eee;
-  padding: 3px 6px;
-  text-align: left;
+  border: 1px solid #ddd;
+  padding: 2px 4px;
 }
 
-.chan-table input,
-.chan-table select {
-  width: 100%;
+ul.plain {
+  padding-left: 18px;
+  margin: 6px 0;
+}
+
+.track {
+  margin: 8px 0;
+  padding: 6px;
+  background: #fff;
+  border: 1px solid #bbb;
+}
+
+.track-head {
+  font-size: 0.85rem;
+  margin-bottom: 4px;
+}
+
+.spark {
+  display: block;
+  background: #fafafa;
+  border: 1px solid #ddd;
+}
+
+code {
+  font-size: 0.85em;
+}
+
+input,
+select {
+  font: inherit;
 }
