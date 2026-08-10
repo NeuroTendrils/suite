@@ -22,8 +22,15 @@ def list_ica_components(
     ica = ICA(n_components=n, random_state=97, max_iter="auto")
     ica.fit(raw, verbose=False)
 
+    rejected: set[int] = set()
+    for ann in recording.annotations:
+        if ann.kind == "ica_component" and ann.label == "reject":
+            rejected.update(int(i) for i in ann.component_indices)
+
     components = []
     sources = ica.get_sources(raw).get_data()
+    times = raw.times
+    step = max(1, times.size // 800)
     for idx in range(ica.n_components_):
         ts = sources[idx]
         # crude spectrum via FFT magnitude
@@ -34,10 +41,11 @@ def list_ica_components(
             {
                 "index": idx,
                 "variance_explained": None,
-                "rejected": False,
+                "rejected": idx in rejected,
                 "spectrum_freqs": freqs[keep].astype(float).tolist()[:: max(1, keep.sum() // 64)],
                 "spectrum_power": spectrum[keep].astype(float).tolist()[:: max(1, keep.sum() // 64)],
-                "timeseries_preview": ts[:: max(1, ts.size // 500)].astype(float).tolist(),
+                "timeseries_times": times[::step].astype(float).tolist(),
+                "timeseries_preview": ts[::step].astype(float).tolist(),
             }
         )
 

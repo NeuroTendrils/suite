@@ -401,8 +401,11 @@ def annotations_create(params: AnnotationCreateParams, ctx: AppContext) -> dict:
 
 @REGISTRY.register("channels.set_bad", ChannelBadParams)
 def channels_set_bad(params: ChannelBadParams, ctx: AppContext) -> dict:
+    from suite_backend.domain.models import Modality
+
+    names = set(params.channel_names)
+
     def mutate(recording):
-        names = set(params.channel_names)
         for ch in recording.channels:
             if ch.name in names:
                 ch.status = ChannelStatus.BAD if params.bad else ChannelStatus.GOOD
@@ -415,7 +418,28 @@ def channels_set_bad(params: ChannelBadParams, ctx: AppContext) -> dict:
                     )
                 )
 
-    return {"recording": _save_recording(ctx, params.study_id, params.recording_id, mutate)}
+    rec = _save_recording(ctx, params.study_id, params.recording_id, mutate)
+    # keep stream-owned channels in sync (visualizer source of truth)
+    streams = ctx.studies.list_streams(params.study_id, recording_id=params.recording_id)
+    for stream in streams:
+        if stream.modality != Modality.EEG and not any(c.name in names for c in stream.channels):
+            continue
+        dirty = False
+        for ch in stream.channels:
+            if ch.name in names:
+                ch.status = ChannelStatus.BAD if params.bad else ChannelStatus.GOOD
+                dirty = True
+        if dirty:
+            stream.decisions.append(
+                HumanDecision(
+                    target_kind="channel",
+                    target_id=",".join(sorted(names)),
+                    action="mark_bad" if params.bad else "mark_good",
+                    reason="channels.set_bad",
+                )
+            )
+            ctx.studies.save_stream(params.study_id, stream)
+    return {"recording": rec}
 
 
 @REGISTRY.register("erp.compute", ErpParams)

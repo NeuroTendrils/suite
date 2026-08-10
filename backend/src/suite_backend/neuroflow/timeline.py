@@ -174,6 +174,7 @@ def timeline_window(
                     }
                 )
 
+        status_by_name = {c.name: c.status.value for c in stream.channels}
         out_streams.append(
             {
                 "stream_id": stream.id,
@@ -183,12 +184,13 @@ def timeline_window(
                 "sfreq": sfreq,
                 "units": stream.units,
                 "channels": ch_names,
+                "channel_status": [status_by_name.get(n, "unknown") for n in ch_names],
                 "times": times_ref.astype(float).tolist(),
                 "data": data.astype(float).tolist(),
             }
         )
 
-    # recording-level events (legacy) at offset 0
+    # recording-level events / artifact annotations (legacy + masks)
     for e in recording.events:
         if start <= e.timestamp <= stop:
             all_events.append(
@@ -201,6 +203,26 @@ def timeline_window(
                     "source": e.source,
                 }
             )
+    seen_ann = {a.get("id") for a in all_events if a.get("kind") == "annotation"}
+    for a in recording.annotations:
+        if a.id in seen_ann:
+            continue
+        if a.start is None or a.end is None:
+            continue
+        if a.end < start or a.start > stop:
+            continue
+        all_events.append(
+            {
+                "id": a.id,
+                "name": a.label,
+                "timestamp": a.start,
+                "end": a.end,
+                "stream_id": a.stream_id,
+                "modality": "recording",
+                "kind": "annotation",
+                "artifact": bool((a.metadata or {}).get("artifact")),
+            }
+        )
 
     all_events.sort(key=lambda e: e["timestamp"])
     sync_info = None

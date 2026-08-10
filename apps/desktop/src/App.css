@@ -226,6 +226,26 @@ ul.plain {
   font-family: ui-monospace, monospace;
 }
 
+.ica-maps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.ica-card {
+  background: #111;
+  border: 1px solid #333;
+  padding: 4px;
+}
+
+.ica-card button {
+  display: block;
+  width: 100%;
+  margin-bottom: 2px;
+  font-size: 11px;
+}
+
 code {
   font-size: 0.85em;
 }
