@@ -62,8 +62,10 @@ class ImportRecordingParams(BaseModel):
     session_id: str
     run_id: str
     path: str
-    # Required for .txt/.csv/.tsv matrix imports (not embedded in file).
+    # Required for ambiguous formats (.txt/.csv/.tsv/.mat) — never silently guessed.
     sfreq: float | None = None
+    # MAT: name of numeric array variable
+    data_key: str | None = None
     # If true: rows=channels, cols=samples. Default: rows=samples, cols=channels.
     transpose: bool = False
     channel_names: list[str] | None = None
@@ -71,6 +73,30 @@ class ImportRecordingParams(BaseModel):
     column_selection: list[ColumnSpec] | None = None
     # MNE standard montage name, e.g. standard_1020 / biosemi32
     montage: str | None = None
+
+
+def _assert_import_config(inspect_info: dict, params: ImportRecordingParams) -> None:
+    """Refuse ambiguous imports when required config is missing."""
+    status = inspect_info.get("status")
+    required = list(inspect_info.get("required_config") or [])
+    if status not in {"needs_config", "ready", "ok"} and status not in (None,):
+        if status in {"unreadable", "error"}:
+            raise ValueError(
+                f"cannot import: inspect status={status} "
+                f"({inspect_info.get('error') or inspect_info.get('warnings')})"
+            )
+    missing: list[str] = []
+    for key in required:
+        if key == "sfreq" and params.sfreq is None:
+            missing.append("sfreq")
+        elif key == "data_key" and not params.data_key:
+            missing.append("data_key")
+    if missing:
+        raise ValueError(
+            "ambiguous format requires explicit config before import; missing: "
+            + ", ".join(missing)
+            + ". Call import.inspect and supply required_config fields."
+        )
 
 
 class RecordingIdParams(BaseModel):
@@ -151,6 +177,8 @@ def import_recording(params: ImportRecordingParams, ctx: AppContext) -> dict:
     importer = registry.find(path)
     if importer is None:
         raise ValueError(f"no importer for {path}")
+    inspect_info = registry.inspect(path)
+    _assert_import_config(inspect_info, params)
     study = ctx.studies.get_study(params.study_id)
     artifact_dir = ctx.workspace.study_dir(study.id) / "artifacts" / "imports"
     kwargs: dict = {
@@ -161,6 +189,8 @@ def import_recording(params: ImportRecordingParams, ctx: AppContext) -> dict:
     }
     if params.sfreq is not None:
         kwargs["sfreq"] = params.sfreq
+    if params.data_key:
+        kwargs["data_key"] = params.data_key
     if params.transpose:
         kwargs["transpose"] = True
     if params.channel_names:

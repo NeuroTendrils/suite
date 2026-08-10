@@ -68,3 +68,35 @@ ul {
 code {
   font-size: 0.85em;
 }
+
+.inspect-box {
+  margin: 8px 0;
+  padding: 8px;
+  background: #fff;
+  border: 1px solid #ccc;
+}
+
+.chan-table-wrap {
+  max-height: 220px;
+  overflow: auto;
+  margin-top: 8px;
+  border: 1px solid #ddd;
+}
+
+.chan-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.chan-table th,
+.chan-table td {
+  border-bottom: 1px solid #eee;
+  padding: 3px 6px;
+  text-align: left;
+}
+
+.chan-table input,
+.chan-table select {
+  width: 100%;
+}

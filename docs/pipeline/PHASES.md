@@ -4,8 +4,8 @@ Study-centric multimodal research OS. After each phase: review → approve → c
 
 | Phase | Name | Status |
 |------:|------|--------|
-| 1 | Study structure (DataStream + CRUD + migrator) | **in review** |
-| 2 | EEG import | pending |
+| 1 | Study structure (DataStream + CRUD + migrator) | done |
+| 2 | EEG import | **in review** |
 | 3 | External modality import | pending |
 | 4 | Normalize common representation | pending |
 | 5 | Synchronization | pending |
@@ -38,3 +38,11 @@ Study-centric multimodal research OS. After each phase: review → approve → c
 - v1 studies auto-migrate on open (legacy channels → EEG stream)
 - NeuroStudio `templates.recommend` always returns EEGNet placeholder
 - UI: utilitarian Study structure browser (no EEGLAB chrome)
+
+## Phase 2 notes
+
+- Self-describing (ready): FIF, EDF, BDF, GDF, BrainVision `.vhdr`, EEGLAB `.set`, Neuroscan `.cnt`
+- Ambiguous (`needs_config`): TXT/CSV/TSV/ASC (requires `sfreq`), MAT (requires `data_key` + `sfreq`)
+- `import.recording` refuses missing required_config — no silent guesses
+- MNE imports write canonical FIF into study artifacts when imported
+- UI: Browse → inspect status → config fields when needed → Import

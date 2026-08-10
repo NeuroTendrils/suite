@@ -524,7 +524,7 @@ def import_text_recording(
     fif_path: Path | None = None
     if artifact_dir is not None:
         artifact_dir.mkdir(parents=True, exist_ok=True)
-        fif_path = artifact_dir / f"import_{path.stem}.fif"
+        fif_path = artifact_dir / f"import_{path.stem}_raw.fif"
         # fmt=0 / less aggressive compression is faster for large imports
         raw.save(fif_path, overwrite=True, verbose=False)
 
