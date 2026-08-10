@@ -1,5 +1,6 @@
 from suite_backend.ipc.handlers import (
     artifact_cmds,
+    channel_cmds,
     core,
     neuroflow_cmds,
     neurostudio_cmds,
@@ -12,6 +13,7 @@ from suite_backend.ipc.handlers import (
 
 __all__ = [
     "artifact_cmds",
+    "channel_cmds",
     "core",
     "neuroflow_cmds",
     "neurostudio_cmds",
