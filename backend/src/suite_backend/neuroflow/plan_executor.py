@@ -15,6 +15,8 @@ SUPPORTED_OPS = {
     "rereference",
     "baseline",
     "epoch",
+    "mark_bad_channels",
+    "interpolate_bads",
 }
 
 
@@ -112,6 +114,16 @@ def _apply_step(raw: Any, operation: str, params: dict[str, Any]) -> Any:
     if operation == "baseline":
         # meaningful on epochs; on raw this is a no-op marker step
         return raw
+    if operation == "mark_bad_channels":
+        inst = raw.copy()
+        bads = list(params.get("bads") or [])
+        inst.info["bads"] = sorted(set(list(inst.info.get("bads") or []) + bads))
+        return inst
+    if operation == "interpolate_bads":
+        inst = raw.copy()
+        if inst.info.get("bads"):
+            inst.interpolate_bads(reset_bads=False, verbose=False)
+        return inst
     if operation == "epoch":
         import mne
 
