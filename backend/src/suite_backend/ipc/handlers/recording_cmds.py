@@ -148,6 +148,16 @@ class NormalizeRecordingParams(BaseModel):
     recording_id: str
 
 
+class TimelineWindowParams(BaseModel):
+    study_id: str
+    recording_id: str
+    start: float = 0.0
+    duration: float = 5.0
+    max_points: int = 2000
+    stream_ids: list[str] | None = None
+    sync_group_id: str | None = None
+
+
 class AnnotationCreateParams(BaseModel):
     study_id: str
     recording_id: str
@@ -337,6 +347,30 @@ def recordings_signal_window(params: SignalWindowParams, ctx: AppContext) -> dic
         max_points=params.max_points,
         streams=streams,
         stream_id=params.stream_id,
+    )
+
+
+@REGISTRY.register("recordings.timeline", TimelineWindowParams)
+def recordings_timeline(params: TimelineWindowParams, ctx: AppContext) -> dict:
+    from suite_backend.neuroflow.timeline import timeline_window
+
+    study = ctx.studies.get_study(params.study_id)
+    rec = find_recording(study, params.recording_id)
+    streams = ctx.studies.list_streams(params.study_id, recording_id=rec.id)
+    sync_group = None
+    if params.sync_group_id:
+        sync_group = ctx.studies.get_sync_group(params.study_id, params.sync_group_id)
+    else:
+        groups = ctx.studies.list_sync_groups(params.study_id, recording_id=rec.id)
+        sync_group = groups[-1] if groups else None
+    return timeline_window(
+        rec,
+        streams,
+        start=params.start,
+        duration=params.duration,
+        max_points=params.max_points,
+        sync_group=sync_group,
+        stream_ids=params.stream_ids,
     )
 
 

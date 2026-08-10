@@ -54,6 +54,7 @@ fn allowlisted_commands() -> HashSet<&'static str> {
         "recordings.inspect",
         "recordings.normalize",
         "recordings.signal_window",
+        "recordings.timeline",
         "sync.create",
         "sync.list",
         "sync.get",

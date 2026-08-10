@@ -11,7 +11,7 @@ Study-centric multimodal research OS. After each phase: review → approve → c
 | 5 | Synchronization | done |
 | 6 | Validation | done |
 | 7 | Subject/session manager | done |
-| 8 | Timeline viewer | pending |
+| 8 | Timeline viewer | done |
 | 8a | Artifact rejection | pending |
 | 9 | Channel/data management | pending |
 | 10 | Events/annotations | pending |
@@ -80,3 +80,9 @@ Study-centric multimodal research OS. After each phase: review → approve → c
 
 - IPC: `studies.manager` — subject/session tree with modalities, sync, validation rollups
 - UI: sidebar manager + Import/Sync/Validate/Timeline tabs (utilitarian)
+
+## Phase 8 notes
+
+- `neuroflow/timeline.py` + IPC `recordings.timeline`
+- Applies SyncGroup offsets onto a shared reference timeline
+- UI: utilitarian multimodal sparkline viewer + event list
