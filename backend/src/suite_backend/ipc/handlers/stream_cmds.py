@@ -148,10 +148,18 @@ def import_stream(params: ImportStreamParams, ctx: AppContext) -> dict:
     ctx.studies.save_stream(study.id, stream)
     ctx.studies.save_artifact(artifact)
 
+    from suite_backend.ipc.handlers.recording_cmds import _normalize_and_persist
+
+    norm = _normalize_and_persist(ctx, study.id, recording.id)
+    study = ctx.studies.get_study(study.id)
+    recording = find_recording(study, recording.id)
+    stream = ctx.studies.get_stream(study.id, stream.id)
+
     return {
-        "recording": find_recording(study, recording.id).model_dump(mode="json"),
+        "recording": recording.model_dump(mode="json"),
         "stream": stream.model_dump(mode="json"),
         "artifact": artifact.model_dump(mode="json"),
         "created_recording": created_recording,
+        "normalize": norm,
         "inspect": inspect_info,
     }

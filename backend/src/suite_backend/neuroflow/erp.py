@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from suite_backend.domain.models import Recording
+from suite_backend.domain.models import DataStream, Recording
 from suite_backend.neuroflow.signal import load_raw_for_recording
 
 
@@ -13,10 +13,11 @@ def compute_erp(
     tmin: float = -0.2,
     tmax: float = 0.8,
     baseline: tuple[float | None, float | None] = (None, 0),
+    streams: list[DataStream] | None = None,
 ) -> dict[str, Any]:
     import mne
 
-    raw = load_raw_for_recording(recording)
+    raw = load_raw_for_recording(recording, streams)
     events, event_id = mne.events_from_annotations(raw, verbose=False)
     if not len(events):
         return {

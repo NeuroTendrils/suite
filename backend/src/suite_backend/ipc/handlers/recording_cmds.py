@@ -21,8 +21,13 @@ from suite_backend.neuroflow.signal import signal_window
 from suite_backend.scientific.io.importers import get_default_registry
 
 
-def _primary_stream_from_recording(recording) -> DataStream:
-    fif = next((p for p in recording.source_files if str(p).endswith(".fif")), None)
+def _primary_stream_from_recording(recording, artifact_paths: dict | None = None) -> DataStream:
+    paths = dict(artifact_paths or {})
+    fif = paths.get("fif") or next(
+        (p for p in recording.source_files if str(p).endswith((".fif", ".fif.gz"))),
+        None,
+    )
+    sample_paths = {"fif": str(fif)} if fif else {}
     return DataStream(
         recording_id=recording.id,
         subject_id=recording.subject_id,
@@ -34,16 +39,40 @@ def _primary_stream_from_recording(recording) -> DataStream:
         source_format=recording.source_format,
         sampling_rate=recording.sampling_rate,
         duration=recording.duration,
+        n_samples=int(recording.duration * recording.sampling_rate)
+        if recording.duration and recording.sampling_rate
+        else None,
         channels=list(recording.channels),
         units="uV",
         events=list(recording.events),
         annotations=list(recording.annotations),
         decisions=list(recording.decisions),
         acquisition_metadata=dict(recording.acquisition_metadata),
-        sample_paths={"fif": fif} if fif else {},
+        sample_paths=sample_paths,
         artifact_id=recording.artifact_id,
-        provenance={"created_by": "import.recording"},
+        provenance={"created_by": "import.recording", "normalized": False},
+        reference=next((c.reference for c in recording.channels if c.reference), None),
     )
+
+
+def _normalize_and_persist(ctx: AppContext, study_id: str, recording_id: str) -> dict:
+    from suite_backend.scientific.io.canonical import normalize_recording
+
+    study = ctx.studies.get_study(study_id)
+    recording = find_recording(study, recording_id)
+    streams = ctx.studies.list_streams(study_id, recording_id=recording_id)
+    recording, streams, report = normalize_recording(recording, streams)
+    # write back recording into study tree
+    for subject in study.subjects:
+        for session in subject.sessions:
+            for run in session.runs:
+                for i, rec in enumerate(run.recordings):
+                    if rec.id == recording_id:
+                        run.recordings[i] = recording
+    ctx.studies.save_study(study)
+    for stream in streams:
+        ctx.studies.save_stream(study_id, stream)
+    return report
 
 
 class ImportInspectParams(BaseModel):
@@ -111,6 +140,12 @@ class SignalWindowParams(BaseModel):
     duration: float = 5.0
     channel_names: list[str] | None = None
     max_points: int = 4000
+    stream_id: str | None = None
+
+
+class NormalizeRecordingParams(BaseModel):
+    study_id: str
+    recording_id: str
 
 
 class AnnotationCreateParams(BaseModel):
@@ -217,7 +252,7 @@ def import_recording(params: ImportRecordingParams, ctx: AppContext) -> dict:
                 placed = True
     if not placed:
         raise KeyError("subject/session/run not found")
-    stream = _primary_stream_from_recording(recording)
+    stream = _primary_stream_from_recording(recording, artifact.paths)
     recording.stream_ids = [stream.id]
     if stream.id not in study.stream_ids:
         study.stream_ids.append(stream.id)
@@ -226,10 +261,15 @@ def import_recording(params: ImportRecordingParams, ctx: AppContext) -> dict:
     ctx.studies.save_study(study)
     ctx.studies.save_stream(study.id, stream)
     ctx.studies.save_artifact(artifact)
+    norm = _normalize_and_persist(ctx, study.id, recording.id)
+    study = ctx.studies.get_study(study.id)
+    recording = find_recording(study, recording.id)
+    stream = ctx.studies.get_stream(study.id, stream.id)
     return {
         "recording": recording.model_dump(mode="json"),
         "stream": stream.model_dump(mode="json"),
         "artifact": artifact.model_dump(mode="json"),
+        "normalize": norm,
         "inspect": registry.inspect(path),
     }
 
@@ -244,16 +284,43 @@ def recordings_get(params: RecordingIdParams, ctx: AppContext) -> dict:
 def recordings_inspect(params: RecordingIdParams, ctx: AppContext) -> dict:
     study = ctx.studies.get_study(params.study_id)
     rec = find_recording(study, params.recording_id)
+    streams = ctx.studies.list_streams(params.study_id, recording_id=rec.id)
     return {
         "recording_id": rec.id,
         "source_format": rec.source_format,
         "sampling_rate": rec.sampling_rate,
         "duration": rec.duration,
         "channel_count": rec.channel_count,
+        "stream_ids": list(rec.stream_ids),
+        "streams": [
+            {
+                "id": s.id,
+                "modality": s.modality.value,
+                "sfreq": s.sampling_rate,
+                "n_channels": len(s.channels),
+                "n_samples": s.n_samples,
+                "units": s.units,
+                "sample_paths": s.sample_paths,
+                "normalized": bool((s.provenance or {}).get("normalized")),
+            }
+            for s in streams
+        ],
         "channels": [c.model_dump(mode="json") for c in rec.channels],
         "events": [e.model_dump(mode="json") for e in rec.events],
         "annotations": [a.model_dump(mode="json") for a in rec.annotations],
         "decisions": [d.model_dump(mode="json") for d in rec.decisions],
+        "preprocessing_state": rec.preprocessing_state,
+    }
+
+
+@REGISTRY.register("recordings.normalize", NormalizeRecordingParams)
+def recordings_normalize(params: NormalizeRecordingParams, ctx: AppContext) -> dict:
+    report = _normalize_and_persist(ctx, params.study_id, params.recording_id)
+    study = ctx.studies.get_study(params.study_id)
+    rec = find_recording(study, params.recording_id)
+    return {
+        "recording": rec.model_dump(mode="json"),
+        "normalize": report,
     }
 
 
@@ -261,12 +328,15 @@ def recordings_inspect(params: RecordingIdParams, ctx: AppContext) -> dict:
 def recordings_signal_window(params: SignalWindowParams, ctx: AppContext) -> dict:
     study = ctx.studies.get_study(params.study_id)
     rec = find_recording(study, params.recording_id)
+    streams = ctx.studies.list_streams(params.study_id, recording_id=rec.id)
     return signal_window(
         rec,
         start=params.start,
         duration=params.duration,
         channel_names=params.channel_names,
         max_points=params.max_points,
+        streams=streams,
+        stream_id=params.stream_id,
     )
 
 
@@ -318,11 +388,13 @@ def channels_set_bad(params: ChannelBadParams, ctx: AppContext) -> dict:
 def erp_compute(params: ErpParams, ctx: AppContext) -> dict:
     study = ctx.studies.get_study(params.study_id)
     rec = find_recording(study, params.recording_id)
+    streams = ctx.studies.list_streams(params.study_id, recording_id=rec.id)
     return compute_erp(
         rec,
         event_name=params.event_name,
         tmin=params.tmin,
         tmax=params.tmax,
+        streams=streams,
     )
 
 
@@ -330,7 +402,8 @@ def erp_compute(params: ErpParams, ctx: AppContext) -> dict:
 def ica_components_list(params: IcaListParams, ctx: AppContext) -> dict:
     study = ctx.studies.get_study(params.study_id)
     rec = find_recording(study, params.recording_id)
-    return list_ica_components(rec, n_components=params.n_components)
+    streams = ctx.studies.list_streams(params.study_id, recording_id=rec.id)
+    return list_ica_components(rec, n_components=params.n_components, streams=streams)
 
 
 @REGISTRY.register("ica.component.set_rejection", IcaRejectParams)

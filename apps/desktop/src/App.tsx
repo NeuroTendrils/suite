@@ -339,8 +339,8 @@ function App() {
         <span className="muted">{status}</span>
       </header>
       <p className="muted">
-        Phase 3 — External modality streams (gyro/accel/ECG/…). Explicit modality + sfreq; attach to
-        a recording or create a new one.
+        Phase 4 — Canonical streams. EEG + external imports normalize to DataStreams with sample
+        paths; viewers load via the common representation.
       </p>
       {error && <div className="error">{error}</div>}
 

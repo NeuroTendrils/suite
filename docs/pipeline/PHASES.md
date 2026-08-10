@@ -6,8 +6,8 @@ Study-centric multimodal research OS. After each phase: review → approve → c
 |------:|------|--------|
 | 1 | Study structure (DataStream + CRUD + migrator) | done |
 | 2 | EEG import | done |
-| 3 | External modality import | **in review** |
-| 4 | Normalize common representation | pending |
+| 3 | External modality import | done |
+| 4 | Normalize common representation | **in review** |
 | 5 | Synchronization | pending |
 | 6 | Validation | pending |
 | 7 | Subject/session manager | pending |
@@ -54,3 +54,10 @@ Study-centric multimodal research OS. After each phase: review → approve → c
 - Required: explicit `modality` + `sfreq` (or timestamp column); filename suggestion is hint only
 - Samples stored as `streams/samples/{stream_id}_data.npy` (+ optional times)
 - Attach to existing `recording_id` or create a new recording shell
+
+## Phase 4 notes
+
+- `scientific/io/canonical.py`: `load_stream_samples`, `load_primary_eeg_raw`, `normalize_recording`
+- Imports auto-run normalize; IPC `recordings.normalize` for re-run
+- Signal/ERP/ICA/plans load via canonical FIF / NPY paths (not vendor path first)
+- `recordings.signal_window` accepts optional `stream_id` for any modality

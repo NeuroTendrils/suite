@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-from pathlib import Path
 from typing import Any
 
 from suite_backend.domain.models import DatasetArtifact, ProcessingPlan, Recording
@@ -35,20 +34,10 @@ def execute_plan(
     import mne
 
     if raw is None:
-        if not recording.source_files:
-            raise ValueError("recording has no source files")
-        source = Path(recording.source_files[0])
-        suffix = source.suffix.lower()
-        if suffix == ".fif":
-            raw = mne.io.read_raw_fif(source, preload=True, verbose=False)
-        elif suffix == ".edf":
-            raw = mne.io.read_raw_edf(source, preload=True, verbose=False)
-        elif suffix == ".vhdr":
-            raw = mne.io.read_raw_brainvision(source, preload=True, verbose=False)
-        elif suffix == ".set":
-            raw = mne.io.read_raw_eeglab(source, preload=True, verbose=False)
-        else:
-            raise ValueError(f"cannot load format: {suffix}")
+        from suite_backend.scientific.io.canonical import load_primary_eeg_raw
+
+        streams = repo.list_streams(study_id, recording_id=recording.id)
+        raw = load_primary_eeg_raw(recording, streams)
     else:
         raw = raw.copy().load_data()
 

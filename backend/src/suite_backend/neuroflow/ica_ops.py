@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from suite_backend.domain.models import Recording
+from suite_backend.domain.models import DataStream, Recording
 from suite_backend.neuroflow.signal import load_raw_for_recording
 
 
@@ -10,12 +10,13 @@ def list_ica_components(
     recording: Recording,
     *,
     n_components: int | None = 20,
+    streams: list[DataStream] | None = None,
 ) -> dict[str, Any]:
     """Fit ICA (MNE) and return utilitarian component summaries."""
     import numpy as np
     from mne.preprocessing import ICA
 
-    raw = load_raw_for_recording(recording)
+    raw = load_raw_for_recording(recording, streams)
     raw = raw.copy().filter(l_freq=1.0, h_freq=None, verbose=False)
     n = n_components or min(20, len(raw.ch_names))
     ica = ICA(n_components=n, random_state=97, max_iter="auto")

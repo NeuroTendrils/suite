@@ -51,6 +51,7 @@ fn allowlisted_commands() -> HashSet<&'static str> {
         "import.stream",
         "recordings.get",
         "recordings.inspect",
+        "recordings.normalize",
         "recordings.signal_window",
         "annotations.create",
         "channels.set_bad",
