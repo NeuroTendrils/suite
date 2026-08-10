@@ -8,6 +8,9 @@ from uuid import uuid4
 from pydantic import BaseModel, Field
 
 
+CURRENT_STUDY_SCHEMA_VERSION = 2
+
+
 def _now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -20,6 +23,22 @@ class Visibility(str, Enum):
     PRIVATE = "private"
     ORGANIZATION = "organization"
     PUBLIC = "public"
+
+
+class Modality(str, Enum):
+    EEG = "eeg"
+    EOG = "eog"
+    ECG = "ecg"
+    EMG = "emg"
+    ACCEL = "accelerometer"
+    GYRO = "gyroscope"
+    TRIGGER = "trigger"
+    GSR = "gsr"
+    RESPIRATION = "respiration"
+    EYE_TRACKING = "eye_tracking"
+    MOTION = "motion"
+    BEHAVIORAL = "behavioral"
+    MISC = "misc"
 
 
 class ChannelType(str, Enum):
@@ -69,6 +88,8 @@ class Event(BaseModel):
     code: str | None = None
     name: str
     condition: str | None = None
+    stream_id: str | None = None
+    source: str | None = None  # eeg_trigger | external | behavioral | manual | derived
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -81,6 +102,7 @@ class Annotation(BaseModel):
     channel_ids: list[str] = Field(default_factory=list)
     epoch_indices: list[int] = Field(default_factory=list)
     component_indices: list[int] = Field(default_factory=list)
+    stream_id: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=_now)
 
@@ -97,16 +119,55 @@ class HumanDecision(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class DataStream(BaseModel):
+    """Canonical time-series stream (EEG or external modality)."""
+
+    id: str = Field(default_factory=lambda: _id("stream"))
+    recording_id: str
+    subject_id: str
+    session_id: str
+    run_id: str
+    modality: Modality = Modality.EEG
+    name: str = "stream"
+    source_files: list[str] = Field(default_factory=list)
+    source_format: str | None = None
+    sampling_rate: float | None = None
+    # If irregular sampling, store path/ref to timestamp vector instead of relying on sfreq alone.
+    timestamp_path: str | None = None
+    duration: float | None = None
+    n_samples: int | None = None
+    channels: list[Channel] = Field(default_factory=list)
+    units: str | None = None
+    reference: str | None = None
+    # Sample payload refs (FIF/NPY/CSV paths inside study workspace)
+    sample_paths: dict[str, str] = Field(default_factory=dict)
+    events: list[Event] = Field(default_factory=list)
+    annotations: list[Annotation] = Field(default_factory=list)
+    decisions: list[HumanDecision] = Field(default_factory=list)
+    acquisition_metadata: dict[str, Any] = Field(default_factory=dict)
+    provenance: dict[str, Any] = Field(default_factory=dict)
+    validation: dict[str, Any] = Field(default_factory=dict)
+    sync_group_id: str | None = None
+    artifact_id: str | None = None
+    created_at: datetime = Field(default_factory=_now)
+
+
 class Recording(BaseModel):
+    """Session run container for one or more synchronized/related DataStreams."""
+
     id: str = Field(default_factory=lambda: _id("rec"))
     subject_id: str
     session_id: str
     run_id: str
+    name: str | None = None
     source_files: list[str] = Field(default_factory=list)
     source_format: str | None = None
+    # Convenience rollups (primary/EEG stream); streams are source of truth for multimodal.
     sampling_rate: float | None = None
     duration: float | None = None
     channel_count: int = 0
+    stream_ids: list[str] = Field(default_factory=list)
+    # Legacy compatibility fields — mirrored from primary EEG stream when present.
     channels: list[Channel] = Field(default_factory=list)
     events: list[Event] = Field(default_factory=list)
     annotations: list[Annotation] = Field(default_factory=list)
@@ -135,8 +196,9 @@ class Session(BaseModel):
 class Subject(BaseModel):
     id: str = Field(default_factory=lambda: _id("sub"))
     label: str
-    sessions: list[Session] = Field(default_factory=list)
+    # Subject-level only — never mix with recording/stream acquisition metadata.
     metadata: dict[str, Any] = Field(default_factory=dict)
+    sessions: list[Session] = Field(default_factory=list)
 
 
 class ProcessingStep(BaseModel):
@@ -145,6 +207,8 @@ class ProcessingStep(BaseModel):
     parameters: dict[str, Any] = Field(default_factory=dict)
     input_requirements: list[str] = Field(default_factory=list)
     output_type: str = "recording_artifact"
+    target_stream_ids: list[str] = Field(default_factory=list)
+    target_modalities: list[str] = Field(default_factory=list)
 
 
 class ProcessingPlan(BaseModel):
@@ -169,6 +233,7 @@ class DatasetArtifact(BaseModel):
     checksum: str | None = None
     paths: dict[str, str] = Field(default_factory=dict)
     recording_id: str | None = None
+    stream_id: str | None = None
     study_id: str | None = None
 
 
@@ -226,6 +291,8 @@ class InspectionReport(BaseModel):
     subjects: int = 0
     sessions: int = 0
     recordings: int = 0
+    streams: int = 0
+    modalities: dict[str, int] = Field(default_factory=dict)
     sampling_rates: dict[str, int] = Field(default_factory=dict)
     channel_counts: dict[str, int] = Field(default_factory=dict)
     event_types: list[str] = Field(default_factory=list)
@@ -235,6 +302,7 @@ class InspectionReport(BaseModel):
 
 class Study(BaseModel):
     id: str = Field(default_factory=lambda: _id("study"))
+    schema_version: int = CURRENT_STUDY_SCHEMA_VERSION
     name: str
     task_name: str | None = None
     notes: str | None = None
@@ -244,6 +312,7 @@ class Study(BaseModel):
     plan_ids: list[str] = Field(default_factory=list)
     artifact_ids: list[str] = Field(default_factory=list)
     experiment_ids: list[str] = Field(default_factory=list)
+    stream_ids: list[str] = Field(default_factory=list)
     visibility: Visibility = Visibility.PRIVATE
     organization_id: str | None = None
     hub_uri: str | None = None

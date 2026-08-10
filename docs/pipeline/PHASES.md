@@ -1,0 +1,40 @@
+# Pipeline phases (1–24)
+
+Study-centric multimodal research OS. After each phase: review → approve → commit.
+
+| Phase | Name | Status |
+|------:|------|--------|
+| 1 | Study structure (DataStream + CRUD + migrator) | **in review** |
+| 2 | EEG import | pending |
+| 3 | External modality import | pending |
+| 4 | Normalize common representation | pending |
+| 5 | Synchronization | pending |
+| 6 | Validation | pending |
+| 7 | Subject/session manager | pending |
+| 8 | Timeline viewer | pending |
+| 8a | Artifact rejection | pending |
+| 9 | Channel/data management | pending |
+| 10 | Events/annotations | pending |
+| 11 | NeuroFlow preprocessing | pending |
+| 12 | Epochs/trials | pending |
+| 13 | Feature extraction | pending |
+| 14 | Analysis/statistics | pending |
+| 15 | ML dataset builder | pending |
+| 16 | Leakage-safe splits | pending |
+| 17 | ML training (+ EEGNet placeholder recommend) | pending (placeholder recommender landed early) |
+| 18 | Model evaluation | pending |
+| 19 | Multimodal AI | pending |
+| 20 | Explainability | pending |
+| 21 | Experiment tracking | pending |
+| 22 | Inference | pending |
+| 23 | Results/reporting | pending |
+| 24 | Save/export | pending |
+
+## Phase 1 notes
+
+- `Study.schema_version = 2`
+- `DataStream` stored under `workspace/studies/{id}/streams/`
+- IPC: `studies.tree`, `subjects.set_metadata`, `sessions.add`, `runs.add`, `streams.list`, `streams.get`
+- v1 studies auto-migrate on open (legacy channels → EEG stream)
+- NeuroStudio `templates.recommend` always returns EEGNet placeholder
+- UI: utilitarian Study structure browser (no EEGLAB chrome)

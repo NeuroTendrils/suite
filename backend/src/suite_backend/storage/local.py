@@ -3,7 +3,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from suite_backend.domain.migrate import migrate_study_dict, needs_migration
 from suite_backend.domain.models import (
+    DataStream,
     DatasetArtifact,
     ProcessingPlan,
     Study,
@@ -19,13 +21,22 @@ class LocalWorkspace:
     def study_dir(self, study_id: str) -> Path:
         path = self.studies_dir / study_id
         path.mkdir(parents=True, exist_ok=True)
-        (path / "subjects").mkdir(exist_ok=True)
-        (path / "artifacts").mkdir(exist_ok=True)
-        (path / "plans").mkdir(exist_ok=True)
-        (path / "experiments").mkdir(exist_ok=True)
-        (path / "models").mkdir(exist_ok=True)
-        (path / "results").mkdir(exist_ok=True)
-        (path / "logs").mkdir(exist_ok=True)
+        for sub in (
+            "subjects",
+            "artifacts",
+            "streams",
+            "sync",
+            "epochs",
+            "features",
+            "datasets",
+            "plans",
+            "experiments",
+            "models",
+            "results",
+            "reports",
+            "logs",
+        ):
+            (path / sub).mkdir(exist_ok=True)
         return path
 
     def ensure_inside(self, path: Path) -> Path:
@@ -51,23 +62,80 @@ class LocalStudyRepository:
     def list_studies(self) -> list[Study]:
         studies: list[Study] = []
         for path in sorted(self.workspace.studies_dir.glob("*/study.json")):
-            studies.append(Study.model_validate(_read_json(path)))
+            study_id = path.parent.name
+            studies.append(self.get_study(study_id))
         return studies
 
-    def get_study(self, study_id: str) -> Study:
-        path = self.workspace.study_dir(study_id) / "study.json"
+    def _study_path(self, study_id: str) -> Path:
+        return self.workspace.study_dir(study_id) / "study.json"
+
+    def _load_study_raw(self, study_id: str) -> dict:
+        path = self._study_path(study_id)
         if not path.exists():
             raise KeyError(f"study not found: {study_id}")
-        return Study.model_validate(_read_json(path))
+        return _read_json(path)
+
+    def get_study(self, study_id: str) -> Study:
+        raw = self._load_study_raw(study_id)
+        if needs_migration(raw):
+            study, new_streams = migrate_study_dict(raw)
+            for stream in new_streams:
+                self._write_stream_file(study_id, stream)
+            return self.save_study(study)
+        return Study.model_validate(raw)
 
     def save_study(self, study: Study) -> Study:
-        path = self.workspace.study_dir(study.id) / "study.json"
-        _write_json(path, study.model_dump(mode="json"))
+        _write_json(self._study_path(study.id), study.model_dump(mode="json"))
         return study
 
     def create_study(self, name: str, task_name: str | None = None) -> Study:
         study = Study(name=name, task_name=task_name)
         return self.save_study(study)
+
+    def _write_stream_file(self, study_id: str, stream: DataStream) -> None:
+        path = self.workspace.study_dir(study_id) / "streams" / f"{stream.id}.json"
+        _write_json(path, stream.model_dump(mode="json"))
+
+    def save_stream(self, study_id: str, stream: DataStream) -> DataStream:
+        self._write_stream_file(study_id, stream)
+        study = Study.model_validate(self._load_study_raw(study_id))
+        dirty = False
+        if stream.id not in study.stream_ids:
+            study.stream_ids.append(stream.id)
+            dirty = True
+        for subject in study.subjects:
+            for session in subject.sessions:
+                for run in session.runs:
+                    for rec in run.recordings:
+                        if rec.id == stream.recording_id and stream.id not in rec.stream_ids:
+                            rec.stream_ids.append(stream.id)
+                            dirty = True
+        if dirty:
+            self.save_study(study)
+        return stream
+
+    def get_stream(self, study_id: str, stream_id: str) -> DataStream:
+        path = self.workspace.study_dir(study_id) / "streams" / f"{stream_id}.json"
+        if not path.exists():
+            raise KeyError(f"stream not found: {stream_id}")
+        return DataStream.model_validate(_read_json(path))
+
+    def list_streams(
+        self,
+        study_id: str,
+        *,
+        recording_id: str | None = None,
+        subject_id: str | None = None,
+    ) -> list[DataStream]:
+        root = self.workspace.study_dir(study_id) / "streams"
+        streams = [
+            DataStream.model_validate(_read_json(p)) for p in sorted(root.glob("*.json"))
+        ]
+        if recording_id is not None:
+            streams = [s for s in streams if s.recording_id == recording_id]
+        if subject_id is not None:
+            streams = [s for s in streams if s.subject_id == subject_id]
+        return streams
 
     def save_artifact(self, artifact: DatasetArtifact) -> DatasetArtifact:
         if not artifact.study_id:

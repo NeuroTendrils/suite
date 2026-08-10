@@ -6,13 +6,44 @@ from pathlib import Path
 from pydantic import BaseModel, Field
 
 from suite_backend.app_context import AppContext
-from suite_backend.domain.models import Annotation, ChannelStatus, HumanDecision
+from suite_backend.domain.models import (
+    Annotation,
+    ChannelStatus,
+    DataStream,
+    HumanDecision,
+    Modality,
+)
 from suite_backend.domain.queries import find_recording
 from suite_backend.ipc.registry import REGISTRY
 from suite_backend.neuroflow.erp import compute_erp
 from suite_backend.neuroflow.ica_ops import list_ica_components
 from suite_backend.neuroflow.signal import signal_window
 from suite_backend.scientific.io.importers import get_default_registry
+
+
+def _primary_stream_from_recording(recording) -> DataStream:
+    fif = next((p for p in recording.source_files if str(p).endswith(".fif")), None)
+    return DataStream(
+        recording_id=recording.id,
+        subject_id=recording.subject_id,
+        session_id=recording.session_id,
+        run_id=recording.run_id,
+        modality=Modality.EEG,
+        name="eeg",
+        source_files=list(recording.source_files),
+        source_format=recording.source_format,
+        sampling_rate=recording.sampling_rate,
+        duration=recording.duration,
+        channels=list(recording.channels),
+        units="uV",
+        events=list(recording.events),
+        annotations=list(recording.annotations),
+        decisions=list(recording.decisions),
+        acquisition_metadata=dict(recording.acquisition_metadata),
+        sample_paths={"fif": fif} if fif else {},
+        artifact_id=recording.artifact_id,
+        provenance={"created_by": "import.recording"},
+    )
 
 
 class ImportInspectParams(BaseModel):
@@ -156,10 +187,18 @@ def import_recording(params: ImportRecordingParams, ctx: AppContext) -> dict:
                 placed = True
     if not placed:
         raise KeyError("subject/session/run not found")
-    ctx.studies.save_artifact(artifact)
+    stream = _primary_stream_from_recording(recording)
+    recording.stream_ids = [stream.id]
+    if stream.id not in study.stream_ids:
+        study.stream_ids.append(stream.id)
+    artifact.stream_id = stream.id
+    # Persist study (with recording) before stream sidecar so save_stream cannot clobber it.
     ctx.studies.save_study(study)
+    ctx.studies.save_stream(study.id, stream)
+    ctx.studies.save_artifact(artifact)
     return {
         "recording": recording.model_dump(mode="json"),
+        "stream": stream.model_dump(mode="json"),
         "artifact": artifact.model_dump(mode="json"),
         "inspect": registry.inspect(path),
     }

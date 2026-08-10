@@ -59,10 +59,9 @@ def get_template(template_id: str) -> dict[str, Any]:
 
 
 def recommend_templates(study: Any = None, artifact: Any = None) -> dict[str, Any]:
-    """Placeholder recommender — returns static catalog."""
-    return {
-        "recommendations": list_templates(),
-        "warnings": ["template recommendation not implemented; returning catalog"],
-        "confidence": None,
-        "explanation": None,
-    }
+    """Placeholder recommender — always EEGNet until a real algorithm exists."""
+    from suite_backend.neurostudio.templates.model_recommendations import (
+        recommend_model_templates,
+    )
+
+    return recommend_model_templates(study=study, artifact=artifact)
