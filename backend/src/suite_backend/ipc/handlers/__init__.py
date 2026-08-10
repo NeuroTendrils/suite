@@ -3,6 +3,7 @@ from suite_backend.ipc.handlers import (
     neuroflow_cmds,
     neurostudio_cmds,
     recording_cmds,
+    stream_cmds,
     study_cmds,
 )
 
@@ -11,5 +12,6 @@ __all__ = [
     "neuroflow_cmds",
     "neurostudio_cmds",
     "recording_cmds",
+    "stream_cmds",
     "study_cmds",
 ]

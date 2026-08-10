@@ -5,8 +5,8 @@ Study-centric multimodal research OS. After each phase: review → approve → c
 | Phase | Name | Status |
 |------:|------|--------|
 | 1 | Study structure (DataStream + CRUD + migrator) | done |
-| 2 | EEG import | **in review** |
-| 3 | External modality import | pending |
+| 2 | EEG import | done |
+| 3 | External modality import | **in review** |
 | 4 | Normalize common representation | pending |
 | 5 | Synchronization | pending |
 | 6 | Validation | pending |
@@ -46,3 +46,11 @@ Study-centric multimodal research OS. After each phase: review → approve → c
 - `import.recording` refuses missing required_config — no silent guesses
 - MNE imports write canonical FIF into study artifacts when imported
 - UI: Browse → inspect status → config fields when needed → Import
+
+## Phase 3 notes
+
+- IPC: `import.stream.inspect`, `import.stream`
+- Modalities: gyro, accel, ECG, EMG, EOG, eye, motion, behavioral, trigger, GSR, respiration, misc
+- Required: explicit `modality` + `sfreq` (or timestamp column); filename suggestion is hint only
+- Samples stored as `streams/samples/{stream_id}_data.npy` (+ optional times)
+- Attach to existing `recording_id` or create a new recording shell

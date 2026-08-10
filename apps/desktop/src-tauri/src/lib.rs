@@ -47,6 +47,8 @@ fn allowlisted_commands() -> HashSet<&'static str> {
         "streams.get",
         "import.inspect",
         "import.recording",
+        "import.stream.inspect",
+        "import.stream",
         "recordings.get",
         "recordings.inspect",
         "recordings.signal_window",
