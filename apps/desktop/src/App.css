@@ -246,6 +246,19 @@ ul.plain {
   font-size: 11px;
 }
 
+.reject-btn {
+  background: #a33;
+  color: #fff;
+  border: 1px solid #822;
+  font-weight: 700;
+  min-width: 5rem;
+  padding: 6px 12px;
+}
+
+.reject-btn:hover {
+  background: #c44;
+}
+
 code {
   font-size: 0.85em;
 }

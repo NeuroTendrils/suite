@@ -12,14 +12,22 @@ def list_ica_components(
     n_components: int | None = 20,
     streams: list[DataStream] | None = None,
 ) -> dict[str, Any]:
-    """Fit ICA (MNE) and return utilitarian component summaries."""
+    """Fit ICA (MNE FastICA) and return utilitarian component summaries."""
     import numpy as np
     from mne.preprocessing import ICA
+
+    try:
+        import sklearn  # noqa: F401
+    except ImportError as exc:  # pragma: no cover
+        raise RuntimeError(
+            "ICA requires scikit-learn (FastICA). Install with: pip install scikit-learn"
+        ) from exc
 
     raw = load_raw_for_recording(recording, streams)
     raw = raw.copy().filter(l_freq=1.0, h_freq=None, verbose=False)
     n = n_components or min(20, len(raw.ch_names))
-    ica = ICA(n_components=n, random_state=97, max_iter="auto")
+    # FastICA via sklearn — same dependency EEGLAB users expect as "fastica"
+    ica = ICA(n_components=n, method="fastica", random_state=97, max_iter="auto")
     ica.fit(raw, verbose=False)
 
     rejected: set[int] = set()

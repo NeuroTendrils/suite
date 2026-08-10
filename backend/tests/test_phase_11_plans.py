@@ -39,9 +39,11 @@ def test_default_plan_placeholder_and_execute(tmp_path: Path) -> None:
     rid = eeg["recording"]["id"]
     plan_body = plans_default(PlanDefaultParams(study_id=study.id, persist=True), ctx)
     assert plan_body["placeholder"] is True
-    assert "PLACEHOLDER" in (plan_body["plan"]["notes"] or "").upper() or plan_body[
-        "warning"
-    ]
+    assert plan_body.get("eeglab_checklist")
+    assert any(c["status"] == "ok" for c in plan_body["eeglab_checklist"])
+    assert "EEGLab".upper() in (plan_body["plan"]["notes"] or "").upper() or "filter" in (
+        plan_body["plan"]["notes"] or ""
+    ).lower()
     plan_id = plan_body["plan"]["id"]
     # execute only first step-equivalent: create a tiny custom plan of one notch via default steps
     # default has bandpass+notch+reref — should write artifacts

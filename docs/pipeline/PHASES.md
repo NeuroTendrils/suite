@@ -106,10 +106,11 @@ Study-centric multimodal research OS. After each phase: review → approve → c
 
 ## Phase 11 notes
 
-- `plans.default` fixed placeholder plan (filter→notch→reref); not data-adaptive
+- `plans.default` EEGLAB-tutorial-aligned placeholder (filter 1–40 → notch 60 → average reref)
+- Returns `eeglab_checklist` mapping tutorial steps → Suite (gaps: ASR/CleanRawdata, epoch reject UI, apply-ICA-to-artifact)
+- Interactive after plan: Visualizer reject / ICA (FastICA+sklearn) / Epochs / ERP
 - Executor ops: `mark_bad_channels`, `interpolate_bads`
-- `neuroflow.recommend_preprocessing` returns same placeholder plan
-- UI: Preprocess tab
+- UI: Preprocess tab + Visualizer
 
 ## Phase 12 notes
 

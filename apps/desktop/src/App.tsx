@@ -138,7 +138,6 @@ function StackedStreamPlot({
   gain = 1,
   width = 720,
   rowH = 18,
-  rejectMode = false,
   onChannelClick,
   onRegionSelect,
 }: {
@@ -152,7 +151,6 @@ function StackedStreamPlot({
   gain?: number;
   width?: number;
   rowH?: number;
-  rejectMode?: boolean;
   onChannelClick?: (channel: string) => void;
   onRegionSelect?: (t0: number, t1: number) => void;
 }) {
@@ -183,9 +181,9 @@ function StackedStreamPlot({
       width={width}
       height={h}
       className="eegplot"
-      style={{ cursor: rejectMode ? "crosshair" : "default" }}
+      style={{ cursor: onRegionSelect ? "crosshair" : "default" }}
       onMouseDown={(ev) => {
-        if (!rejectMode || !onRegionSelect) return;
+        if (!onRegionSelect) return;
         const rect = (ev.currentTarget as SVGSVGElement).getBoundingClientRect();
         const x = ev.clientX - rect.left;
         if (x < plotL || x > plotR) return;
@@ -362,6 +360,115 @@ function StackedStreamPlot({
   );
 }
 
+/** EEGLAB-ish Channel ERPs: butterfly overlay + optional single-channel average. */
+function ErpButterflyPlot({
+  times,
+  data,
+  channels,
+  highlight,
+  width = 720,
+  height = 280,
+}: {
+  times: number[];
+  data: number[][];
+  channels: string[];
+  highlight?: string;
+  width?: number;
+  height?: number;
+}) {
+  const padL = 48;
+  const padR = 12;
+  const padT = 16;
+  const padB = 28;
+  const plotW = width - padL - padR;
+  const plotH = height - padT - padB;
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (const row of data) {
+    for (const v of row) {
+      if (v < lo) lo = v;
+      if (v > hi) hi = v;
+    }
+  }
+  if (!Number.isFinite(lo) || !Number.isFinite(hi) || lo === hi) {
+    lo = -1;
+    hi = 1;
+  }
+  const t0 = times[0] ?? 0;
+  const t1 = times[times.length - 1] ?? 1;
+  const xAt = (t: number) => padL + ((t - t0) / (t1 - t0 || 1)) * plotW;
+  const yAt = (v: number) => padT + ((hi - v) / (hi - lo || 1)) * plotH;
+  const hiIdx = highlight ? channels.indexOf(highlight) : -1;
+
+  return (
+    <svg width={width} height={height} className="eegplot">
+      <rect x={0} y={0} width={width} height={height} fill="#0a0a0a" />
+      {/* zero line */}
+      <line
+        x1={padL}
+        x2={width - padR}
+        y1={yAt(0)}
+        y2={yAt(0)}
+        stroke="#444"
+        strokeWidth={1}
+      />
+      {/* stimulus onset */}
+      <line
+        x1={xAt(0)}
+        x2={xAt(0)}
+        y1={padT}
+        y2={height - padB}
+        stroke="#e85d5d"
+        strokeWidth={1.5}
+        strokeDasharray="4 3"
+      />
+      <text x={xAt(0) + 4} y={padT + 12} fill="#e85d5d" fontSize={10}>
+        0
+      </text>
+      {data.map((row, ci) => {
+        if (hiIdx >= 0 && ci !== hiIdx) return null;
+        const pts = row
+          .map((v, i) => `${xAt(times[i] ?? t0).toFixed(1)},${yAt(v).toFixed(1)}`)
+          .join(" ");
+        return (
+          <polyline
+            key={channels[ci] || ci}
+            fill="none"
+            stroke={hiIdx >= 0 ? "#6af" : `hsl(${(ci * 47) % 360} 55% 60%)`}
+            strokeWidth={hiIdx >= 0 ? 2 : 1}
+            opacity={hiIdx >= 0 ? 1 : 0.5}
+            points={pts}
+          />
+        );
+      })}
+      <text x={4} y={padT + 8} fill="#888" fontSize={10}>
+        {hi.toExponential(1)}
+      </text>
+      <text x={4} y={height - padB} fill="#888" fontSize={10}>
+        {lo.toExponential(1)}
+      </text>
+      {[0, 0.25, 0.5, 0.75, 1].map((f) => {
+        const t = t0 + f * (t1 - t0);
+        return (
+          <text
+            key={f}
+            x={xAt(t)}
+            y={height - 8}
+            fill="#aaa"
+            fontSize={10}
+            textAnchor="middle"
+          >
+            {(t * 1000).toFixed(0)}
+          </text>
+        );
+      })}
+      <text x={width / 2} y={height - 2} fill="#666" fontSize={9} textAnchor="middle">
+        time (ms)
+      </text>
+    </svg>
+  );
+}
+
 function App() {
   const [status, setStatus] = useState("starting…");
   const [error, setError] = useState<string | null>(null);
@@ -399,7 +506,11 @@ function App() {
   const [tlRev, setTlRev] = useState(0);
   const [timeline, setTimeline] = useState<Timeline | null>(null);
   const [vizMode, setVizMode] = useState<VizMode>("signal");
-  const [rejectMode, setRejectMode] = useState(false);
+  const [pendingSegments, setPendingSegments] = useState<
+    Array<{ start: number; end: number }>
+  >([]);
+  const [pendingBadChannels, setPendingBadChannels] = useState<string[]>([]);
+  const [erpChannel, setErpChannel] = useState<string>("");
   const [icaData, setIcaData] = useState<any | null>(null);
   const [icaBusy, setIcaBusy] = useState(false);
   const [erpData, setErpData] = useState<any | null>(null);
@@ -794,30 +905,42 @@ function App() {
     }
   }
 
-  async function toggleChannelBad(channel: string) {
-    if (!selectedId || !selectedRecId) return;
-    const st = timeline?.streams.find((s) => s.modality === "eeg");
-    const idx = st?.channels.indexOf(channel) ?? -1;
-    const isBad = idx >= 0 && st?.channel_status?.[idx] === "bad";
-    await runFlow("channels.update", {
-      channel_name: channel,
-      bad: !isBad,
-    });
-    setTlRev((n) => n + 1);
+  function togglePendingBadChannel(channel: string) {
+    setPendingBadChannels((prev) =>
+      prev.includes(channel) ? prev.filter((c) => c !== channel) : [...prev, channel],
+    );
   }
 
-  async function rejectSegment(t0: number, t1: number) {
-    await runFlow("artifacts.apply", {
-      suggestion: {
-        kind: "bad_segment",
-        start: t0,
-        end: t1,
-        method: "manual_visualizer",
-        reason: "manual reject in timeline",
-        placeholder: false,
-      },
-    });
+  function markPendingSegment(t0: number, t1: number) {
+    setPendingSegments((prev) => [...prev, { start: t0, end: t1 }]);
+    appendLog(`marked ${t0.toFixed(2)}–${t1.toFixed(2)}s (not applied yet)`);
+  }
+
+  async function applyRejectMarks() {
+    if (!selectedId || !selectedRecId) return;
+    if (!pendingSegments.length && !pendingBadChannels.length) {
+      setError("Nothing marked — drag on the plot to mark a bad portion, or click a channel label");
+      return;
+    }
+    for (const seg of pendingSegments) {
+      await runFlow("artifacts.apply", {
+        suggestion: {
+          kind: "bad_segment",
+          start: seg.start,
+          end: seg.end,
+          method: "manual_visualizer",
+          reason: "REJECT in visualizer",
+          placeholder: false,
+        },
+      });
+    }
+    for (const ch of pendingBadChannels) {
+      await runFlow("channels.update", { channel_name: ch, bad: true });
+    }
+    setPendingSegments([]);
+    setPendingBadChannels([]);
     setTlRev((n) => n + 1);
+    appendLog("REJECT applied (annotations/decisions only — raw untouched)");
   }
 
   async function loadIca() {
@@ -1516,8 +1639,8 @@ function App() {
                       {vizMode === "signal" && (
                         <>
                           <p className="muted tiny">
-                            Click channel label = toggle bad. Enable Reject + drag on plot = artifact
-                            segment (raw never modified).
+                            Like EEGLAB eegplot: drag across time to mark a bad portion · click a
+                            channel name to mark it bad · press REJECT to confirm (raw never deleted).
                           </p>
                           <div className="eegplot-toolbar">
                             <button type="button" onClick={() => nudgeTime(-tlDur)}>
@@ -1558,7 +1681,7 @@ function App() {
                               s
                             </label>
                             <label>
-                              gain{" "}
+                              scale{" "}
                               <button
                                 type="button"
                                 onClick={() => setTlGain((s) => Math.max(0.25, s / 2))}
@@ -1581,36 +1704,19 @@ function App() {
                             </label>
                             <button
                               type="button"
-                              className={rejectMode ? "active" : ""}
-                              onClick={() => setRejectMode((v) => !v)}
+                              className="reject-btn"
+                              onClick={() => void applyRejectMarks()}
                             >
-                              {rejectMode ? "Reject ON" : "Reject"}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => void runFlow("artifacts.detect").then(() => setTlRev((n) => n + 1))}
-                            >
-                              Auto-detect
+                              REJECT
                             </button>
                             <button
                               type="button"
                               onClick={() => {
-                                let sug: Record<string, unknown> | null = null;
-                                try {
-                                  sug = JSON.parse(flowJson || "{}").recommendations?.[0] ?? null;
-                                } catch {
-                                  sug = null;
-                                }
-                                if (!sug) {
-                                  setError("Run Auto-detect first");
-                                  return;
-                                }
-                                void runFlow("artifacts.apply", { suggestion: sug }).then(() =>
-                                  setTlRev((n) => n + 1),
-                                );
+                                setPendingSegments([]);
+                                setPendingBadChannels([]);
                               }}
                             >
-                              Apply 1st detect
+                              Clear marks
                             </button>
                             <button
                               type="button"
@@ -1627,6 +1733,9 @@ function App() {
                               {timeline
                                 ? `${timeline.start.toFixed(2)}–${(timeline.start + timeline.duration).toFixed(2)}s`
                                 : ""}
+                              {pendingSegments.length || pendingBadChannels.length
+                                ? ` · pending: ${pendingSegments.length} seg, ${pendingBadChannels.length} ch`
+                                : ""}
                             </span>
                           </div>
                           <div className="eegplot-scroll">
@@ -1636,7 +1745,25 @@ function App() {
                                 if (b.modality === "eeg") return 1;
                                 return 0;
                               })
-                              .map((st) => (
+                              .map((st) => {
+                                const status = (st.channel_status || st.channels.map(() => "unknown")).map(
+                                  (s, i) =>
+                                    pendingBadChannels.includes(st.channels[i]) ? "bad" : s,
+                                );
+                                const evs = [
+                                  ...(st.modality === "eeg"
+                                    ? timeline.events
+                                    : timeline.events.filter((e) => e.modality === st.modality)),
+                                  ...pendingSegments.map((p, i) => ({
+                                    name: "mark",
+                                    timestamp: p.start,
+                                    end: p.end,
+                                    kind: "annotation",
+                                    artifact: true,
+                                    id: `pending-${i}`,
+                                  })),
+                                ];
+                                return (
                                 <div key={st.stream_id} className="track">
                                   <div className="track-head">
                                     <strong>{st.modality}</strong> · {st.channels.length} ch ·
@@ -1648,36 +1775,29 @@ function App() {
                                       times={st.times}
                                       data={st.data}
                                       channels={st.channels}
-                                      channelStatus={st.channel_status}
-                                      events={
-                                        st.modality === "eeg"
-                                          ? timeline.events
-                                          : timeline.events.filter(
-                                              (e) => e.modality === st.modality,
-                                            )
-                                      }
+                                      channelStatus={status}
+                                      events={evs}
                                       start={timeline.start}
                                       duration={timeline.duration}
                                       gain={tlGain}
                                       width={720}
                                       rowH={st.modality === "eeg" ? 16 : 20}
-                                      rejectMode={rejectMode && st.modality === "eeg"}
                                       onChannelClick={
-                                        st.modality === "eeg" ? toggleChannelBad : undefined
+                                        st.modality === "eeg"
+                                          ? togglePendingBadChannel
+                                          : undefined
                                       }
                                       onRegionSelect={
-                                        st.modality === "eeg" ? rejectSegment : undefined
+                                        st.modality === "eeg" ? markPendingSegment : undefined
                                       }
                                     />
                                   ) : (
                                     <div className="muted tiny">no samples in window</div>
                                   )}
                                 </div>
-                              ))}
+                              );
+                              })}
                           </div>
-                          {flowJson && flowJson.includes("recommendations") && (
-                            <pre className="log">{flowJson}</pre>
-                          )}
                         </>
                       )}
 
@@ -1769,6 +1889,10 @@ function App() {
 
                       {vizMode === "erp" && (
                         <>
+                          <p className="muted tiny">
+                            Channel ERPs (EEGLAB Plot → Channel ERPs style): butterfly of all
+                            channels, or pick one. ERPimage / topo maps not yet.
+                          </p>
                           <div className="row">
                             <label>
                               event{" "}
@@ -1782,34 +1906,46 @@ function App() {
                             <button type="button" onClick={() => void loadErp()} disabled={erpBusy}>
                               {erpBusy ? "Computing…" : "Compute ERP"}
                             </button>
-                            <span className="muted tiny">Average evoked; click channel N/A</span>
+                            {erpData?.channels?.length ? (
+                              <label>
+                                channel{" "}
+                                <select
+                                  value={erpChannel}
+                                  onChange={(e) => setErpChannel(e.target.value)}
+                                >
+                                  <option value="">(butterfly all)</option>
+                                  {erpData.channels.map((c: string) => (
+                                    <option key={c} value={c}>
+                                      {c}
+                                    </option>
+                                  ))}
+                                </select>
+                              </label>
+                            ) : null}
+                            <span className="muted tiny">
+                              {erpData?.status === "ok" ? `nave=${erpData.nave}` : ""}
+                            </span>
                           </div>
                           {erpData?.status === "ok" && erpData.data?.length ? (
-                            <div className="eegplot-scroll">
-                              <div className="track">
-                                <div className="track-head">
-                                  ERP · nave={erpData.nave} · {erpData.channels.length} ch
-                                </div>
-                                <StackedStreamPlot
-                                  times={erpData.times}
-                                  data={erpData.data}
-                                  channels={erpData.channels}
-                                  events={[{ name: "0", timestamp: 0 }]}
-                                  start={erpData.times[0] ?? -0.2}
-                                  duration={
-                                    (erpData.times.slice(-1)[0] ?? 0.8) -
-                                    (erpData.times[0] ?? -0.2)
-                                  }
-                                  gain={tlGain}
-                                  width={720}
-                                  rowH={16}
-                                />
+                            <div className="track">
+                              <div className="track-head">
+                                {erpChannel
+                                  ? `ERP at ${erpChannel}`
+                                  : `Channel ERPs (butterfly) · ${erpData.channels.length} ch`}
                               </div>
+                              <ErpButterflyPlot
+                                times={erpData.times}
+                                data={erpData.data}
+                                channels={erpData.channels}
+                                highlight={erpChannel || undefined}
+                                width={720}
+                                height={300}
+                              />
                             </div>
                           ) : (
                             <p className="muted">
                               {erpData?.status === "no_events"
-                                ? "No events/annotations — import .set or add events first."
+                                ? "No events — import .set or add events, then epoch-friendly events exist."
                                 : erpBusy
                                   ? "Computing…"
                                   : "Compute ERP from events."}

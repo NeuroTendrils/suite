@@ -6,7 +6,10 @@ from suite_backend.app_context import AppContext
 from suite_backend.domain.models import ProcessingPlan, ProcessingStep
 from suite_backend.domain.queries import find_recording
 from suite_backend.ipc.registry import REGISTRY
-from suite_backend.neuroflow.default_plan import default_preprocessing_plan
+from suite_backend.neuroflow.default_plan import (
+    default_preprocessing_plan,
+    eeglab_tutorial_checklist,
+)
 from suite_backend.neuroflow.plan_executor import execute_plan
 from suite_backend.scientific.algorithms.artifact_detection import detect_artifacts
 from suite_backend.scientific.algorithms.augmentation import augment_dataset
@@ -45,7 +48,7 @@ class PlanGetParams(BaseModel):
 class PlanDefaultParams(BaseModel):
     study_id: str
     persist: bool = True
-    name: str = "default_placeholder"
+    name: str = "eeglab_tutorial_aligned"
 
 
 class ArtifactDetectParams(BaseModel):
@@ -131,7 +134,7 @@ def plans_get(params: PlanGetParams, ctx: AppContext) -> dict:
 
 @REGISTRY.register("plans.default", PlanDefaultParams)
 def plans_default(params: PlanDefaultParams, ctx: AppContext) -> dict:
-    """Create/return the honest placeholder default preprocessing plan."""
+    """Create/return the EEGLAB-tutorial-aligned placeholder preprocessing plan."""
     ctx.studies.get_study(params.study_id)
     plan = default_preprocessing_plan(name=params.name)
     if params.persist:
@@ -139,7 +142,8 @@ def plans_default(params: PlanDefaultParams, ctx: AppContext) -> dict:
     return {
         "plan": plan.model_dump(mode="json"),
         "placeholder": True,
-        "warning": "not data-adaptive — fixed placeholder steps only",
+        "warning": "not data-adaptive — fixed EEGLAB-tutorial-aligned steps only",
+        "eeglab_checklist": eeglab_tutorial_checklist(),
     }
 
 
