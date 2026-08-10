@@ -2,13 +2,38 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 import numpy as np
 
-from suite_backend.domain.models import DataStream, Recording, SyncGroup
+from suite_backend.domain.models import ChannelType, DataStream, Recording, SyncGroup
 from suite_backend.neuroflow.sync import offset_map
 from suite_backend.scientific.io.canonical import load_stream_samples
+
+_NON_CHANNEL_NAME = re.compile(
+    r"^(time|times|timestamp|t|sample|samples|index|latency|stim|trigger)$",
+    re.IGNORECASE,
+)
+_SKIP_TYPES = {ChannelType.TRIGGER, "trigger", "stim"}
+
+
+def _is_signal_channel(name: str, values: np.ndarray, ch_type: str | None) -> bool:
+    """Keep biosignal columns; drop time/index/stim (those are markers, not traces)."""
+    if ch_type in _SKIP_TYPES or str(ch_type or "").lower() in {"trigger", "stim"}:
+        return False
+    if _NON_CHANNEL_NAME.match((name or "").strip()):
+        return False
+    n = (name or "").strip().lower()
+    if n.startswith("sti") and n.replace(" ", "").startswith("sti"):
+        return False
+    if values.size >= 8:
+        d = np.diff(values.astype(np.float64))
+        if d.size and np.all(d > 0):
+            mean_d = float(np.mean(d))
+            if mean_d > 0 and float(np.std(d)) / mean_d < 0.05:
+                return False  # monotonic time/index column
+    return True
 
 
 def timeline_window(
@@ -73,12 +98,31 @@ def timeline_window(
             data = samples.data[:, i0:i1]
             # map local times to reference timeline
             times_ref = samples.times[i0:i1] + off
-            ch_names = samples.channel_names
+            ch_names = list(samples.channel_names)
             n_times = data.shape[1]
             if n_times > max_points:
                 idx = np.linspace(0, n_times - 1, max_points).astype(int)
                 data = data[:, idx]
                 times_ref = times_ref[idx]
+
+            # Drop time/stim columns — events are markers, not plotted rows
+            type_by_name = {c.name: c.type for c in stream.channels}
+            keep_idx: list[int] = []
+            keep_names: list[str] = []
+            for ci, name in enumerate(ch_names):
+                if ci >= data.shape[0]:
+                    break
+                ctype = type_by_name.get(name)
+                ctype_s = ctype.value if hasattr(ctype, "value") else (str(ctype) if ctype else None)
+                if _is_signal_channel(name, data[ci], ctype_s):
+                    keep_idx.append(ci)
+                    keep_names.append(name)
+            if keep_idx:
+                data = data[keep_idx, :]
+                ch_names = keep_names
+            else:
+                data = np.zeros((0, data.shape[1] if data.ndim == 2 else 0))
+                ch_names = []
 
         for e in stream.events:
             t_ref = e.timestamp + off

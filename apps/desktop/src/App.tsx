@@ -105,21 +105,153 @@ type Timeline = {
 
 type Tab = "import" | "sync" | "validate" | "timeline";
 
-function sparkline(times: number[], values: number[], w = 420, h = 48): string {
-  if (!times.length || !values.length) return "";
-  const minT = times[0];
-  const maxT = times[times.length - 1] || minT + 1;
-  const minV = Math.min(...values);
-  const maxV = Math.max(...values);
-  const spanV = maxV - minV || 1;
-  const pts = values
-    .map((v, i) => {
-      const x = ((times[i] - minT) / (maxT - minT || 1)) * (w - 4) + 2;
-      const y = h - 2 - ((v - minV) / spanV) * (h - 4);
-      return `${x.toFixed(1)},${y.toFixed(1)}`;
-    })
-    .join(" ");
-  return pts;
+const EVENT_COLORS = ["#3dcf6a", "#e85d5d", "#5db0e8", "#e8c55d", "#c77dff"];
+
+/** One row per signal column: plot the numbers, auto-scaled to the row. Events = markers only. */
+function StackedStreamPlot({
+  times,
+  data,
+  channels,
+  events,
+  start,
+  duration,
+  gain = 1,
+  width = 720,
+  rowH = 18,
+}: {
+  times: number[];
+  data: number[][];
+  channels: string[];
+  events: Array<{ name: string; timestamp: number }>;
+  start: number;
+  duration: number;
+  gain?: number;
+  width?: number;
+  rowH?: number;
+}) {
+  const n = Math.max(data.length, 1);
+  const labelW = 56;
+  const plotL = labelW;
+  const plotR = width - 6;
+  const plotW = plotR - plotL;
+  const axisH = 22;
+  const h = rowH * n + axisH + 8;
+  const t0 = start;
+  const t1 = start + duration;
+  const xAt = (t: number) => plotL + ((t - t0) / (duration || 1)) * plotW;
+  const eventNames = [...new Set(events.map((e) => e.name))];
+  const colorFor = (name: string) =>
+    EVENT_COLORS[eventNames.indexOf(name) % EVENT_COLORS.length] ?? "#aaa";
+  const g = Math.max(0.05, gain);
+
+  return (
+    <svg width={width} height={h} className="eegplot">
+      <rect x={0} y={0} width={width} height={h} fill="#0a0a0a" />
+      {data.map((vals, ci) => {
+        const mid = 6 + ci * rowH + rowH / 2;
+        const label = channels[ci] || `ch${ci + 1}`;
+        let lo = Infinity;
+        let hi = -Infinity;
+        for (const v of vals) {
+          if (v < lo) lo = v;
+          if (v > hi) hi = v;
+        }
+        if (!Number.isFinite(lo) || !Number.isFinite(hi)) {
+          lo = 0;
+          hi = 1;
+        }
+        const center = (lo + hi) / 2;
+        // Fit column into the row; gain zooms amplitude (like eegplot scale)
+        let half = (hi - lo) / 2 || 1e-12;
+        half = half / g;
+        const amp = rowH * 0.42;
+        const pts = vals
+          .map((v, i) => {
+            const t = times[i] ?? t0;
+            const x = xAt(t);
+            const y = mid - ((v - center) / half) * amp;
+            return `${x.toFixed(1)},${y.toFixed(1)}`;
+          })
+          .join(" ");
+        return (
+          <g key={`${label}-${ci}`}>
+            <line
+              x1={plotL}
+              x2={plotR}
+              y1={mid}
+              y2={mid}
+              stroke="#222"
+              strokeWidth={1}
+            />
+            <text
+              x={4}
+              y={mid + 3}
+              fill="#9cf"
+              fontSize={10}
+              fontFamily="ui-monospace, monospace"
+            >
+              {label.length > 8 ? label.slice(0, 8) : label}
+            </text>
+            {pts && (
+              <polyline fill="none" stroke="#6af" strokeWidth={1} points={pts} />
+            )}
+          </g>
+        );
+      })}
+      {events.map((e, i) => {
+        if (e.timestamp < t0 || e.timestamp > t1) return null;
+        const x = xAt(e.timestamp);
+        const col = colorFor(e.name);
+        return (
+          <g key={`ev-${i}-${e.timestamp}`}>
+            <line
+              x1={x}
+              x2={x}
+              y1={4}
+              y2={h - axisH}
+              stroke={col}
+              strokeWidth={1.5}
+              strokeDasharray="4 3"
+            />
+            <text
+              x={x + 3}
+              y={12 + (i % 3) * 11}
+              fill={col}
+              fontSize={10}
+              fontFamily="ui-monospace, monospace"
+            >
+              {e.name}
+            </text>
+          </g>
+        );
+      })}
+      {[0, 0.25, 0.5, 0.75, 1].map((f) => {
+        const t = t0 + f * duration;
+        const x = xAt(t);
+        return (
+          <g key={f}>
+            <line
+              x1={x}
+              x2={x}
+              y1={h - axisH}
+              y2={h - axisH + 4}
+              stroke="#888"
+            />
+            <text
+              x={x}
+              y={h - 6}
+              fill="#aaa"
+              fontSize={10}
+              textAnchor="middle"
+              fontFamily="ui-monospace, monospace"
+            >
+              {t.toFixed(2)}
+            </text>
+          </g>
+        );
+      })}
+    </svg>
+  );
 }
 
 function App() {
@@ -152,8 +284,10 @@ function App() {
   const [syncGroups, setSyncGroups] = useState<SyncGroup[]>([]);
   const [offsetEdits, setOffsetEdits] = useState<Record<string, string>>({});
   const [validationJson, setValidationJson] = useState("");
-  const [tlStart, setTlStart] = useState("0");
-  const [tlDur, setTlDur] = useState("5");
+  const [tlStart, setTlStart] = useState(0);
+  const [tlDur, setTlDur] = useState(4);
+  const [tlGain, setTlGain] = useState(1);
+  const [tlBusy, setTlBusy] = useState(false);
   const [timeline, setTimeline] = useState<Timeline | null>(null);
   const [log, setLog] = useState("");
 
@@ -485,27 +619,38 @@ function App() {
     }
   }
 
-  async function loadTimeline() {
-    if (!selectedId || !selectedRecId) {
-      setError("Select a recording");
+  // Auto-load timeline when recording/window changes — no manual Load button.
+  useEffect(() => {
+    if (tab !== "timeline" || !selectedId || !selectedRecId) {
       return;
     }
-    try {
-      const tl = await suiteCall<Timeline>("recordings.timeline", {
-        study_id: selectedId,
-        recording_id: selectedRecId,
-        start: Number(tlStart) || 0,
-        duration: Number(tlDur) || 5,
-        max_points: 400,
+    let cancelled = false;
+    setTlBusy(true);
+    void suiteCall<Timeline>("recordings.timeline", {
+      study_id: selectedId,
+      recording_id: selectedRecId,
+      start: Math.max(0, tlStart),
+      duration: Math.max(0.1, tlDur),
+      max_points: 800,
+    })
+      .then((tl) => {
+        if (cancelled) return;
+        setTimeline(tl);
+        setError(null);
+      })
+      .catch((e) => {
+        if (!cancelled) setError(String(e));
+      })
+      .finally(() => {
+        if (!cancelled) setTlBusy(false);
       });
-      setTimeline(tl);
-      appendLog(
-        `timeline ${tl.streams.length} streams · sync=${tl.sync?.method ?? "none"}`,
-      );
-      setError(null);
-    } catch (e) {
-      setError(String(e));
-    }
+    return () => {
+      cancelled = true;
+    };
+  }, [tab, selectedId, selectedRecId, tlStart, tlDur]);
+
+  function nudgeTime(delta: number) {
+    setTlStart((s) => Math.max(0, +(s + delta).toFixed(4)));
   }
 
   const needsConfig = inspect?.status === "needs_config" || inspect?.self_describing === false;
@@ -597,6 +742,8 @@ function App() {
                             onClick={() => {
                               setSelectedRecId(rec.id);
                               setExtRecordingId(rec.id);
+                              setTlStart(0);
+                              setTab("timeline");
                             }}
                           >
                             <div>
@@ -987,72 +1134,118 @@ function App() {
 
               {tab === "timeline" && (
                 <section>
-                  <h2>Multimodal timeline</h2>
-                  <div className="row">
-                    <label>
-                      start{" "}
-                      <input
-                        style={{ width: 60 }}
-                        value={tlStart}
-                        onChange={(e) => setTlStart(e.target.value)}
-                      />
-                    </label>
-                    <label>
-                      duration{" "}
-                      <input
-                        style={{ width: 60 }}
-                        value={tlDur}
-                        onChange={(e) => setTlDur(e.target.value)}
-                      />
-                    </label>
-                    <button type="button" onClick={() => void loadTimeline()}>
-                      Load window
-                    </button>
-                  </div>
-                  {timeline && (
+                  <h2>Scroll channel activities</h2>
+                  {!selectedRecId && (
+                    <p className="muted">Select a recording in the manager — it loads automatically.</p>
+                  )}
+                  {selectedRecId && (
                     <>
-                      <p className="muted">
-                        {timeline.start}–{(timeline.start + timeline.duration).toFixed(2)}s ·
-                        sync={timeline.sync?.method ?? "none"} · events=
-                        {timeline.events.length}
-                      </p>
-                      {timeline.streams.map((st) => {
-                        const ch0 = st.data[0] || [];
-                        const pts = sparkline(st.times, ch0);
-                        return (
+                      <div className="eegplot-toolbar">
+                        <button type="button" onClick={() => nudgeTime(-tlDur)}>
+                          {"<<"}
+                        </button>
+                        <button type="button" onClick={() => nudgeTime(-tlDur / 4)}>
+                          {"<"}
+                        </button>
+                        <input
+                          className="eegplot-time"
+                          type="number"
+                          step="0.1"
+                          min={0}
+                          value={tlStart}
+                          onChange={(e) => setTlStart(Math.max(0, Number(e.target.value) || 0))}
+                          title="window start (s)"
+                        />
+                        <button type="button" onClick={() => nudgeTime(tlDur / 4)}>
+                          {">"}
+                        </button>
+                        <button type="button" onClick={() => nudgeTime(tlDur)}>
+                          {">>"}
+                        </button>
+                        <label>
+                          win{" "}
+                          <input
+                            style={{ width: 52 }}
+                            type="number"
+                            step="0.5"
+                            min={0.5}
+                            value={tlDur}
+                            onChange={(e) =>
+                              setTlDur(Math.max(0.5, Number(e.target.value) || 4))
+                            }
+                          />
+                          s
+                        </label>
+                        <label>
+                          gain{" "}
+                          <button
+                            type="button"
+                            onClick={() => setTlGain((s) => Math.max(0.25, s / 2))}
+                          >
+                            −
+                          </button>
+                          <input
+                            style={{ width: 52 }}
+                            type="number"
+                            step="0.25"
+                            min={0.25}
+                            value={tlGain}
+                            onChange={(e) =>
+                              setTlGain(Math.max(0.25, Number(e.target.value) || 1))
+                            }
+                          />
+                          <button type="button" onClick={() => setTlGain((s) => s * 2)}>
+                            +
+                          </button>
+                        </label>
+                        <span className="muted tiny">
+                          {tlBusy ? "loading…" : ""}{" "}
+                          {timeline
+                            ? `${timeline.start.toFixed(2)}–${(timeline.start + timeline.duration).toFixed(2)}s · sync=${timeline.sync?.method ?? "none"}`
+                            : ""}
+                        </span>
+                      </div>
+                      <div className="eegplot-scroll">
+                        {[...(timeline?.streams ?? [])]
+                          .sort((a, b) => {
+                            if (a.modality === "eeg") return -1;
+                            if (b.modality === "eeg") return 1;
+                            return 0;
+                          })
+                          .map((st) => (
                           <div key={st.stream_id} className="track">
                             <div className="track-head">
-                              <strong>{st.modality}</strong> · offset={st.offset_sec.toFixed(3)}s
-                              · {st.channels[0] ?? "ch0"}
+                              <strong>{st.modality}</strong> · {st.channels.length} ch · offset=
+                              {st.offset_sec.toFixed(3)}s
                               {st.error ? ` · ERR ${st.error}` : ""}
                             </div>
-                            {pts ? (
-                              <svg width={420} height={48} className="spark">
-                                <polyline
-                                  fill="none"
-                                  stroke="#222"
-                                  strokeWidth={1}
-                                  points={pts}
-                                />
-                              </svg>
+                            {!st.error && st.data.length > 0 ? (
+                              <StackedStreamPlot
+                                times={st.times}
+                                data={st.data}
+                                channels={st.channels}
+                                events={
+                                  st.modality === "eeg"
+                                    ? timeline.events
+                                    : timeline.events.filter(
+                                        (e) => e.modality === st.modality,
+                                      )
+                                }
+                                start={timeline.start}
+                                duration={timeline.duration}
+                                gain={tlGain}
+                                width={720}
+                                rowH={st.modality === "eeg" ? 16 : 20}
+                              />
                             ) : (
                               <div className="muted tiny">no samples in window</div>
                             )}
                           </div>
-                        );
-                      })}
-                      {timeline.events.length > 0 && (
-                        <div className="box">
-                          <strong>Events</strong>
-                          <ul className="plain">
-                            {timeline.events.slice(0, 40).map((e, i) => (
-                              <li key={`${e.timestamp}-${i}`}>
-                                {e.timestamp.toFixed(3)}s · {e.name} · {e.modality ?? ""}
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
+                        ))}
+                        {timeline && !timeline.streams.length && (
+                          <p className="muted">No streams on this recording.</p>
+                        )}
+                      </div>
                     </>
                   )}
                 </section>
