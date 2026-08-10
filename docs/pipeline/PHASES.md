@@ -7,8 +7,8 @@ Study-centric multimodal research OS. After each phase: review → approve → c
 | 1 | Study structure (DataStream + CRUD + migrator) | done |
 | 2 | EEG import | done |
 | 3 | External modality import | done |
-| 4 | Normalize common representation | **in review** |
-| 5 | Synchronization | pending |
+| 4 | Normalize common representation | done |
+| 5 | Synchronization | done |
 | 6 | Validation | pending |
 | 7 | Subject/session manager | pending |
 | 8 | Timeline viewer | pending |
@@ -61,3 +61,10 @@ Study-centric multimodal research OS. After each phase: review → approve → c
 - Imports auto-run normalize; IPC `recordings.normalize` for re-run
 - Signal/ERP/ICA/plans load via canonical FIF / NPY paths (not vendor path first)
 - `recordings.signal_window` accepts optional `stream_id` for any modality
+
+## Phase 5 notes
+
+- `SyncGroup` / `SyncLink` / `SyncMethod`; never `assumed_synchronized=True` from start-time similarity
+- Methods: shared_triggers, timestamps, manual_offset, unspecified (fallback)
+- IPC: `sync.create`, `sync.list`, `sync.get`, `sync.set_offset`
+- Stored under `workspace/studies/{id}/sync/`

@@ -9,6 +9,7 @@ from suite_backend.domain.models import (
     DatasetArtifact,
     ProcessingPlan,
     Study,
+    SyncGroup,
 )
 
 
@@ -175,3 +176,47 @@ class LocalStudyRepository:
                 continue
             plans.append(ProcessingPlan.model_validate(_read_json(versions[-1])))
         return plans
+
+    def save_sync_group(self, study_id: str, group: SyncGroup) -> SyncGroup:
+        path = self.workspace.study_dir(study_id) / "sync" / f"{group.id}.json"
+        _write_json(path, group.model_dump(mode="json"))
+        study = Study.model_validate(self._load_study_raw(study_id))
+        dirty = False
+        for subject in study.subjects:
+            for session in subject.sessions:
+                for run in session.runs:
+                    for rec in run.recordings:
+                        if rec.id != group.recording_id:
+                            continue
+                        if group.id not in rec.sync_group_ids:
+                            rec.sync_group_ids.append(group.id)
+                            dirty = True
+                        for link in group.links:
+                            # stamp sync_group_id on stream files
+                            try:
+                                stream = self.get_stream(study_id, link.stream_id)
+                                if stream.sync_group_id != group.id:
+                                    stream.sync_group_id = group.id
+                                    self._write_stream_file(study_id, stream)
+                            except KeyError:
+                                pass
+        if dirty:
+            self.save_study(study)
+        return group
+
+    def get_sync_group(self, study_id: str, sync_group_id: str) -> SyncGroup:
+        path = self.workspace.study_dir(study_id) / "sync" / f"{sync_group_id}.json"
+        if not path.exists():
+            raise KeyError(f"sync group not found: {sync_group_id}")
+        return SyncGroup.model_validate(_read_json(path))
+
+    def list_sync_groups(
+        self, study_id: str, *, recording_id: str | None = None
+    ) -> list[SyncGroup]:
+        root = self.workspace.study_dir(study_id) / "sync"
+        groups = [
+            SyncGroup.model_validate(_read_json(p)) for p in sorted(root.glob("*.json"))
+        ]
+        if recording_id is not None:
+            groups = [g for g in groups if g.recording_id == recording_id]
+        return groups

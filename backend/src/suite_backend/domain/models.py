@@ -152,6 +152,54 @@ class DataStream(BaseModel):
     created_at: datetime = Field(default_factory=_now)
 
 
+class SyncMethod(str, Enum):
+    TIMESTAMPS = "timestamps"
+    SHARED_TRIGGERS = "shared_triggers"
+    MANUAL_OFFSET = "manual_offset"
+    UNSPECIFIED = "unspecified"
+
+
+class SyncLink(BaseModel):
+    """How one stream maps into the SyncGroup reference timeline."""
+
+    stream_id: str
+    offset_sec: float = 0.0  # add to stream local time → reference time
+    method: SyncMethod = SyncMethod.UNSPECIFIED
+    quality: dict[str, Any] = Field(default_factory=dict)
+    manual: bool = False
+
+
+class SyncGroup(BaseModel):
+    """Alignment of multiple DataStreams within a Recording. Never assume sync."""
+
+    id: str = Field(default_factory=lambda: _id("sync"))
+    recording_id: str
+    reference_stream_id: str
+    method: SyncMethod = SyncMethod.UNSPECIFIED
+    links: list[SyncLink] = Field(default_factory=list)
+    quality: dict[str, Any] = Field(default_factory=dict)
+    notes: str | None = None
+    created_at: datetime = Field(default_factory=_now)
+    updated_at: datetime = Field(default_factory=_now)
+
+
+class ValidationIssue(BaseModel):
+    level: str  # error | warning
+    code: str
+    message: str
+    stream_id: str | None = None
+    recording_id: str | None = None
+    details: dict[str, Any] = Field(default_factory=dict)
+
+
+class ValidationReport(BaseModel):
+    ok: bool = True
+    blocking_errors: list[ValidationIssue] = Field(default_factory=list)
+    warnings: list[ValidationIssue] = Field(default_factory=list)
+    checked_at: datetime = Field(default_factory=_now)
+    scope: str = "recording"  # stream | recording | study
+
+
 class Recording(BaseModel):
     """Session run container for one or more synchronized/related DataStreams."""
 
@@ -167,6 +215,7 @@ class Recording(BaseModel):
     duration: float | None = None
     channel_count: int = 0
     stream_ids: list[str] = Field(default_factory=list)
+    sync_group_ids: list[str] = Field(default_factory=list)
     # Legacy compatibility fields — mirrored from primary EEG stream when present.
     channels: list[Channel] = Field(default_factory=list)
     events: list[Event] = Field(default_factory=list)
@@ -174,6 +223,7 @@ class Recording(BaseModel):
     decisions: list[HumanDecision] = Field(default_factory=list)
     acquisition_metadata: dict[str, Any] = Field(default_factory=dict)
     preprocessing_state: dict[str, Any] = Field(default_factory=dict)
+    validation: dict[str, Any] = Field(default_factory=dict)
     parent_artifact_id: str | None = None
     artifact_id: str | None = None
     created_at: datetime = Field(default_factory=_now)

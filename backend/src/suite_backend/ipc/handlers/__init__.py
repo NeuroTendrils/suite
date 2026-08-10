@@ -5,6 +5,7 @@ from suite_backend.ipc.handlers import (
     recording_cmds,
     stream_cmds,
     study_cmds,
+    sync_cmds,
 )
 
 __all__ = [
@@ -14,4 +15,5 @@ __all__ = [
     "recording_cmds",
     "stream_cmds",
     "study_cmds",
+    "sync_cmds",
 ]
