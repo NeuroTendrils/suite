@@ -1,31 +1,71 @@
 # Architecture overview
 
-NeuroTendrils Suite is a local-first, multi-subject EEG research OS.
-
-## Runtime
-
-- **Tauri (Rust):** window, process lifecycle, allowlisted `suite_call` commands
-- **React (TypeScript):** utilitarian UI only — no scientific logic
-- **Python `suite_backend`:** domain, NeuroFlow, NeuroStudio stubs, MNE-backed I/O
-
-IPC is a private Unix domain socket (named pipes planned for Windows). JSON request/response lines with Pydantic schemas. No free-form code execution.
-
-## Domain (schema v2)
+NeuroTendrils Suite is a **local-first, multi-subject EEG research OS** — not an EEGLAB clone. Hierarchy:
 
 ```text
 Study → Subject → Session → Run → Recording → DataStream(s)
 ```
 
-Each `DataStream` is a modality time-series (EEG, gyro, ECG, …) with its own sampling, channels, units, and provenance. See [pipeline phases](../pipeline/PHASES.md).
+## Runtime
+
+| Layer | Role |
+|-------|------|
+| **Tauri (Rust)** | Window, process lifecycle, **allowlisted** `suite_call` only |
+| **React (TypeScript)** | Utilitarian UI — no scientific logic in the renderer |
+| **Python `suite_backend`** | Domain, NeuroFlow, NeuroStudio, MNE / sklearn I/O |
+
+IPC is a private Unix domain socket (named pipes planned for Windows). JSON request/response lines with Pydantic schemas. No free-form code execution from the UI.
 
 ## Product modules
 
 | Module | Role |
 |--------|------|
-| NeuroFlow | Inspect, visualize, manual reject, plans, ERP, ICA |
-| NeuroStudio | Braindecode templates; placeholder recommender always suggests EEGNet |
-| Hub / Teams | Future cloud; `visibility` / quota interfaces only today |
+| **NeuroFlow** | Import, sync, validate, visualize, reject, plans, ICA, ERP, epochs, features, analysis |
+| **NeuroStudio** | Datasets, splits, templates (EEGNet recommend placeholder), train/eval/infer/explain/report/export |
+| **Hub / Teams** | Future cloud; `visibility` / quota interfaces only today |
 
-## Provenance
+## Science stack
 
-Raw files are never mutated. Processing produces immutable artifacts with parent links, parameters, checksums, and human decisions.
+- **MNE-Python** — I/O, filtering, ICA (FastICA via scikit-learn), epochs, ERP
+- **scikit-learn** — ICA peer dep + utilitarian ML train/eval/explain
+- **Braindecode** — optional (`pip install suite-backend[ml]`); templates catalogued; **training not wired** (recommend always EEGNet)
+
+## Provenance rules
+
+1. **Never mutate source raw files.**
+2. Processing writes immutable artifacts (`DatasetArtifact`, FIF derivatives, joblib models) with parent links, parameters, checksums where applicable.
+3. Human judgment is stored as `Annotation` + `HumanDecision` (reject masks, ICA keep/reject, epoch reject).
+4. Working FIF for visualization may be **promoted** via `DataStream.sample_paths["fif"]` while `fif_original` / import sources remain.
+
+## Workspace layout
+
+```text
+workspace/studies/{study_id}/
+  study.json
+  streams/ (+ samples/)
+  sync/
+  epochs/
+  features/
+  datasets/ (+ arrays/)
+  plans/
+  artifacts/
+  experiments/
+  models/
+  results/
+  reports/
+  exports/
+  logs/
+```
+
+## UI surface (desktop)
+
+Tabs: Import · Visualizer · Sync · Validate · Events · Preprocess · Epochs · Features · Analysis · Dataset · Studio · Report · Export.
+
+Visualizer modes: Signal · ICA · ERP · Epochs.
+
+## Related docs
+
+- [Pipeline phases](../pipeline/PHASES.md)
+- [IPC command reference](../reference/IPC.md)
+- [User guide](../guides/USER_GUIDE.md)
+- [Developer guide](../guides/DEVELOPER.md)

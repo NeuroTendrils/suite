@@ -4,10 +4,14 @@ Proprietary local-first EEG research environment.
 
 ## Modules
 
-1. **NeuroFlow** — import, inspect/visualize EEG, manual rejection, plans, ERP, ICA
-2. **NeuroStudio** — model templates (EEGNet…), local training stubs, export
+1. **NeuroFlow** — import, visualize, reject, plans, ICA/ERP, epochs, features, analysis
+2. **NeuroStudio** — datasets/splits, EEGNet recommend placeholder, sklearn train/eval/infer/explain, reports, export
 3. **Hub** — future cloud sharing (interfaces only)
 4. **Teams** — future paid private org sharing (interfaces only)
+
+## Documentation
+
+Start at [docs/README.md](docs/README.md) (architecture, phases 1–25, IPC, user/developer guides).
 
 ## Architecture
 
