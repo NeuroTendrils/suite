@@ -9,7 +9,7 @@ Study-centric multimodal research OS. After each phase: review → approve → c
 | 3 | External modality import | done |
 | 4 | Normalize common representation | done |
 | 5 | Synchronization | done |
-| 6 | Validation | pending |
+| 6 | Validation | done |
 | 7 | Subject/session manager | pending |
 | 8 | Timeline viewer | pending |
 | 8a | Artifact rejection | pending |
@@ -68,3 +68,10 @@ Study-centric multimodal research OS. After each phase: review → approve → c
 - Methods: shared_triggers, timestamps, manual_offset, unspecified (fallback)
 - IPC: `sync.create`, `sync.list`, `sync.get`, `sync.set_offset`
 - Stored under `workspace/studies/{id}/sync/`
+
+## Phase 6 notes
+
+- `scientific/io/validate.py`: stream / recording / study reports
+- Warns on multi-stream without SyncGroup; blocks invalid sync assumptions
+- IPC: `validate.stream`, `validate.recording`, `validate.study`
+- Recording.validation summary persisted
