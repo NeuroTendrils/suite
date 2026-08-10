@@ -63,6 +63,40 @@ def _seed_recording(tmp_path: Path, *, with_events: bool = True):
     return ctx, study.id, eeg["recording"]["id"]
 
 
+def test_ica_reject_then_keep_unrejects(tmp_path: Path) -> None:
+    from suite_backend.ipc.handlers.recording_cmds import IcaListParams, ica_components_list
+
+    ctx, study_id, rid = _seed_recording(tmp_path)
+    ica_set_rejection(
+        IcaRejectParams(
+            study_id=study_id,
+            recording_id=rid,
+            component_indices=[0],
+            action="reject",
+        ),
+        ctx,
+    )
+    listed = ica_components_list(
+        IcaListParams(study_id=study_id, recording_id=rid, n_components=4),
+        ctx,
+    )
+    assert listed["components"][0]["rejected"] is True
+    ica_set_rejection(
+        IcaRejectParams(
+            study_id=study_id,
+            recording_id=rid,
+            component_indices=[0],
+            action="keep",
+        ),
+        ctx,
+    )
+    listed2 = ica_components_list(
+        IcaListParams(study_id=study_id, recording_id=rid, n_components=4),
+        ctx,
+    )
+    assert listed2["components"][0]["rejected"] is False
+
+
 def test_ica_apply_writes_artifact_and_promotes(tmp_path: Path) -> None:
     ctx, study_id, rid = _seed_recording(tmp_path)
     ica_set_rejection(
@@ -126,6 +160,18 @@ def test_epochs_reject_and_erpimage(tmp_path: Path) -> None:
     assert orig.exists()
     assert clean.exists()
     assert clean != orig
+
+    restored = epochs_reject(
+        EpochRejectParams(
+            study_id=study_id,
+            epochset_id=eid,
+            trial_indices=[0],
+            rejected=False,
+        ),
+        ctx,
+    )
+    assert restored["n_rejected"] == 1
+    assert any(t["index"] == 0 and not t["rejected"] for t in restored["epochset"]["trials"])
 
     erp = erp_compute(
         ErpParams(study_id=study_id, recording_id=rid, erpimage_channel="Cz"),

@@ -486,6 +486,16 @@ def ica_components_list(params: IcaListParams, ctx: AppContext) -> dict:
 @REGISTRY.register("ica.component.set_rejection", IcaRejectParams)
 def ica_set_rejection(params: IcaRejectParams, ctx: AppContext) -> dict:
     def mutate(recording):
+        wanted = set(params.component_indices)
+        # replace prior IC annotations so keep/reject isn't ambiguous in the list
+        recording.annotations = [
+            a
+            for a in recording.annotations
+            if not (
+                a.kind == "ica_component"
+                and wanted.intersection(int(i) for i in a.component_indices)
+            )
+        ]
         for idx in params.component_indices:
             recording.decisions.append(
                 HumanDecision(

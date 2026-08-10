@@ -9,14 +9,17 @@ from suite_backend.neuroflow.signal import load_raw_for_recording
 
 
 def _rejected_indices(recording: Recording) -> list[int]:
-    rejected: set[int] = set()
+    """Last decision per component wins; annotations are a fallback only."""
+    state: dict[int, bool] = {}
     for ann in recording.annotations:
-        if ann.kind == "ica_component" and ann.label == "reject":
-            rejected.update(int(i) for i in ann.component_indices)
-        elif ann.kind == "ica_component" and ann.label == "keep":
-            for i in ann.component_indices:
-                rejected.discard(int(i))
-    # last decision wins per component via annotations order — refine with decisions
+        if ann.kind != "ica_component":
+            continue
+        for i in ann.component_indices:
+            idx = int(i)
+            if ann.label == "reject":
+                state[idx] = True
+            elif ann.label == "keep":
+                state[idx] = False
     for d in recording.decisions:
         if d.target_kind != "ica_component":
             continue
@@ -25,10 +28,10 @@ def _rejected_indices(recording: Recording) -> list[int]:
         except (TypeError, ValueError):
             continue
         if d.action == "reject":
-            rejected.add(idx)
+            state[idx] = True
         elif d.action == "keep":
-            rejected.discard(idx)
-    return sorted(rejected)
+            state[idx] = False
+    return sorted(i for i, rejected in state.items() if rejected)
 
 
 def _fit_ica(raw, n_components: int | None):

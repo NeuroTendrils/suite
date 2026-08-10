@@ -140,12 +140,21 @@ function StackedStreamPlot({
   rowH = 18,
   onChannelClick,
   onRegionSelect,
+  onArtifactClick,
+  pendingUnrejectIds = [],
 }: {
   times: number[];
   data: number[][];
   channels: string[];
   channelStatus?: string[];
-  events: Array<{ name: string; timestamp: number; end?: number; kind?: string; artifact?: boolean }>;
+  events: Array<{
+    name: string;
+    timestamp: number;
+    end?: number;
+    kind?: string;
+    artifact?: boolean;
+    id?: string;
+  }>;
   start: number;
   duration: number;
   gain?: number;
@@ -153,6 +162,8 @@ function StackedStreamPlot({
   rowH?: number;
   onChannelClick?: (channel: string) => void;
   onRegionSelect?: (t0: number, t1: number) => void;
+  onArtifactClick?: (annotationId: string) => void;
+  pendingUnrejectIds?: string[];
 }) {
   const n = Math.max(data.length, 1);
   const labelW = 56;
@@ -217,15 +228,26 @@ function StackedStreamPlot({
       {artifacts.map((a, i) => {
         const x0 = xAt(Math.max(t0, a.timestamp));
         const x1 = xAt(Math.min(t1, a.end ?? a.timestamp));
+        const unrej = !!(a.id && pendingUnrejectIds.includes(a.id));
         return (
           <rect
-            key={`art-${a.name}-${i}`}
+            key={`art-${a.id || a.name}-${i}`}
             x={x0}
             y={4}
             width={Math.max(2, x1 - x0)}
             height={h - axisH - 4}
-            fill="#a33"
-            opacity={0.25}
+            fill={unrej ? "#3a6" : "#a33"}
+            opacity={unrej ? 0.2 : 0.25}
+            style={{ cursor: a.id && onArtifactClick ? "pointer" : undefined }}
+            onClick={(e) => {
+              if (!a.id || !onArtifactClick) return;
+              e.stopPropagation();
+              onArtifactClick(a.id);
+            }}
+            onMouseDown={(e) => {
+              // don't start a drag-select when clicking an existing reject band
+              if (a.id && onArtifactClick) e.stopPropagation();
+            }}
           />
         );
       })}
@@ -589,6 +611,7 @@ function App() {
     Array<{ start: number; end: number }>
   >([]);
   const [pendingBadChannels, setPendingBadChannels] = useState<string[]>([]);
+  const [pendingUnrejectAnnIds, setPendingUnrejectAnnIds] = useState<string[]>([]);
   const [erpChannel, setErpChannel] = useState<string>("");
   const [icaData, setIcaData] = useState<any | null>(null);
   const [icaBusy, setIcaBusy] = useState(false);
@@ -999,10 +1022,24 @@ function App() {
     appendLog(`marked ${t0.toFixed(2)}–${t1.toFixed(2)}s (not applied yet)`);
   }
 
+  function channelIsBad(channel: string): boolean {
+    const st = timeline?.streams?.find((s) => s.modality === "eeg");
+    if (!st) return false;
+    const i = st.channels.indexOf(channel);
+    if (i < 0) return false;
+    return (st.channel_status?.[i] || "") === "bad";
+  }
+
   async function applyRejectMarks() {
     if (!selectedId || !selectedRecId) return;
-    if (!pendingSegments.length && !pendingBadChannels.length) {
-      setError("Nothing marked — drag on the plot to mark a bad portion, or click a channel label");
+    if (
+      !pendingSegments.length &&
+      !pendingBadChannels.length &&
+      !pendingUnrejectAnnIds.length
+    ) {
+      setError(
+        "Nothing marked — drag to reject, click channel to toggle bad/good, or click a red band to unreject",
+      );
       return;
     }
     for (const seg of pendingSegments) {
@@ -1018,12 +1055,17 @@ function App() {
       });
     }
     for (const ch of pendingBadChannels) {
-      await runFlow("channels.update", { channel_name: ch, bad: true });
+      const makeBad = !channelIsBad(ch);
+      await runFlow("channels.update", { channel_name: ch, bad: makeBad });
+    }
+    for (const annId of pendingUnrejectAnnIds) {
+      await runFlow("artifacts.revert", { annotation_id: annId });
     }
     setPendingSegments([]);
     setPendingBadChannels([]);
+    setPendingUnrejectAnnIds([]);
     setTlRev((n) => n + 1);
-    appendLog("REJECT applied (annotations/decisions only — raw untouched)");
+    appendLog("REJECT applied (toggle reject/unreject; raw untouched)");
   }
 
   async function loadIca() {
@@ -1049,6 +1091,17 @@ function App() {
     if (!selectedId || !selectedRecId || !icaData) return;
     const comp = icaData.components?.find((c: any) => c.index === index);
     const action = comp?.rejected ? "keep" : "reject";
+    // optimistic flip so unreject is immediate even while ICA reloads
+    setIcaData((prev: any) =>
+      prev
+        ? {
+            ...prev,
+            components: prev.components.map((c: any) =>
+              c.index === index ? { ...c, rejected: action === "reject" } : c,
+            ),
+          }
+        : prev,
+    );
     await runFlow("ica.component.set_rejection", {
       component_indices: [index],
       action,
@@ -1161,18 +1214,35 @@ function App() {
   async function applyEpochReject() {
     if (!selectedId || !epochSet?.id) return;
     if (!pendingEpochReject.length) {
-      setError("Click trials to mark them, then REJECT");
+      setError("Click trials to mark them, then REJECT (toggles reject ↔ keep)");
       return;
     }
-    await runFlow("epochs.reject", {
-      epochset_id: epochSet.id,
-      trial_indices: pendingEpochReject,
-      rejected: true,
-      rewrite_fif: true,
-    });
+    const byIndex = new Map<number, any>(
+      (epochSet.trials || []).map((t: any) => [t.index, t]),
+    );
+    const toReject = pendingEpochReject.filter((i) => !byIndex.get(i)?.rejected);
+    const toKeep = pendingEpochReject.filter((i) => byIndex.get(i)?.rejected);
+    if (toReject.length) {
+      await runFlow("epochs.reject", {
+        epochset_id: epochSet.id,
+        trial_indices: toReject,
+        rejected: true,
+        rewrite_fif: true,
+      });
+    }
+    if (toKeep.length) {
+      await runFlow("epochs.reject", {
+        epochset_id: epochSet.id,
+        trial_indices: toKeep,
+        rejected: false,
+        rewrite_fif: true,
+      });
+    }
     setPendingEpochReject([]);
     await loadEpochSet();
-    appendLog("Epoch REJECT applied");
+    appendLog(
+      `Epoch REJECT: rejected ${toReject.length}, restored ${toKeep.length}`,
+    );
   }
 
   const needsConfig = inspect?.status === "needs_config" || inspect?.self_describing === false;
@@ -1822,8 +1892,8 @@ function App() {
                       {vizMode === "signal" && (
                         <>
                           <p className="muted tiny">
-                            Like EEGLAB eegplot: drag across time to mark a bad portion · click a
-                            channel name to mark it bad · press REJECT to confirm (raw never deleted).
+                            Drag to mark a bad portion · click channel to toggle bad/good · click a
+                            red reject band to unreject · REJECT confirms (raw never deleted).
                           </p>
                           <div className="eegplot-toolbar">
                             <button type="button" onClick={() => nudgeTime(-tlDur)}>
@@ -1897,6 +1967,7 @@ function App() {
                               onClick={() => {
                                 setPendingSegments([]);
                                 setPendingBadChannels([]);
+                                setPendingUnrejectAnnIds([]);
                               }}
                             >
                               Clear marks
@@ -1924,8 +1995,10 @@ function App() {
                               {timeline
                                 ? `${timeline.start.toFixed(2)}–${(timeline.start + timeline.duration).toFixed(2)}s`
                                 : ""}
-                              {pendingSegments.length || pendingBadChannels.length
-                                ? ` · pending: ${pendingSegments.length} seg, ${pendingBadChannels.length} ch`
+                              {pendingSegments.length ||
+                              pendingBadChannels.length ||
+                              pendingUnrejectAnnIds.length
+                                ? ` · pending: ${pendingSegments.length} seg, ${pendingBadChannels.length} ch, ${pendingUnrejectAnnIds.length} unreject`
                                 : ""}
                             </span>
                           </div>
@@ -1937,10 +2010,13 @@ function App() {
                                 return 0;
                               })
                               .map((st) => {
-                                const status = (st.channel_status || st.channels.map(() => "unknown")).map(
-                                  (s, i) =>
-                                    pendingBadChannels.includes(st.channels[i]) ? "bad" : s,
-                                );
+                                const status = (
+                                  st.channel_status || st.channels.map(() => "unknown")
+                                ).map((s, i) => {
+                                  if (!pendingBadChannels.includes(st.channels[i])) return s;
+                                  // pending click flips current status (bad↔good)
+                                  return s === "bad" ? "good" : "bad";
+                                });
                                 const evs = [
                                   ...(st.modality === "eeg"
                                     ? timeline.events
@@ -1981,6 +2057,17 @@ function App() {
                                       onRegionSelect={
                                         st.modality === "eeg" ? markPendingSegment : undefined
                                       }
+                                      onArtifactClick={
+                                        st.modality === "eeg"
+                                          ? (id) =>
+                                              setPendingUnrejectAnnIds((prev) =>
+                                                prev.includes(id)
+                                                  ? prev.filter((x) => x !== id)
+                                                  : [...prev, id],
+                                              )
+                                          : undefined
+                                      }
+                                      pendingUnrejectIds={pendingUnrejectAnnIds}
                                     />
                                   ) : (
                                     <div className="muted tiny">no samples in window</div>
@@ -2175,8 +2262,8 @@ function App() {
                       {vizMode === "epochs" && (
                         <>
                           <p className="muted tiny">
-                            Reject epochs by eye: click trial chips, then REJECT. Writes clean FIF;
-                            original epochs FIF kept.
+                            Click trial chips then REJECT to toggle reject ↔ keep. Clean FIF
+                            rewritten; original epochs FIF kept.
                           </p>
                           <div className="row">
                             <button
