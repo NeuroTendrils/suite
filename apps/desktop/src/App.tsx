@@ -114,20 +114,102 @@ type Timeline = {
 
 type VizMode = "signal" | "ica" | "erp" | "epochs";
 
-type Tab =
-  | "import"
-  | "sync"
-  | "validate"
-  | "timeline"
-  | "events"
-  | "preprocess"
-  | "epochs"
-  | "features"
-  | "analysis"
-  | "dataset"
-  | "studio"
-  | "report"
-  | "export";
+type Page = "home" | "flow" | "studio";
+type FlowStage = "recording" | "inspect" | "plan" | "review";
+type StudioStage = "data" | "train" | "export";
+
+const FLOW_STAGES: Array<{
+  id: FlowStage;
+  label: string;
+  title: string;
+  description: string;
+  primary: string;
+}> = [
+  {
+    id: "recording",
+    label: "Recording",
+    title: "Recording",
+    description: "Import EEG or attach an external stream to this study.",
+    primary: "Continue",
+  },
+  {
+    id: "inspect",
+    label: "Inspect",
+    title: "Inspect",
+    description: "Review the raw signal, mark bad channels and spans, then inspect ICA, ERP, and epochs.",
+    primary: "Continue",
+  },
+  {
+    id: "plan",
+    label: "Plan",
+    title: "Plan",
+    description: "Align streams, validate, add events, and run a preprocessing plan.",
+    primary: "Continue",
+  },
+  {
+    id: "review",
+    label: "Review",
+    title: "Review",
+    description: "Extract features and run descriptive statistics on this recording.",
+    primary: "Done",
+  },
+];
+
+const STUDIO_STAGES: Array<{
+  id: StudioStage;
+  label: string;
+  title: string;
+  description: string;
+  primary: string;
+}> = [
+  {
+    id: "data",
+    label: "Data",
+    title: "Data",
+    description: "Build an ML dataset and create leakage-safe splits.",
+    primary: "Continue",
+  },
+  {
+    id: "train",
+    label: "Train",
+    title: "Train",
+    description: "Recommend a template, train, evaluate, explain, and run inference.",
+    primary: "Continue",
+  },
+  {
+    id: "export",
+    label: "Export",
+    title: "Export",
+    description: "Build reports and export the study or a model bundle.",
+    primary: "Done",
+  },
+];
+
+const NAV_ITEMS: Array<{ id: Page; label: string; icon: string }> = [
+  { id: "home", label: "Home", icon: "⌂" },
+  { id: "flow", label: "NeuroFlow", icon: "∿" },
+  { id: "studio", label: "NeuroStudio", icon: "▣" },
+];
+
+type ThemeName = "dark" | "light";
+
+function readStoredTheme(): ThemeName {
+  try {
+    const v = localStorage.getItem("nt-theme");
+    if (v === "light" || v === "dark") return v;
+  } catch {
+    /* ignore */
+  }
+  return "dark";
+}
+
+function readSidebarOpen(): boolean {
+  try {
+    return localStorage.getItem("nt-sidebar") !== "0";
+  } catch {
+    return true;
+  }
+}
 
 const EVENT_COLORS = ["#3dcf6a", "#e85d5d", "#5db0e8", "#e8c55d", "#c77dff"];
 
@@ -583,7 +665,12 @@ function App() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [manager, setManager] = useState<Manager | null>(null);
   const [selectedRecId, setSelectedRecId] = useState<string | null>(null);
-  const [tab, setTab] = useState<Tab>("import");
+  const [page, setPage] = useState<Page>("home");
+  const [flowStage, setFlowStage] = useState<FlowStage>("recording");
+  const [studioStage, setStudioStage] = useState<StudioStage>("data");
+  const [theme, setTheme] = useState<ThemeName>(readStoredTheme);
+  const [sidebarOpen, setSidebarOpen] = useState(readSidebarOpen);
+  const [logOpen, setLogOpen] = useState(false);
   const [subjectLabel, setSubjectLabel] = useState("S001");
   const [subjectMeta, setSubjectMeta] = useState("{}");
   const [importPath, setImportPath] = useState("");
@@ -635,6 +722,23 @@ function App() {
   function appendLog(msg: string) {
     setLog((p) => `${msg}\n${p}`.slice(0, 4000));
   }
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    try {
+      localStorage.setItem("nt-theme", theme);
+    } catch {
+      /* ignore */
+    }
+  }, [theme]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("nt-sidebar", sidebarOpen ? "1" : "0");
+    } catch {
+      /* ignore */
+    }
+  }, [sidebarOpen]);
 
   const selectedRec: ManagerRec | null = useMemo(() => {
     if (!manager || !selectedRecId) return null;
@@ -962,7 +1066,7 @@ function App() {
 
   // Auto-load timeline when recording/window changes — no manual Load button.
   useEffect(() => {
-    if (tab !== "timeline" || !selectedId || !selectedRecId) {
+    if (page !== "flow" || flowStage !== "inspect" || !selectedId || !selectedRecId) {
       return;
     }
     let cancelled = false;
@@ -988,7 +1092,7 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, [tab, selectedId, selectedRecId, tlStart, tlDur, tlRev]);
+  }, [page, flowStage, selectedId, selectedRecId, tlStart, tlDur, tlRev]);
 
   function nudgeTime(delta: number) {
     setTlStart((s) => Math.max(0, +(s + delta).toFixed(4)));
@@ -1252,6 +1356,40 @@ function App() {
 
   const needsConfig = inspect?.status === "needs_config" || inspect?.self_describing === false;
 
+  const flowMeta = FLOW_STAGES.find((s) => s.id === flowStage) ?? FLOW_STAGES[0];
+  const studioMeta = STUDIO_STAGES.find((s) => s.id === studioStage) ?? STUDIO_STAGES[0];
+  const flowIndex = FLOW_STAGES.findIndex((s) => s.id === flowStage);
+  const studioIndex = STUDIO_STAGES.findIndex((s) => s.id === studioStage);
+
+  function goFlow(id: FlowStage) {
+    setFlowStage(id);
+  }
+  function goStudio(id: StudioStage) {
+    setStudioStage(id);
+  }
+  function advanceStage() {
+    if (page === "flow") {
+      const next = FLOW_STAGES[flowIndex + 1];
+      if (next) setFlowStage(next.id);
+      else setPage("home");
+    } else if (page === "studio") {
+      const next = STUDIO_STAGES[studioIndex + 1];
+      if (next) setStudioStage(next.id);
+      else setPage("home");
+    }
+  }
+  function retreatStage() {
+    if (page === "flow") {
+      const prev = FLOW_STAGES[flowIndex - 1];
+      if (prev) setFlowStage(prev.id);
+      else setPage("home");
+    } else if (page === "studio") {
+      const prev = STUDIO_STAGES[studioIndex - 1];
+      if (prev) setStudioStage(prev.id);
+      else setPage("home");
+    }
+  }
+
   const recordingOptions =
     manager?.subjects.flatMap((sub) =>
       sub.sessions.flatMap((ses) =>
@@ -1265,157 +1403,316 @@ function App() {
     ) ?? [];
 
   return (
-    <div className="app">
-      <header>
-        <h1>NeuroTendrils Suite</h1>
-        <span className="muted">{status}</span>
-        <button type="button" onClick={() => void refresh()}>
-          Refresh
+    <div className={`app ${sidebarOpen ? "rail-expanded" : ""}`}>
+      <nav className="nav-rail" aria-label="Main">
+        <div className="nav-brand" title="NeuroTendrils">
+          <span className="nav-mark">NT</span>
+          {sidebarOpen && <span className="nav-word">NeuroTendrils</span>}
+        </div>
+        {NAV_ITEMS.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            className={`nav-item ${page === item.id ? "active" : ""}`}
+            title={item.label}
+            onClick={() => {
+              if (item.id === "flow" && page !== "flow" && selectedRecId) {
+                setFlowStage("inspect");
+              }
+              setPage(item.id);
+            }}
+          >
+            <span className="nav-key">{item.icon}</span>
+            {sidebarOpen && <span className="nav-label">{item.label}</span>}
+          </button>
+        ))}
+        <div className="nav-spacer" />
+        <button
+          type="button"
+          className="nav-item nav-toggle"
+          title={sidebarOpen ? "Collapse navigation" : "Expand navigation"}
+          onClick={() => setSidebarOpen((v) => !v)}
+        >
+          <span className="nav-key">{sidebarOpen ? "‹" : "›"}</span>
+          {sidebarOpen && <span className="nav-label">Collapse</span>}
         </button>
-      </header>
-      {error && <div className="error">{error}</div>}
+      </nav>
 
-      <div className="layout">
-        <aside className="sidebar">
-          <h2>Studies</h2>
-          <div className="row">
-            <input value={studyName} onChange={(e) => setStudyName(e.target.value)} />
-            <button type="button" onClick={() => void createStudy()}>
-              Create
-            </button>
-          </div>
-          <ul className="study-list">
+      <div className="shell">
+        <header className="titlebar">
+          <select
+            className="study-switcher"
+            value={selectedId ?? ""}
+            onChange={(e) => {
+              const id = e.target.value;
+              if (id) void selectStudy(id);
+            }}
+          >
+            <option value="">{studies.length ? "Select study ▾" : "No study"}</option>
             {studies.map((s) => (
-              <li key={s.id}>
+              <option key={s.id} value={s.id}>
+                {s.name}
+              </option>
+            ))}
+          </select>
+          {selectedRec && (
+            <span className="title-rec">
+              {selectedRec.modalities.join("+") || "recording"} · {selectedRec.id.slice(0, 10)}
+            </span>
+          )}
+          <span className="title-status">{status}</span>
+          <button
+            type="button"
+            className="icon-btn"
+            title="Refresh"
+            onClick={() => void refresh()}
+          >
+            ↻
+          </button>
+          <button
+            type="button"
+            className="icon-btn"
+            title="Switch theme"
+            onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
+          >
+            {theme === "dark" ? "☀" : "☾"}
+          </button>
+        </header>
+        {error && <div className="error">{error}</div>}
+
+        {page === "flow" && (
+          <nav className="stagebar" aria-label="NeuroFlow stages">
+            {FLOW_STAGES.map((stage, i) => (
+              <span key={stage.id} className="stage-wrap">
+                {i > 0 && <span className="stage-connector" />}
                 <button
                   type="button"
-                  className={s.id === selectedId ? "active" : ""}
-                  onClick={() => void selectStudy(s.id)}
+                  className={`stage-chip ${flowStage === stage.id ? "active" : ""}`}
+                  onClick={() => goFlow(stage.id)}
                 >
-                  {s.name}
-                  <span className="muted"> v{s.schema_version ?? 1}</span>
+                  <span className="stage-n">{i + 1}.</span>
+                  {stage.label}
                 </button>
-              </li>
+              </span>
             ))}
-          </ul>
-
-          {manager && (
-            <>
-              <h2>
-                Manager{" "}
-                <span className="muted">
-                  {manager.totals.subjects}s / {manager.totals.recordings}r /{" "}
-                  {manager.totals.streams}str
-                </span>
-              </h2>
-              <div className="row">
-                <input
-                  value={subjectLabel}
-                  onChange={(e) => setSubjectLabel(e.target.value)}
-                  placeholder="S001"
-                  style={{ width: 70 }}
-                />
-                <input
-                  value={subjectMeta}
-                  onChange={(e) => setSubjectMeta(e.target.value)}
-                  placeholder="{}"
-                  style={{ flex: 1, minWidth: 0 }}
-                />
-                <button type="button" onClick={() => void addSubject()}>
-                  +subj
+          </nav>
+        )}
+        {page === "studio" && (
+          <nav className="stagebar" aria-label="NeuroStudio stages">
+            {STUDIO_STAGES.map((stage, i) => (
+              <span key={stage.id} className="stage-wrap">
+                {i > 0 && <span className="stage-connector" />}
+                <button
+                  type="button"
+                  className={`stage-chip ${studioStage === stage.id ? "active" : ""}`}
+                  onClick={() => goStudio(stage.id)}
+                >
+                  <span className="stage-n">{i + 1}.</span>
+                  {stage.label}
                 </button>
+              </span>
+            ))}
+          </nav>
+        )}
+
+        <div className={`workspace-body ${page === "flow" && flowStage === "inspect" ? "inspect-body" : ""}`}>
+          {page === "flow" && selectedId && (
+            <header className="page-header">
+              <div>
+                <h2>{flowMeta.title}</h2>
+                <p className="page-desc">{flowMeta.description}</p>
+                <div className="context-strip">
+                  <div className="context-cell">
+                    <div className="context-key">Study</div>
+                    <div className="context-value">{manager?.name ?? "—"}</div>
+                  </div>
+                  <span className="stat-divider" />
+                  <div className="context-cell">
+                    <div className="context-key">Recording</div>
+                    <div className="context-value">
+                      {selectedRec
+                        ? `${selectedRec.modalities.join("+") || "recording"} · ${selectedRec.source_format ?? "—"}`
+                        : "None selected"}
+                    </div>
+                  </div>
+                </div>
               </div>
-              <div className="tree">
-                {manager.subjects.map((sub) => (
-                  <div key={sub.id} className="tree-sub">
-                    <div className="tree-label">{sub.label}</div>
-                    {sub.sessions.map((ses) =>
-                      ses.runs.map((run) =>
+            </header>
+          )}
+          {page === "studio" && selectedId && (
+            <header className="page-header">
+              <div>
+                <h2>{studioMeta.title}</h2>
+                <p className="page-desc">{studioMeta.description}</p>
+                <div className="context-strip">
+                  <div className="context-cell">
+                    <div className="context-key">Study</div>
+                    <div className="context-value">{manager?.name ?? "—"}</div>
+                  </div>
+                </div>
+              </div>
+            </header>
+          )}
+          {page === "home" && (
+            <section className="home-page">
+              <div className="page-header">
+                <div>
+                  <h2>Home</h2>
+                  <p className="page-desc">
+                    {selectedId && manager
+                      ? `${manager.name}  ·  ${manager.study_id.slice(0, 12)}`
+                      : "Create a study, then import a recording."}
+                  </p>
+                </div>
+                <div className="header-actions">
+                  <button
+                    type="button"
+                    className="btn-primary"
+                    onClick={() => {
+                      setPage("flow");
+                      setFlowStage("recording");
+                    }}
+                  >
+                    Import recording
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={() => {
+                      setPage("studio");
+                      setStudioStage("train");
+                    }}
+                  >
+                    Train model
+                  </button>
+                </div>
+              </div>
+
+              <div className="stat-row">
+                <div className="stat-block">
+                  <div className="stat-value">{manager?.totals.subjects ?? 0}</div>
+                  <div className="stat-label">Subjects</div>
+                </div>
+                <span className="stat-divider" />
+                <div className="stat-block">
+                  <div className="stat-value">{manager?.totals.recordings ?? 0}</div>
+                  <div className="stat-label">Recordings</div>
+                </div>
+                <span className="stat-divider" />
+                <div className="stat-block">
+                  <div className="stat-value">{manager?.totals.streams ?? 0}</div>
+                  <div className="stat-label">Streams</div>
+                </div>
+              </div>
+
+              <div className="eyebrow">Recordings</div>
+              {manager ? (
+                <div className="row-list">
+                  {manager.subjects.flatMap((sub) =>
+                    sub.sessions.flatMap((ses) =>
+                      ses.runs.flatMap((run) =>
                         run.recordings.map((rec) => (
                           <button
                             key={rec.id}
                             type="button"
-                            className={`tree-rec ${rec.id === selectedRecId ? "active" : ""}`}
+                            className={`list-row ${rec.id === selectedRecId ? "active" : ""}`}
                             onClick={() => {
                               setSelectedRecId(rec.id);
                               setExtRecordingId(rec.id);
                               setTlStart(0);
-                              setTab("timeline");
+                              setPage("flow");
+                              setFlowStage("inspect");
                             }}
                           >
-                            <div>
-                              {(rec.modalities.length ? rec.modalities : ["?"]).join("+")} ·{" "}
+                            <span className="row-title">
+                              {sub.label} · {(rec.modalities.length ? rec.modalities : ["?"]).join("+")} ·{" "}
                               {rec.source_format ?? "—"}
-                            </div>
-                            <div className="muted tiny">
-                              {rec.id.slice(0, 12)} · {rec.streams.length} streams
+                            </span>
+                            <span className="row-meta">
+                              {rec.streams.length} streams
                               {rec.validation_ok === true
                                 ? " · ok"
                                 : rec.validation_ok === false
-                                  ? " · FAIL"
+                                  ? " · fail"
                                   : ""}
                               {rec.sync_group_ids.length
-                                ? ` · sync~${(rec.sync_confidence ?? 0).toFixed(2)}`
+                                ? ` · sync ~${(rec.sync_confidence ?? 0).toFixed(2)}`
                                 : " · no sync"}
-                            </div>
+                            </span>
                           </button>
                         )),
                       ),
-                    )}
-                    {!sub.sessions.some((s) => s.runs.some((r) => r.recordings.length)) && (
-                      <div className="muted tiny">no recordings</div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
-        </aside>
+                    ),
+                  )}
+                  {!manager.totals.recordings && (
+                    <p className="muted">No recordings yet. Import one to start NeuroFlow.</p>
+                  )}
+                </div>
+              ) : (
+                <p className="muted">Select or create a study to see recordings.</p>
+              )}
 
-        <main className="main">
-          {!selectedId && <p className="muted">Create or select a study.</p>}
-          {selectedId && (
-            <>
-              <div className="tabs">
-                {(
-                  [
-                    ["import", "Import"],
-                    ["timeline", "Visualizer"],
-                    ["sync", "Sync"],
-                    ["validate", "Validate"],
-                    ["events", "Events"],
-                    ["preprocess", "Preprocess"],
-                    ["epochs", "Epochs"],
-                    ["features", "Features"],
-                    ["analysis", "Analysis"],
-                    ["dataset", "Dataset"],
-                    ["studio", "Studio"],
-                    ["report", "Report"],
-                    ["export", "Export"],
-                  ] as const
-                ).map(([id, label]) => (
+              {manager && (
+                <>
+                  <div className="eyebrow">Subjects</div>
+                  <div className="row">
+                    <input
+                      value={subjectLabel}
+                      onChange={(e) => setSubjectLabel(e.target.value)}
+                      placeholder="S001"
+                      style={{ width: 70 }}
+                    />
+                    <input
+                      value={subjectMeta}
+                      onChange={(e) => setSubjectMeta(e.target.value)}
+                      placeholder="{}"
+                      style={{ flex: 1, minWidth: 0 }}
+                    />
+                    <button type="button" className="btn-secondary" onClick={() => void addSubject()}>
+                      Add subject
+                    </button>
+                  </div>
+                  <p className="muted tiny">
+                    {manager.subjects.map((s) => s.label).join(" · ") || "None yet"}
+                  </p>
+                </>
+              )}
+
+              <div className="eyebrow">Studies</div>
+              <div className="row">
+                <input value={studyName} onChange={(e) => setStudyName(e.target.value)} />
+                <button type="button" className="btn-secondary" onClick={() => void createStudy()}>
+                  Create study
+                </button>
+              </div>
+              <div className="row-list home-studies">
+                {studies.map((s) => (
                   <button
-                    key={id}
+                    key={s.id}
                     type="button"
-                    className={tab === id ? "active" : ""}
-                    onClick={() => setTab(id)}
+                    className={`list-row ${s.id === selectedId ? "active" : ""}`}
+                    onClick={() => void selectStudy(s.id)}
                   >
-                    {label}
+                    <span className="row-title">{s.name}</span>
+                    <span className="row-meta">schema v{s.schema_version ?? 1}</span>
                   </button>
                 ))}
               </div>
+            </section>
+          )}
 
-              {selectedRec && (
-                <p className="rec-banner">
-                  Recording <code>{selectedRec.id.slice(0, 16)}</code> ·{" "}
-                  {selectedRec.modalities.join(", ") || "no modalities"} ·{" "}
-                  {selectedRec.streams.length} streams
-                </p>
-              )}
+          {page !== "home" && !selectedId && (
+            <div className="empty-state">
+              <p>Select or create a study on Home first.</p>
+              <button type="button" className="btn-primary" onClick={() => setPage("home")}>
+                Go to Home
+              </button>
+            </div>
+          )}
 
-              {tab === "import" && (
+          {selectedId && page === "flow" && flowStage === "recording" && (
                 <section>
-                  <h2>Import EEG</h2>
+                  <div className="eyebrow">Import EEG</div>
                   <div className="row">
                     <button type="button" onClick={() => void browseImport()}>
                       Browse…
@@ -1428,6 +1725,7 @@ function App() {
                     />
                     <button
                       type="button"
+                      className="btn btn-primary"
                       onClick={() => void importRecording()}
                       disabled={!importPath}
                     >
@@ -1535,7 +1833,7 @@ function App() {
                     </div>
                   )}
 
-                  <h2>Import external stream</h2>
+                  <div className="eyebrow">Import external stream</div>
                   <div className="row">
                     <button type="button" onClick={() => void browseExternal()}>
                       Browse…
@@ -1620,14 +1918,14 @@ function App() {
                 </section>
               )}
 
-              {tab === "sync" && (
+              {selectedId && page === "flow" && flowStage === "plan" && (
                 <section>
-                  <h2>Synchronization</h2>
+                  <div className="eyebrow">Synchronization</div>
                   <p className="muted">
                     Never assumes streams are aligned from similar start times. Use triggers,
                     timestamps, or manual offsets.
                   </p>
-                  {!selectedRecId && <p className="muted">Select a recording in the manager.</p>}
+                  {!selectedRecId && <p className="muted">Open a recording from Home first.</p>}
                   {selectedRecId && (
                     <>
                       <div className="row">
@@ -1713,12 +2011,9 @@ function App() {
                       )}
                     </>
                   )}
-                </section>
-              )}
 
-              {tab === "validate" && (
-                <section>
-                  <h2>Validation</h2>
+                  <div className="stage-block">
+                  <div className="eyebrow">Validation</div>
                   <div className="row">
                     <button type="button" onClick={() => void runValidate("recording")}>
                       Validate recording
@@ -1735,12 +2030,10 @@ function App() {
                     </p>
                   )}
                   <pre className="log">{validationJson || "Run validation to see report."}</pre>
-                </section>
-              )}
+                  </div>
 
-              {tab === "events" && (
-                <section>
-                  <h2>Events / annotations</h2>
+                  <div className="stage-block">
+                  <div className="eyebrow">Events / annotations</div>
                   <div className="row">
                     <button type="button" onClick={() => void runFlow("events.list")}>
                       List events
@@ -1778,12 +2071,10 @@ function App() {
                     </button>
                   </div>
                   <pre className="log">{flowJson || "—"}</pre>
-                </section>
-              )}
+                  </div>
 
-              {tab === "preprocess" && (
-                <section>
-                  <h2>NeuroFlow plans</h2>
+                  <div className="stage-block">
+                  <div className="eyebrow">NeuroFlow plans</div>
                   <p className="muted">Default plan is a fixed placeholder (not data-adaptive).</p>
                   <div className="row">
                     <button type="button" onClick={() => void runFlow("plans.default")}>
@@ -1819,12 +2110,10 @@ function App() {
                     </button>
                   </div>
                   <pre className="log">{flowJson || "—"}</pre>
-                </section>
-              )}
+                  </div>
 
-              {tab === "epochs" && (
-                <section>
-                  <h2>Epochs / trials</h2>
+                  <div className="stage-block">
+                  <div className="eyebrow">Epochs / trials</div>
                   <div className="row">
                     <button
                       type="button"
@@ -1839,12 +2128,13 @@ function App() {
                     </button>
                   </div>
                   <pre className="log">{flowJson || "—"}</pre>
+                  </div>
                 </section>
               )}
 
-              {tab === "features" && (
+              {selectedId && page === "flow" && flowStage === "review" && (
                 <section>
-                  <h2>Feature extraction</h2>
+                  <div className="eyebrow">Feature extraction</div>
                   <div className="row">
                     <button
                       type="button"
@@ -1863,12 +2153,9 @@ function App() {
                     </button>
                   </div>
                   <pre className="log">{flowJson || "—"}</pre>
-                </section>
-              )}
 
-              {tab === "analysis" && (
-                <section>
-                  <h2>Analysis / statistics</h2>
+                  <div className="stage-block">
+                  <div className="eyebrow">Analysis / statistics</div>
                   <div className="row">
                     <button
                       type="button"
@@ -1887,12 +2174,13 @@ function App() {
                     </button>
                   </div>
                   <pre className="log">{flowJson || "—"}</pre>
+                  </div>
                 </section>
               )}
 
-              {tab === "dataset" && (
+              {selectedId && page === "studio" && studioStage === "data" && (
                 <section>
-                  <h2>ML dataset + splits</h2>
+                  <div className="eyebrow">ML dataset + splits</div>
                   <div className="row">
                     <button
                       type="button"
@@ -1942,9 +2230,9 @@ function App() {
                 </section>
               )}
 
-              {tab === "studio" && (
+              {selectedId && page === "studio" && studioStage === "train" && (
                 <section>
-                  <h2>NeuroStudio</h2>
+                  <div className="eyebrow">Experiment</div>
                   <p className="muted tiny">
                     Recommend always returns EEGNet placeholder. Training uses sklearn LogReg on
                     the ML dataset (Braindecode train not wired yet).
@@ -2040,9 +2328,9 @@ function App() {
                 </section>
               )}
 
-              {tab === "report" && (
+              {selectedId && page === "studio" && studioStage === "export" && (
                 <section>
-                  <h2>Results / reporting</h2>
+                  <div className="eyebrow">Results / reporting</div>
                   <div className="row">
                     <button
                       type="button"
@@ -2066,12 +2354,9 @@ function App() {
                     </button>
                   </div>
                   <pre className="log">{flowJson || "—"}</pre>
-                </section>
-              )}
 
-              {tab === "export" && (
-                <section>
-                  <h2>Save / export</h2>
+                  <div className="stage-block">
+                  <div className="eyebrow">Save / export</div>
                   <div className="row">
                     <button
                       type="button"
@@ -2095,21 +2380,21 @@ function App() {
                     </button>
                   </div>
                   <pre className="log">{flowJson || "—"}</pre>
+                  </div>
                 </section>
               )}
 
-              {tab === "timeline" && (
+              {selectedId && page === "flow" && flowStage === "inspect" && (
                 <section>
-                  <h2>Visualizer</h2>
                   {!selectedRecId && (
-                    <p className="muted">Select a recording in the manager — it loads automatically.</p>
+                    <p className="muted">Open a recording from Home — it loads automatically.</p>
                   )}
                   {selectedRecId && (
                     <>
-                      <div className="row">
+                      <div className="plot-hub" role="tablist" aria-label="Plot views">
                         {(
                           [
-                            ["signal", "Signal"],
+                            ["signal", "Channels"],
                             ["ica", "ICA"],
                             ["erp", "ERP"],
                             ["epochs", "Epochs"],
@@ -2118,7 +2403,8 @@ function App() {
                           <button
                             key={id}
                             type="button"
-                            className={vizMode === id ? "active" : ""}
+                            role="tab"
+                            className={`plot-tab ${vizMode === id ? "active" : ""}`}
                             onClick={() => {
                               setVizMode(id);
                               if (id === "ica" && !icaData) void loadIca();
@@ -2577,15 +2863,31 @@ function App() {
                   )}
                 </section>
               )}
-            </>
+          </div>
+
+          {page !== "home" && selectedId && (
+            <footer className="stage-footer">
+              <span className="stage-status">{status}</span>
+              <button type="button" className="btn-secondary" onClick={retreatStage}>
+                Back
+              </button>
+              <button type="button" className="btn-primary" onClick={advanceStage}>
+                {page === "flow" ? flowMeta.primary : studioMeta.primary}
+              </button>
+            </footer>
           )}
 
-          <section>
-            <h3>Log</h3>
-            <pre className="log">{log || "—"}</pre>
-          </section>
-        </main>
-      </div>
+          <div className={`log-drawer ${logOpen ? "open" : ""}`}>
+            <button
+              type="button"
+              className="log-toggle"
+              onClick={() => setLogOpen((v) => !v)}
+            >
+              Log {logOpen ? "▾" : "▴"}
+            </button>
+            {logOpen && <pre className="log">{log || "—"}</pre>}
+          </div>
+        </div>
     </div>
   );
 }
