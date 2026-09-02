@@ -1,24 +1,4 @@
-:root,
 
-[data-theme="light"] {
-  --bg: #ffffff;
-  --rail: #fafafb;
-  --titlebar: #ffffff;
-  --hover: #f1f2f4;
-  --active: #f1f2f4;
-  --line: #e8e9ec;
-  --text: #16181d;
-  --muted: #6b7280;
-  --accent: #2f6feb;
-  --accent-hover: #2559c8;
-  --accent-text: #ffffff;
-  --danger: #c8443c;
-  --danger-bg: #fce4e4;
-  --warn: #bf8803;
-  --plot: #0a0a0a;
-  --input-bg: #fafafb;
-  --btn-bg: transparent;
-}
 
 
 
