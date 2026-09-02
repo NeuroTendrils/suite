@@ -5,7 +5,8 @@
 :root,
 [data-theme="dark"] {
   --ink: #080b11;          /* signal well — deepest surface, recessed */
-  --shell: #0e121b;        /* chrome */
+  --shell: #0e121b;
+  --rail: #0d1119;        /* chrome */
   --panel: #131826;        /* side columns */
   --panel-hi: #182034;     /* raised rows, pressed states */
   --line: #202839;
@@ -27,6 +28,7 @@
 [data-theme="light"] {
   --ink: #f4f6fa;
   --shell: #ffffff;
+  --rail: #f0f2f6;
   --panel: #fafbfd;
   --panel-hi: #eef1f7;
   --line: #dfe3ec;
@@ -74,3 +76,4 @@
     transition-duration: 0.01ms !important;
   }
 }
+
