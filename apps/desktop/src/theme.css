@@ -1,0 +1,79 @@
+/* NeuroTendrils Suite — design tokens.
+   The only place colors, type, and spacing are defined. Components reference
+   variables, never literals, so a theme change is a single-file edit. */
+
+:root,
+[data-theme="dark"] {
+  --ink: #080b11;          /* signal well — deepest surface, recessed */
+  --shell: #0e121b;
+  --rail: #0d1119;        /* chrome */
+  --panel: #131826;        /* side columns */
+  --panel-hi: #182034;     /* raised rows, pressed states */
+  --line: #202839;
+  --line-soft: #171e2c;
+
+  --text: #d9e1f0;
+  --dim: #737f97;
+  --dimmer: #4a5468;
+
+  --trace: #7fa8ff;        /* derived from brand #6f96ff */
+  --trace-deep: #4e7de0;
+  --verified: #3fd9a4;
+  --flagged: #ff6b6b;
+  --event: #f0b429;
+
+  color-scheme: dark;
+}
+
+[data-theme="light"] {
+  --ink: #f4f6fa;
+  --shell: #ffffff;
+  --rail: #f0f2f6;
+  --panel: #fafbfd;
+  --panel-hi: #eef1f7;
+  --line: #dfe3ec;
+  --line-soft: #ebeef4;
+
+  --text: #16181d;
+  --dim: #5d6678;
+  --dimmer: #8a93a5;
+
+  --trace: #2f6feb;
+  --trace-deep: #2559c8;
+  --verified: #12996c;
+  --flagged: #c8443c;
+  --event: #b07d05;
+
+  color-scheme: light;
+}
+
+:root {
+  --sans: "IBM Plex Sans", ui-sans-serif, system-ui, "Segoe UI", sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  --r-sm: 3px;
+  --r: 4px;
+  --r-lg: 6px;
+
+  --dur-press: 120ms;
+  --dur-panel: 180ms;
+  --ease-panel: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+/* Numerals that must align in a column. Not decorative — only use where
+   values are compared vertically or updated in place. */
+.num {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+

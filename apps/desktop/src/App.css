@@ -1,51 +1,6 @@
-:root,
-[data-theme="dark"] {
-  --bg: #0f1013;
-  --rail: #14161a;
-  --titlebar: #0f1013;
-  --hover: #1c1f25;
-  --active: #1c1f25;
-  --line: #23262d;
-  --text: #e7e9ed;
-  --muted: #8f949e;
-  --accent: #6f8dff;
-  --accent-hover: #89a1ff;
-  --accent-text: #0f1013;
-  --danger: #ea6a6a;
-  --danger-bg: #3a1c1c;
-  --warn: #cca700;
-  --plot: #0a0a0a;
-  --input-bg: #14161a;
-  --btn-bg: transparent;
-}
 
-[data-theme="light"] {
-  --bg: #ffffff;
-  --rail: #fafafb;
-  --titlebar: #ffffff;
-  --hover: #f1f2f4;
-  --active: #f1f2f4;
-  --line: #e8e9ec;
-  --text: #16181d;
-  --muted: #6b7280;
-  --accent: #2f6feb;
-  --accent-hover: #2559c8;
-  --accent-text: #ffffff;
-  --danger: #c8443c;
-  --danger-bg: #fce4e4;
-  --warn: #bf8803;
-  --plot: #0a0a0a;
-  --input-bg: #fafafb;
-  --btn-bg: transparent;
-}
 
-:root {
-  font-family: ui-sans-serif, system-ui, "Segoe UI", Helvetica, Arial, sans-serif;
-  font-size: 13px;
-  line-height: 1.4;
-  color: var(--text);
-  background: var(--bg);
-}
+
 
 .app {
   height: 100%;
