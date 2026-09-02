@@ -1,0 +1,97 @@
+.lineage {
+  background: var(--ink);
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  padding: 8px 14px 9px;
+}
+
+.lineage__head { display: flex; align-items: baseline; gap: 9px; margin-bottom: 8px; }
+.lineage__head b { font-size: 12px; font-weight: 500; }
+.lineage__head em { font-style: normal; font-size: 11.5px; color: var(--dim); }
+.lineage__head em.is-notice { color: var(--verified); }
+.lineage__actions { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+.lineage__warn { font-size: 11.5px; color: var(--event); }
+
+.lineage__chain {
+  display: flex;
+  align-items: flex-start;
+  list-style: none;
+  margin: 0;
+  padding: 0 0 2px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.lineage__step {
+  position: relative;
+  flex: none;
+  min-width: 74px;
+  padding: 0 3px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+
+.lineage__rail {
+  position: absolute;
+  top: 6px;
+  left: -50%;
+  right: 50%;
+  height: 1px;
+  background: var(--line);
+}
+.lineage li:first-child .lineage__rail { display: none; }
+
+.lineage__knob {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  border: 2px solid var(--line);
+  background: var(--ink);
+  position: relative;
+  z-index: 1;
+  transition: border-color var(--dur-press), background var(--dur-press);
+}
+
+.lineage__label {
+  margin-top: 6px;
+  font-size: 11px;
+  line-height: 1.3;
+  text-align: center;
+  color: var(--dimmer);
+  transition: color var(--dur-press);
+}
+
+.lineage__detail {
+  font-size: 10px;
+  color: var(--dimmer);
+  opacity: 0;
+  transition: opacity var(--dur-press);
+}
+
+/* completed */
+.lineage__step.is-done .lineage__knob { border-color: var(--trace-deep); background: var(--trace-deep); }
+.lineage__step.is-done .lineage__rail { background: var(--trace-deep); }
+.lineage__step.is-done .lineage__label { color: var(--dim); }
+
+/* human judgment reads amber — distinct from automated steps */
+.lineage__step.is-human .lineage__knob { border-color: var(--event); background: var(--event); }
+
+/* current */
+.lineage__step.is-current .lineage__knob {
+  border-color: var(--trace);
+  background: var(--trace);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--trace) 16%, transparent);
+}
+.lineage__step.is-current .lineage__label { color: var(--text); font-weight: 500; }
+.lineage__step.is-current .lineage__detail { opacity: 1; color: var(--dim); }
+
+.lineage__step:hover .lineage__label { color: var(--text); }
+.lineage__step:hover .lineage__detail { opacity: 1; }
+.lineage__step:focus-visible { outline: 2px solid var(--trace); outline-offset: 2px; border-radius: var(--r); }

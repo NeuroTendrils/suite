@@ -1,0 +1,25 @@
+.signal-canvas {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--ink);
+  cursor: crosshair;
+}
+.signal-canvas[data-readonly] { cursor: default; }
+.signal-canvas canvas { display: block; width: 100%; height: 100%; }
+
+.signal-canvas__readout {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  padding: 5px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: color-mix(in srgb, var(--ink) 86%, transparent);
+  backdrop-filter: blur(3px);
+  font-size: 11px;
+  color: var(--text);
+  pointer-events: none;
+}

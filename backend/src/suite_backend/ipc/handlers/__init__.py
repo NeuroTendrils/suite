@@ -1,4 +1,6 @@
 from suite_backend.ipc.handlers import (
+    from suite_backend.ipc.handlers import batch_cmds  # noqa: F401
+    from suite_backend.ipc.handlers import lineage_cmds  # noqa: F401
     analysis_cmds,
     artifact_cmds,
     channel_cmds,
