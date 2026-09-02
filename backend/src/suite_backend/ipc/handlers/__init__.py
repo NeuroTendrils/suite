@@ -1,12 +1,12 @@
 from suite_backend.ipc.handlers import (
-    from suite_backend.ipc.handlers import batch_cmds  # noqa: F401
-    from suite_backend.ipc.handlers import lineage_cmds  # noqa: F401
     analysis_cmds,
+    batch_cmds,
     artifact_cmds,
     channel_cmds,
     core,
     dataset_cmds,
     epoch_cmds,
+    lineage_cmds,
     event_cmds,
     feature_cmds,
     neuroflow_cmds,
@@ -20,11 +20,13 @@ from suite_backend.ipc.handlers import (
 
 __all__ = [
     "analysis_cmds",
+    "batch_cmds",
     "artifact_cmds",
     "channel_cmds",
     "core",
     "dataset_cmds",
     "epoch_cmds",
+    "lineage_cmds",
     "event_cmds",
     "feature_cmds",
     "neuroflow_cmds",
@@ -35,3 +37,5 @@ __all__ = [
     "sync_cmds",
     "validate_cmds",
 ]
+
+
