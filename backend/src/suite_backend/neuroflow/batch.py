@@ -205,7 +205,10 @@ def check_eligibility(
                 continue
             parameters = getattr(art, "parameters", None) or {}
             same_plan = parameters.get("plan_id") == plan.id
-            same_rev = parameters.get("plan_revision") == getattr(plan, "revision", None)
+            # plan_executor records "plan_version" from ProcessingPlan.version.
+            # Read that field name exactly — a mismatch here silently disables
+            # idempotence, so every re-run would reprocess the whole study.
+            same_rev = parameters.get("plan_version") == getattr(plan, "version", None)
             if same_plan and same_rev:
                 return (
                     False,

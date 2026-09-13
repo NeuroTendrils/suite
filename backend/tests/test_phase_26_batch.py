@@ -55,7 +55,7 @@ class FakeRepo:
 class FakePlan:
     id = "plan_1"
     name = "test plan"
-    revision = 1
+    version = 1
     steps = []
 
 
@@ -127,7 +127,7 @@ def test_multistream_with_syncgroup_is_eligible():
 
 def test_already_processed_is_skipped_unless_forced():
     art = SimpleNamespace(
-        id="art_1", recording_id="r", parameters={"plan_id": "plan_1", "plan_revision": 1}
+        id="art_1", recording_id="r", parameters={"plan_id": "plan_1", "plan_version": 1}
     )
     ok, reason, _ = B.check_eligibility(
         _rec("r"), streams=[_stream()], plan=FakePlan(), existing_artifacts=[art]
