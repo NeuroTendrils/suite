@@ -88,11 +88,23 @@ jobs:
         with:
           path: dist
 
-      - name: Publish release
+      # Source stays private, binaries go public. A release on a private repo
+      # is only visible to collaborators, so the artifacts are published to
+      # the separate public releases repo instead.
+      #
+      # GITHUB_TOKEN cannot write to another repository. Create a fine-grained
+      # PAT scoped to NeuroTendrils/releases with Contents: read and write,
+      # then save it as the RELEASES_TOKEN secret on this repo.
+      - name: Publish to public releases repo
         uses: softprops/action-gh-release@v2
         with:
+          repository: NeuroTendrils/releases
+          token: ${{ secrets.RELEASES_TOKEN }}
+          tag_name: suite-${{ github.ref_name }}
+          name: NeuroTendrils Suite ${{ github.ref_name }}
           files: dist/**/*
-          generate_release_notes: true
-          # Not stable until the UI wiring lands. Flip to false once the
-          # lineage ribbon and batch runner are visible in the app.
           prerelease: true
+          body: |
+            NeuroTendrils Suite ${{ github.ref_name }}
+
+            Pre-release. Download the file for your platform below.
