@@ -1,21 +1,55 @@
 /* NeuroTendrils Suite — design tokens.
    The only place colors, type, and spacing are defined. Components reference
-   variables, never literals, so a theme change is a single-file edit. */
+   variables, never literals, so a theme change is a single-file edit.
+
+   Two layers:
+   - Surface/semantic tokens (--bg, --surface, --accent, --danger, …) used by App.css.
+   - Signal tokens (--ink, --trace, --verified, …) used by the plot components.
+   Both are defined for each theme; nothing else in the app defines colors. */
 
 :root,
 [data-theme="dark"] {
-  --ink: #080b11;          /* signal well — deepest surface, recessed */
-  --shell: #0e121b;        /* chrome */
-  --panel: #131826;        /* side columns */
-  --panel-hi: #182034;     /* raised rows, pressed states */
-  --line: #202839;
-  --line-soft: #171e2c;
+  /* Surfaces, darkest to lightest */
+  --ink: #0a0d12;          /* signal well — recessed plot background */
+  --bg: #0f1218;           /* app background */
+  --shell: #12161d;        /* title bar, footers */
+  --rail: #0c0f14;         /* navigation rail */
+  --panel: #151a22;        /* cards, side columns */
+  --panel-hi: #1b212b;     /* raised rows, table headers */
+  --hover: #1f2631;
+  --line: #2a3340;
+  --line-soft: #1f2630;
 
-  --text: #d9e1f0;
-  --dim: #737f97;
-  --dimmer: #4a5468;
+  --text: #e4e8ef;
+  --dim: #a9b2c1;          /* secondary text */
+  --dimmer: #828c9c;       /* tertiary text, placeholders */
 
-  --trace: #7fa8ff;        /* derived from brand #6f96ff */
+  --accent: #4d8dff;
+  --accent-hover: #6a9fff;
+  --accent-text: #ffffff;
+  --accent-soft: rgba(77, 141, 255, 0.14);
+  --focus: #7aa9ff;
+
+  --ok: #3fb68b;
+  --ok-bg: rgba(63, 182, 139, 0.12);
+  --warn: #d9a441;
+  --warn-bg: rgba(217, 164, 65, 0.12);
+  --danger: #e5534b;
+  --danger-bg: rgba(229, 83, 75, 0.12);
+
+  --input-bg: #0c1016;
+  --btn-bg: #1a2029;
+
+  /* Module identity — used for markers only, never large fills */
+  --mod-home: #4d8dff;
+  --mod-flow: #2fb5a0;
+  --mod-studio: #9d87f5;
+  --mod-home-soft: rgba(77, 141, 255, 0.14);
+  --mod-flow-soft: rgba(47, 181, 160, 0.14);
+  --mod-studio-soft: rgba(157, 135, 245, 0.15);
+
+  /* Signal */
+  --trace: #7fa8ff;
   --trace-deep: #4e7de0;
   --verified: #3fd9a4;
   --flagged: #ff6b6b;
@@ -26,15 +60,41 @@
 
 [data-theme="light"] {
   --ink: #f4f6fa;
+  --bg: #f6f7f9;
   --shell: #ffffff;
-  --panel: #fafbfd;
-  --panel-hi: #eef1f7;
-  --line: #dfe3ec;
-  --line-soft: #ebeef4;
+  --rail: #eef0f4;
+  --panel: #ffffff;
+  --panel-hi: #f1f3f7;
+  --hover: #e9edf3;
+  --line: #d9dee7;
+  --line-soft: #e8ebf0;
 
-  --text: #16181d;
-  --dim: #5d6678;
-  --dimmer: #8a93a5;
+  --text: #161a21;
+  --dim: #4b5566;
+  --dimmer: #6c7686;
+
+  --accent: #2563eb;
+  --accent-hover: #1d4fd0;
+  --accent-text: #ffffff;
+  --accent-soft: rgba(37, 99, 235, 0.1);
+  --focus: #2563eb;
+
+  --ok: #12855e;
+  --ok-bg: rgba(18, 133, 94, 0.1);
+  --warn: #9a6a05;
+  --warn-bg: rgba(176, 125, 5, 0.12);
+  --danger: #c23a32;
+  --danger-bg: rgba(194, 58, 50, 0.09);
+
+  --input-bg: #ffffff;
+  --btn-bg: #ffffff;
+
+  --mod-home: #2563eb;
+  --mod-flow: #0f8a78;
+  --mod-studio: #6d4fd8;
+  --mod-home-soft: rgba(37, 99, 235, 0.1);
+  --mod-flow-soft: rgba(15, 138, 120, 0.1);
+  --mod-studio-soft: rgba(109, 79, 216, 0.1);
 
   --trace: #2f6feb;
   --trace-deep: #2559c8;
@@ -46,12 +106,35 @@
 }
 
 :root {
-  --sans: "IBM Plex Sans", ui-sans-serif, system-ui, "Segoe UI", sans-serif;
-  --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  /* System UI fonts: consistent with the host OS, no bundled font files. */
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI Variable", "Segoe UI", system-ui,
+    Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
 
-  --r-sm: 3px;
-  --r: 4px;
-  --r-lg: 6px;
+  /* Type scale — 12px is the floor for any readable text */
+  --fs-xs: 12px;
+  --fs-sm: 13px;
+  --fs-base: 14px;
+  --fs-md: 15px;
+  --fs-lg: 18px;
+  --fs-xl: 22px;
+
+  /* Spacing scale (4px grid) */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+
+  --r-sm: 4px;
+  --r: 6px;
+  --r-lg: 8px;
+
+  --control-h: 34px;
+  /* Height of a field label line; lets buttons align with inputs in a form row */
+  --label-h: 19px;
 
   --dur-press: 120ms;
   --dur-panel: 180ms;

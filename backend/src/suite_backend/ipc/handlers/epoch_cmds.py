@@ -163,6 +163,7 @@ def epochs_list(params: EpochListParams, ctx: AppContext) -> dict:
                 "event_names": e.event_names,
                 "tmin": e.tmin,
                 "tmax": e.tmax,
+                "created_at": e.created_at.isoformat(),
             }
             for e in sets
         ]

@@ -110,6 +110,7 @@ def datasets_list(params: DatasetListParams, ctx: AppContext) -> dict:
                 "n_features": d.n_features,
                 "label_names": d.label_names,
                 "modalities": d.modalities,
+                "created_at": d.created_at.isoformat(),
             }
             for d in ctx.studies.list_mldatasets(params.study_id)
         ]

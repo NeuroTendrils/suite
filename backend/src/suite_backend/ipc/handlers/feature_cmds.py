@@ -71,6 +71,7 @@ def features_list(params: FeatureListParams, ctx: AppContext) -> dict:
                 "recording_id": f.recording_id,
                 "n_features": len(f.feature_names),
                 "export_paths": f.export_paths,
+                "created_at": f.created_at.isoformat(),
             }
             for f in sets
         ]

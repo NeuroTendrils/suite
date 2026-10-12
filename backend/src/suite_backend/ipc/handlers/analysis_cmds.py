@@ -79,6 +79,7 @@ def analysis_list(params: AnalysisListParams, ctx: AppContext) -> dict:
                 "kind": r.kind,
                 "recording_id": r.recording_id,
                 "summary": r.summary,
+                "created_at": r.created_at.isoformat(),
             }
             for r in reports
         ]

@@ -136,6 +136,9 @@ def experiments_list(params: ExperimentListParams, ctx: AppContext) -> dict:
                 "input_artifact_id": e.input_artifact_id,
                 "metrics": e.metrics,
                 "model": e.model,
+                "split_id": (e.split_definition or {}).get("split_id"),
+                "leakage_check": (e.results or {}).get("leakage_check"),
+                "created_at": e.created_at.isoformat(),
             }
             for e in exps
         ]
