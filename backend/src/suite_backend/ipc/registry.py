@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from typing import Any, TypeVar
 
@@ -8,6 +9,8 @@ from pydantic import BaseModel, ValidationError
 from suite_backend.ipc.protocol import RpcRequest, RpcResponse
 
 P = TypeVar("P", bound=BaseModel)
+
+logger = logging.getLogger(__name__)
 
 
 class CommandSpec:
@@ -54,7 +57,8 @@ class CommandRegistry:
             return RpcResponse(id=request.id, ok=False, error=f"invalid params: {exc}")
         try:
             result = spec.handler(params, ctx)
-        except Exception as exc:  # noqa: BLE001 — boundary; structured to client
+        except Exception as exc:  # boundary; logged and structured to client
+            logger.exception("command %s (request %s) failed", request.command, request.id)
             return RpcResponse(id=request.id, ok=False, error=str(exc))
         if isinstance(result, BaseModel):
             payload = result.model_dump(mode="json")
