@@ -1,0 +1,84 @@
+/* Learn owns its iframe viewport; research pages keep their existing scroller. */
+.content.content-learn {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+}
+
+.learn-page {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  max-width: none;
+}
+
+.learn-page[hidden] { display: none; }
+.content > .learn-page[hidden] + * { margin-top: 0; }
+.content.content-learn > .learn-page { max-width: none; }
+
+.learn-header {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-2) var(--sp-6);
+  padding: var(--sp-3) var(--sp-6);
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+}
+
+.learn-header h1 { margin: 0; font-size: var(--fs-xl); }
+.learn-header p { margin: 2px 0 0; color: var(--dim); }
+.learn-local {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  color: var(--dim);
+  font-size: var(--fs-sm);
+}
+
+.learn-surface {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  background: var(--neuro-mist);
+}
+
+.learn-frame {
+  display: block;
+  flex: 1;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  border: 0;
+  color-scheme: light;
+}
+
+.learn-frame-starting { visibility: hidden; }
+
+.learn-status {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-3);
+  padding: var(--sp-6);
+  overflow: auto;
+  text-align: center;
+  background: var(--panel);
+  color: var(--text);
+}
+
+.learn-status h2, .learn-status p { margin: 0; }
+.learn-status p { max-width: 48ch; color: var(--dim); }
+
+@media (max-width: 760px) {
+  .learn-header { padding: var(--sp-2) var(--sp-4); }
+  .learn-local { font-size: var(--fs-xs); }
+}

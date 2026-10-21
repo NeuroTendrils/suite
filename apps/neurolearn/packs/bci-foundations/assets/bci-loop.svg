@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="220" viewBox="0 0 720 220" role="img">
+  <rect width="720" height="220" fill="#f3f6f4"/>
+  <rect x="24" y="70" width="140" height="64" rx="12" fill="#1f6f5b"/>
+  <text x="94" y="108" text-anchor="middle" fill="#f7faf8" font-family="Helvetica, Arial, sans-serif" font-size="18">Sense</text>
+  <rect x="201" y="70" width="140" height="64" rx="12" fill="#245b6f"/>
+  <text x="271" y="108" text-anchor="middle" fill="#f7faf8" font-family="Helvetica, Arial, sans-serif" font-size="18">Decode</text>
+  <rect x="378" y="70" width="140" height="64" rx="12" fill="#6b4a2b"/>
+  <text x="448" y="108" text-anchor="middle" fill="#f7faf8" font-family="Helvetica, Arial, sans-serif" font-size="18">Actuate</text>
+  <rect x="555" y="70" width="140" height="64" rx="12" fill="#3d4a3f"/>
+  <text x="625" y="108" text-anchor="middle" fill="#f7faf8" font-family="Helvetica, Arial, sans-serif" font-size="18">Feedback</text>
+  <path d="M164 102 H201" stroke="#1b2a24" stroke-width="3" fill="none"/>
+  <path d="M341 102 H378" stroke="#1b2a24" stroke-width="3" fill="none"/>
+  <path d="M518 102 H555" stroke="#1b2a24" stroke-width="3" fill="none"/>
+  <path d="M625 134 C625 180 94 180 94 134" stroke="#1b2a24" stroke-width="3" fill="none" stroke-dasharray="6 6"/>
+  <text x="360" y="200" text-anchor="middle" fill="#1b2a24" font-family="Helvetica, Arial, sans-serif" font-size="14">BCI closed loop</text>
+</svg>

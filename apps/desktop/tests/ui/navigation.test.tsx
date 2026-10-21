@@ -74,16 +74,16 @@ describe("navigation", () => {
 describe("state persistence", () => {
   test("theme and sidebar choices survive a restart", async () => {
     const first = await start();
-    expect(document.documentElement.dataset.theme).toBe("dark");
-    await click(button("Switch to light theme"));
-    await click(button("Collapse navigation"));
     expect(document.documentElement.dataset.theme).toBe("light");
-    expect(localStorage.getItem("nt-theme")).toBe("light");
+    await click(button("Switch to dark theme"));
+    await click(button("Collapse navigation"));
+    expect(document.documentElement.dataset.theme).toBe("dark");
+    expect(localStorage.getItem("nt-theme")).toBe("dark");
     expect(localStorage.getItem("nt-sidebar")).toBe("0");
     first.unmount();
 
     await start();
-    expect(document.documentElement.dataset.theme).toBe("light");
+    expect(document.documentElement.dataset.theme).toBe("dark");
     expect(button("Expand navigation")).toBeTruthy();
   });
 

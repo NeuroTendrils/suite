@@ -193,7 +193,7 @@ export function PreprocessStage({ session, lists, res, pre, idle, onImport }: {
           </button>
         }
       >
-        <form
+        <form noValidate
           className="form-row"
           onSubmit={(e) => {
             e.preventDefault();

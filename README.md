@@ -1,8 +1,14 @@
-# NeuroTendrils Suite
+# NeuroTendrils — Suite and NeuroLearn
 
-Proprietary local-first EEG research environment.
+One desktop app with **Learn**, **NeuroFlow**, and **NeuroStudio**, using
+NeuroLearn's blue and pink palette. Learn bundles the existing Flutter lesson
+player, quizzes, simulation, and local progress inside the React/Tauri window.
+This repo also includes mobile source, content, authoring tools, and the learning API. Start with the
+[workspace guide](docs/APP_CONSOLIDATION.md) for layout, setup, and root commands.
 
 ## Modules
+
+**Learn** — offline EEG lessons, quizzes, simulations, and local progress; no study or backend required.
 
 1. **NeuroFlow** — import, visualize, reject, plans, ICA/ERP, epochs, features, analysis
 2. **NeuroStudio** — datasets/splits, EEGNet recommend placeholder, sklearn train/eval/infer/explain, reports, export
@@ -28,6 +34,10 @@ Backend launch order (no hardcoded machine paths):
 No localhost TCP API. Python never evaluates UI-supplied code.
 
 ## Develop
+
+Install Flutter on PATH as well as the existing Node, Rust, and Python tools.
+Desktop dev/build commands automatically build and embed Learn when its sources
+change. End users need only the desktop app, with no Flutter installation.
 
 ```bash
 # Once (or anytime): creates .venv and installs backend

@@ -1,0 +1,91 @@
+name: NeuroLearn Release
+
+on:
+  push:
+    tags: ["neurolearn-v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/neurolearn/app
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - run: flutter pub get
+
+      # Analyze before building. A release that fails analysis is a release
+      # someone downloads and finds broken.
+      - run: flutter analyze
+      - run: flutter test
+
+      - name: Build APK
+        run: flutter build apk --release --build-name=${GITHUB_REF_NAME#neurolearn-v}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: neurolearn-android
+          path: apps/neurolearn/app/build/app/outputs/flutter-apk/app-release.apk
+
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/neurolearn/app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: flutter build web --release
+      - name: Package web build
+        run: tar -czf ../neurolearn-web.tar.gz -C build/web .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: neurolearn-web
+          path: apps/neurolearn/neurolearn-web.tar.gz
+
+  publish:
+    needs: [android, web]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      # Source stays private, binaries go public. A release on a private repo
+      # is only visible to collaborators, so the artifacts are published to
+      # the separate public releases repo instead.
+      #
+      # GITHUB_TOKEN cannot write to another repository. Create a fine-grained
+      # PAT scoped to NeuroTendrils/releases with Contents: read and write,
+      # then save it as the RELEASES_TOKEN secret on this repo.
+      - name: Publish to public releases repo
+        uses: softprops/action-gh-release@v2
+        with:
+          repository: NeuroTendrils/releases
+          token: ${{ secrets.RELEASES_TOKEN }}
+          tag_name: ${{ github.ref_name }}
+          name: NeuroLearn ${{ github.ref_name }}
+          files: dist/**/*
+          prerelease: true
+          body: |
+            NeuroLearn ${{ github.ref_name }}
+
+            Pre-release. Download the file for your platform below.

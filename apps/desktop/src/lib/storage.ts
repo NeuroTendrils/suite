@@ -21,5 +21,5 @@ export function writeStored(key: string, value: string | null) {
 
 export function readStoredTheme(): ThemeName {
   const v = readStored("nt-theme");
-  return v === "light" ? "light" : "dark";
+  return v === "dark" ? "dark" : "light";
 }

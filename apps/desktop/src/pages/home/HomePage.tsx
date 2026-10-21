@@ -22,6 +22,7 @@ export function HomePage({
   openImport,
   startNewStudy,
   openStudio,
+  openLearn,
 }: {
   ops: Operations;
   session: StudySession;
@@ -34,6 +35,7 @@ export function HomePage({
   openImport: () => void;
   startNewStudy: () => void;
   openStudio: (stage: StudioStage) => void;
+  openLearn: () => void;
 }) {
   const { busy } = ops;
   const {
@@ -112,6 +114,14 @@ export function HomePage({
         {newStudyForm}
       </div>
       <ol className="welcome-steps" aria-label="How the suite fits together">
+        <li className="mod-home">
+          <span className="welcome-icon"><Icon name="learn" size={18} /></span>
+          <div>
+            <strong>Learn — understand EEG</strong>
+            <span>Explore lessons, practice, and simulations. No study or EEG hardware needed.</span>
+            <button type="button" className="btn-link" onClick={openLearn}>Open Learn</button>
+          </div>
+        </li>
         <li className="mod-home">
           <span className="welcome-icon">
             <Icon name="home" size={18} />
@@ -395,7 +405,7 @@ export function HomePage({
                         </table>
                       </div>
                     )}
-                    <form
+                    <form noValidate
                       className="form-grid compact"
                       onSubmit={(e) => {
                         e.preventDefault();

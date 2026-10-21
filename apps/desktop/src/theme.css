@@ -1,6 +1,8 @@
+@import "../../../packages/theme/neurolearn.css";
+
 /* NeuroTendrils Suite — design tokens.
-   The only place colors, type, and spacing are defined. Components reference
-   variables, never literals, so a theme change is a single-file edit.
+   Research semantic aliases, dark adaptation, type, and spacing.
+   Shared light colors come from the generated NeuroLearn palette above.
 
    Two layers:
    - Surface/semantic tokens (--bg, --surface, --accent, --danger, …) used by App.css.
@@ -8,6 +10,53 @@
    Both are defined for each theme; nothing else in the app defines colors. */
 
 :root,
+[data-theme="light"] {
+  --ink: var(--neuro-sand);
+  --bg: var(--neuro-mist);
+  --shell: #ffffff;
+  --rail: #ffffff;
+  --panel: #ffffff;
+  --panel-hi: var(--neuro-sand);
+  --hover: var(--neuro-soft-tide);
+  --line: var(--neuro-line);
+  --line-soft: var(--neuro-sand);
+
+  --text: var(--neuro-ink);
+  --dim: var(--neuro-muted);
+  --dimmer: var(--neuro-muted);
+
+  --accent: var(--neuro-tide);
+  --accent-hover: var(--neuro-deep-blue);
+  --accent-text: #ffffff;
+  --accent-soft: var(--neuro-soft-tide);
+  --focus: var(--neuro-tide);
+
+  --ok: var(--neuro-moss);
+  --ok-bg: color-mix(in srgb, var(--neuro-moss) 10%, white);
+  --warn: var(--neuro-limit);
+  --warn-bg: color-mix(in srgb, var(--neuro-limit) 10%, white);
+  --danger: var(--neuro-danger);
+  --danger-bg: color-mix(in srgb, var(--neuro-danger) 9%, white);
+
+  --input-bg: #ffffff;
+  --btn-bg: #ffffff;
+
+  --mod-home: var(--neuro-tide);
+  --mod-flow: var(--neuro-deep-blue);
+  --mod-studio: var(--neuro-myth);
+  --mod-home-soft: var(--neuro-brain-wash);
+  --mod-flow-soft: var(--neuro-soft-tide);
+  --mod-studio-soft: var(--neuro-blush);
+
+  --trace: var(--neuro-tide);
+  --trace-deep: var(--neuro-deep-blue);
+  --verified: var(--neuro-moss);
+  --flagged: var(--neuro-danger);
+  --event: var(--neuro-limit);
+
+  color-scheme: light;
+}
+
 [data-theme="dark"] {
   /* Surfaces, darkest to lightest */
   --ink: #0a0d12;          /* signal well — recessed plot background */
@@ -42,10 +91,10 @@
 
   /* Module identity — used for markers only, never large fills */
   --mod-home: #4d8dff;
-  --mod-flow: #2fb5a0;
+  --mod-flow: #7fa8ff;
   --mod-studio: #9d87f5;
-  --mod-home-soft: rgba(77, 141, 255, 0.14);
-  --mod-flow-soft: rgba(47, 181, 160, 0.14);
+  --mod-home-soft: rgba(255, 184, 203, 0.10);
+  --mod-flow-soft: rgba(127, 168, 255, 0.14);
   --mod-studio-soft: rgba(157, 135, 245, 0.15);
 
   /* Signal */
@@ -58,56 +107,9 @@
   color-scheme: dark;
 }
 
-[data-theme="light"] {
-  --ink: #f4f6fa;
-  --bg: #f6f7f9;
-  --shell: #ffffff;
-  --rail: #eef0f4;
-  --panel: #ffffff;
-  --panel-hi: #f1f3f7;
-  --hover: #e9edf3;
-  --line: #d9dee7;
-  --line-soft: #e8ebf0;
-
-  --text: #161a21;
-  --dim: #4b5566;
-  --dimmer: #6c7686;
-
-  --accent: #2563eb;
-  --accent-hover: #1d4fd0;
-  --accent-text: #ffffff;
-  --accent-soft: rgba(37, 99, 235, 0.1);
-  --focus: #2563eb;
-
-  --ok: #12855e;
-  --ok-bg: rgba(18, 133, 94, 0.1);
-  --warn: #9a6a05;
-  --warn-bg: rgba(176, 125, 5, 0.12);
-  --danger: #c23a32;
-  --danger-bg: rgba(194, 58, 50, 0.09);
-
-  --input-bg: #ffffff;
-  --btn-bg: #ffffff;
-
-  --mod-home: #2563eb;
-  --mod-flow: #0f8a78;
-  --mod-studio: #6d4fd8;
-  --mod-home-soft: rgba(37, 99, 235, 0.1);
-  --mod-flow-soft: rgba(15, 138, 120, 0.1);
-  --mod-studio-soft: rgba(109, 79, 216, 0.1);
-
-  --trace: #2f6feb;
-  --trace-deep: #2559c8;
-  --verified: #12996c;
-  --flagged: #c8443c;
-  --event: #b07d05;
-
-  color-scheme: light;
-}
-
 :root {
-  /* System UI fonts: consistent with the host OS, no bundled font files. */
-  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI Variable", "Segoe UI", system-ui,
+  /* Bundled NeuroLearn typeface; system fallbacks and technical monospace. */
+  --sans: "Source Sans 3", -apple-system, BlinkMacSystemFont, "Segoe UI Variable", "Segoe UI", system-ui,
     Roboto, "Helvetica Neue", Arial, sans-serif;
   --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
 

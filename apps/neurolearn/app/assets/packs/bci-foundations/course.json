@@ -1,0 +1,403 @@
+{
+  "schemaVersion": 1,
+  "course": {
+    "id": "bci-foundations",
+    "title": "Introduction to EEG",
+    "version": "0.3.0",
+    "units": [
+      {
+        "id": "intro-01",
+        "title": "The brain's electrical currents",
+        "section": "spark",
+        "lessonIds": [
+          "intro-01-brain-electricity"
+        ]
+      },
+      {
+        "id": "intro-02",
+        "title": "Introduction to EEGs",
+        "section": "signal",
+        "lessonIds": [
+          "intro-02-eeg-basics"
+        ]
+      },
+      {
+        "id": "intro-03",
+        "title": "What isn't brain? Artifacts",
+        "section": "signal",
+        "lessonIds": [
+          "intro-03-artifacts"
+        ]
+      }
+    ],
+    "lessons": {
+      "intro-01-brain-electricity": {
+        "id": "intro-01-brain-electricity",
+        "title": "The brain's electrical currents",
+        "unit": "intro-01",
+        "objective": "Explain how neurons generate electrical signals and why scalp EEG only sees summed, synchronized population activity after it passes through the head.",
+        "estMinutes": 12,
+        "blocks": [
+          {
+            "type": "hook",
+            "text": "One neuron’s electrical field is tiny. So how can a headset on your scalp measure “brain activity” at all?"
+          },
+          {
+            "type": "markdown",
+            "markdown": "## Neurons store electrical energy\n\nNeurons use **sodium–potassium pumps** to push sodium ions out of the cell and pull potassium ions in. Because potassium can leak back out through open channels, the inside of the cell ends up about **−70 mV** relative to the outside. That charge separation is called **polarization**, and it is stored electrical potential energy.\n\nWhen enough input arrives, **sodium channels open** and the inside swings briefly positive. That ~1 ms spike, the **action potential**, travels down the **axon** to the **synapse**, where neurotransmitters cross the gap and nudge the next cell’s voltage up or down."
+          },
+          {
+            "type": "callout",
+            "kind": "tip",
+            "text": "Think of a neuron like a charged battery that can fire a fast electrical pulse, then reset."
+          },
+          {
+            "type": "markdown",
+            "markdown": "## What EEG actually picks up\n\nYou might expect EEG to record those spikes. Mostly, it doesn’t.\n\nAction potentials are very brief, and nearby cells rarely fire at exactly the same moment, so their fields largely **cancel out**. Scalp EEG mainly reflects **postsynaptic potentials**: slower currents (tens of milliseconds) that flow in a neuron’s dendrites after neurotransmitters arrive.\n\nThe key players are **pyramidal neurons** in the cortex. They stand side by side like trees in a forest, all pointing toward the surface. When thousands of them receive **synchronized** input, their small currents line up and add into one field big enough to reach the scalp.\n\n## Tissue dims and blurs the message\n\nEven that summed field is weakened on the way out:\n\n- **Cerebrospinal fluid** conducts well, so current spreads out sideways instead of heading straight to the scalp\n- **Skull bone** conducts poorly, which weakens the signal and smears it across a wide patch of scalp\n- **Skin and hair** add more distance between the source and the electrode\n\nBy the time activity reaches the scalp, it is only **microvolts** (millionths of a volt), and each electrode hears a blend of many centimetres of cortex."
+          },
+          {
+            "type": "callout",
+            "kind": "limit",
+            "text": "Real heads vary in skull thickness and tissue properties, so the same brain activity can look different on two people. The key idea: the physics between cortex and electrode is lossy and blurry."
+          },
+          {
+            "type": "callout",
+            "kind": "myth",
+            "text": "EEG does not cleanly “see” one thought from one neuron. It sees blurred, weakened echoes of many cells receiving input together."
+          },
+          {
+            "type": "check",
+            "passScore": 0.7,
+            "items": [
+              {
+                "type": "mcq",
+                "id": "q1",
+                "prompt": "What do sodium–potassium pumps help create in a neuron?",
+                "explain": "The pumps build up ion concentration differences. With potassium leaking out, the inside sits around −70 mV: a polarized membrane storing potential energy.",
+                "choices": [
+                  {
+                    "text": "Ion differences that leave the inside of the cell negative at rest",
+                    "correct": true
+                  },
+                  {
+                    "text": "The neurotransmitters released at the synapse",
+                    "correct": false
+                  },
+                  {
+                    "text": "A steady current that scalp electrodes record directly",
+                    "correct": false
+                  }
+                ]
+              },
+              {
+                "type": "mcq",
+                "id": "q2",
+                "prompt": "Which activity contributes most to the scalp EEG signal?",
+                "explain": "Synchronized postsynaptic currents in aligned pyramidal neurons add up. Brief, scattered action potentials mostly cancel out.",
+                "choices": [
+                  {
+                    "text": "Synchronized postsynaptic currents in aligned pyramidal neurons",
+                    "correct": true
+                  },
+                  {
+                    "text": "Individual action potentials travelling down axons",
+                    "correct": false
+                  },
+                  {
+                    "text": "Changes in blood oxygen in active brain regions",
+                    "correct": false
+                  }
+                ]
+              },
+              {
+                "type": "mcq",
+                "id": "q3",
+                "prompt": "Why can’t scalp electrodes pick up a single neuron?",
+                "explain": "One neuron’s field is far too weak. Only thousands of aligned neurons receiving input together produce a field large enough to reach the scalp.",
+                "choices": [
+                  {
+                    "text": "Its field is too weak; thousands of aligned, synchronized cells are needed",
+                    "correct": true
+                  },
+                  {
+                    "text": "Neurons only use chemical signals, not electrical ones",
+                    "correct": false
+                  },
+                  {
+                    "text": "The skull blocks electrical signals completely",
+                    "correct": false
+                  }
+                ]
+              },
+              {
+                "type": "mcq",
+                "id": "q4",
+                "prompt": "What happens to brain signals as they pass through fluid, skull, skin, and hair?",
+                "explain": "The layers weaken and spread the signal, so scalp EEG is microvolt-sized and each electrode sees a broad area of cortex.",
+                "choices": [
+                  {
+                    "text": "They get weaker and spread out, so each electrode sees a broad area",
+                    "correct": true
+                  },
+                  {
+                    "text": "They get weaker, but each electrode still sees only the cells directly under it",
+                    "correct": false
+                  },
+                  {
+                    "text": "They pass through unchanged because body tissue conducts perfectly",
+                    "correct": false
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "intro-02-eeg-basics": {
+        "id": "intro-02-eeg-basics",
+        "title": "Introduction to EEGs",
+        "unit": "intro-02",
+        "objective": "Define EEG as a non-invasive BCI measurement of scalp potential differences, and describe electrodes, amplification, and 10–20 placement basics.",
+        "estMinutes": 14,
+        "blocks": [
+          {
+            "type": "hook",
+            "text": "If EEG only measures tiny voltages on the scalp, how do we turn that into a usable brain–computer signal?"
+          },
+          {
+            "type": "markdown",
+            "markdown": "## BCIs and where EEG fits\n\n**Brain–computer interfaces (BCIs)** let the brain communicate with an external device. That requires measuring neural activity and a machine that can **filter, amplify, and translate** those signals—often so a person can control something with brain-derived commands.\n\n**EEG** is a common **non-invasive** approach: electrodes on the scalp, no surgery. Non-invasive signals are usually **much weaker** than invasive recordings closer to neurons.\n\n## What EEG actually measures\n\nEEG measures the **difference in electrical potential between scalp sites**. It has **poor spatial localization**, so pinpointing an exact cortical source is hard compared with some other methods.\n\nElectrodes are often **silver / silver chloride (Ag/AgCl)** discs. They help convert **ionic currents** (from the biology of Na/K activity) into **electronic current** the amplifier can read.\n\n**Electrolytic gel** is commonly used to lower **impedance** so more of the tiny signal reaches the electronics.\n\n## Passive and active electrodes\n\n- **Passive electrodes** send relatively raw signals toward a remote amplifier\n- **Active electrodes** amplify near the scalp with a tiny built-in circuit, which can improve robustness to noise and cable effects\n\nSystems also use **differential amplification** to reject noise that appears on both inputs (shared environmental interference).\n\n## The 10–20 placement system\n\nElectrode positions are planned with the **10–20 system**: spacing based on **10% or 20%** of skull distances, anchored by landmarks like the **nasion** (nose bridge) and **inion** (bump at the back of the skull).\n\nLetter codes (common teaching set):\n\n- **F** frontal · **C** central · **T** temporal · **P** parietal · **O** occipital\n\n**Odd numbers** mark the **left** hemisphere, **even numbers** the **right**, and **z** (for “zero”) marks the **midline**, as in **Cz** at the top of the head. Common reference sites include the **mastoids** (the bones behind the ears) and **Cz**.\n\n## Amplification matters\n\nRaw EEG is tiny—often about **5–100 µV**—so systems need **large, careful amplification** before digitization and analysis."
+          },
+          {
+            "type": "figure",
+            "src": "bci-loop.svg",
+            "alt": "Sense, decode, actuate, feedback loop for a BCI",
+            "caption": "EEG is the sensing step. A full BCI still needs decoding, action, and feedback."
+          },
+          {
+            "type": "callout",
+            "kind": "myth",
+            "text": "More electrodes alone does not equal mind-reading. Coverage helps sampling; it does not invent information the scalp signal never contained."
+          },
+          {
+            "type": "callout",
+            "kind": "limit",
+            "text": "NeuroLearn is education software, not clinical training. Real labs follow safety, hygiene, and validation procedures beyond this intro."
+          },
+          {
+            "type": "check",
+            "passScore": 0.7,
+            "items": [
+              {
+                "type": "mcq",
+                "id": "q1",
+                "prompt": "What does EEG primarily measure?",
+                "explain": "EEG measures potential differences between scalp electrode sites.",
+                "choices": [
+                  {
+                    "text": "Electrical potential differences between scalp sites",
+                    "correct": true
+                  },
+                  {
+                    "text": "Spikes from the individual neurons under each electrode",
+                    "correct": false
+                  },
+                  {
+                    "text": "Changes in blood oxygen in the cortex",
+                    "correct": false
+                  },
+                  {
+                    "text": "Magnetic fields produced by the brain",
+                    "correct": false
+                  }
+                ]
+              },
+              {
+                "type": "mcq",
+                "id": "q2",
+                "prompt": "Why is electrolytic gel often used?",
+                "explain": "Gel lowers impedance so weak ionic/electronic coupling into the electrode is more reliable. It does not boost the brain signal itself.",
+                "choices": [
+                  {
+                    "text": "To lower impedance and improve signal pickup",
+                    "correct": true
+                  },
+                  {
+                    "text": "To chemically strengthen the brain’s signal",
+                    "correct": false
+                  },
+                  {
+                    "text": "To insulate the electrode from the skin",
+                    "correct": false
+                  }
+                ]
+              },
+              {
+                "type": "mcq",
+                "id": "q3",
+                "prompt": "In the 10–20 system, what do odd electrode numbers indicate?",
+                "explain": "Odd numbers mark left-hemisphere sites, even numbers the right, and z marks the midline.",
+                "choices": [
+                  {
+                    "text": "Left hemisphere sites",
+                    "correct": true
+                  },
+                  {
+                    "text": "Right hemisphere sites",
+                    "correct": false
+                  },
+                  {
+                    "text": "Midline sites",
+                    "correct": false
+                  }
+                ]
+              },
+              {
+                "type": "mcq",
+                "id": "q4",
+                "prompt": "Why do EEG systems need substantial amplification?",
+                "explain": "Scalp signals are only microvolts (often ~5–100 µV) and must be boosted carefully for recording.",
+                "choices": [
+                  {
+                    "text": "Raw scalp signals are only microvolts and must be boosted",
+                    "correct": true
+                  },
+                  {
+                    "text": "Amplifiers add spatial detail the scalp signal is missing",
+                    "correct": false
+                  },
+                  {
+                    "text": "Amplification removes the need for a reference electrode",
+                    "correct": false
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "intro-03-artifacts": {
+        "id": "intro-03-artifacts",
+        "title": "What isn't brain? Artifacts",
+        "unit": "intro-03",
+        "objective": "Recognize the most common EEG artifacts by their shape, timing, and location on the scalp, and explain why a BCI must not mistake them for brain activity.",
+        "estMinutes": 12,
+        "blocks": [
+          {
+            "type": "hook",
+            "text": "Brain signals are only microvolts. A single blink can be ten times bigger. How do you tell what came from the brain?"
+          },
+          {
+            "type": "markdown",
+            "markdown": "## Not everything on an EEG is brain\n\nAn **artifact** is any part of a recording that did not come from the brain. Because brain signals are so small, almost anything electrical near the electrodes can swamp them.\n\nArtifacts come from two places:\n\n- **Your body**: eyes, muscles, and heart all produce electrical fields of their own\n- **Your equipment and surroundings**: loose electrodes, cables, and building wiring\n\n## Artifacts from the body\n\n**Eye blinks.** The eyeball is an electrical dipole: the front (cornea) is positive relative to the back (retina). Each blink shifts that dipole, producing a large, slow hump that is biggest on the forehead channels (**Fp1**, **Fp2**) and fades toward the back of the head.\n\n**Muscle tension (EMG).** Muscle fibres fire much faster than cortex, so clenching the jaw or frowning adds dense, fast “fuzz”. It is strongest on the temporal channels (**T7**, **T8**), which sit over the jaw muscles.\n\n**Heartbeat (ECG).** The heart is the strongest electrical generator in the body. Its field can reach the scalp as sharp, evenly spaced spikes about once a second.\n\n## Artifacts from equipment\n\n**Mains interference.** Building wiring carries alternating current at **60 Hz** in North America (50 Hz in much of the world). It shows up as a perfectly regular oscillation with the same strength on every channel.\n\n**A loose electrode.** When an electrode loses contact, its voltage jumps suddenly. Real brain activity is spread across neighbouring electrodes, so a jump on one channel alone is a warning sign.\n\n## Why this matters for BCIs\n\nResearchers handle artifacts by **rejecting** bad stretches of data, **filtering** (for example, a notch filter at 60 Hz), or separating sources with techniques like **independent component analysis**. None of these work unless someone first recognizes what they are looking at."
+          },
+          {
+            "type": "callout",
+            "kind": "myth",
+            "text": "A BCI that “reads concentration” may actually be reading your forehead muscles. If people frown when they focus, a decoder can learn the frown. Always check what a model is really responding to."
+          },
+          {
+            "type": "markdown",
+            "markdown": "## Your turn\n\nEach round shows 6 seconds of 12-channel EEG. Find the clue, name the cause, and remember the last round may have nothing wrong at all."
+          },
+          {
+            "type": "callout",
+            "kind": "limit",
+            "text": "These traces are generated by the app, not recorded from a real person. Each artifact is modelled on how it is produced, with amplitudes and timing in typical physiological ranges, so you can practise the patterns safely."
+          },
+          {
+            "type": "sim",
+            "id": "artifact-detective",
+            "goal": "Identify the source of contamination in six EEG recordings, including one that is clean."
+          },
+          {
+            "type": "check",
+            "passScore": 0.7,
+            "items": [
+              {
+                "type": "mcq",
+                "id": "q1",
+                "prompt": "A large, slow hump appears on Fp1 and Fp2 and fades toward the back of the head. What is the most likely cause?",
+                "explain": "Blinks move the eye’s electrical dipole. The forehead electrodes, closest to the eyes, see the biggest deflection.",
+                "choices": [
+                  {
+                    "text": "An eye blink",
+                    "correct": true
+                  },
+                  {
+                    "text": "Alpha rhythm from visual cortex",
+                    "correct": false
+                  },
+                  {
+                    "text": "Mains interference",
+                    "correct": false
+                  }
+                ]
+              },
+              {
+                "type": "mcq",
+                "id": "q2",
+                "prompt": "A regular 60 Hz oscillation has the same strength on every channel. Where does it most likely come from?",
+                "explain": "Building wiring radiates a 60 Hz field that every electrode picks up equally. No brain rhythm is identical on every channel.",
+                "choices": [
+                  {
+                    "text": "Electrical wiring in the building",
+                    "correct": true
+                  },
+                  {
+                    "text": "The heart, which beats about 60 times a minute",
+                    "correct": false
+                  },
+                  {
+                    "text": "Every brain region oscillating together",
+                    "correct": false
+                  }
+                ]
+              },
+              {
+                "type": "mcq",
+                "id": "q3",
+                "prompt": "C4 suddenly jumps to a new level, but its neighbours do not change. What should you suspect first?",
+                "explain": "Brain activity spreads across neighbouring electrodes. A jump confined to one channel points to a contact or hardware problem.",
+                "choices": [
+                  {
+                    "text": "A loose electrode at C4",
+                    "correct": true
+                  },
+                  {
+                    "text": "A burst of activity in the right motor cortex",
+                    "correct": false
+                  },
+                  {
+                    "text": "An eye movement",
+                    "correct": false
+                  }
+                ]
+              },
+              {
+                "type": "mcq",
+                "id": "q4",
+                "prompt": "A “focus” headset works well, and users frown when they concentrate. What is the biggest concern?",
+                "explain": "Forehead and jaw muscle activity is much larger than brain signals. The decoder may be detecting the frown, not the focus.",
+                "choices": [
+                  {
+                    "text": "It may be detecting muscle activity instead of brain activity",
+                    "correct": true
+                  },
+                  {
+                    "text": "Frowning makes the brain signal stronger, so it is more accurate",
+                    "correct": false
+                  },
+                  {
+                    "text": "Nothing, as long as the accuracy is high",
+                    "correct": false
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    }
+  }
+}

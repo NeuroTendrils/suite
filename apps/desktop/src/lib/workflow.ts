@@ -2,7 +2,7 @@
 
 import type { StepDef } from "../components/ui";
 
-export type Page = "home" | "flow" | "studio";
+export type Page = "home" | "learn" | "flow" | "studio";
 export type FlowStage = "recording" | "inspect" | "plan" | "review";
 export type StudioStage = "data" | "train" | "export";
 
@@ -59,6 +59,7 @@ export const STUDIO_STAGES: Array<{ id: StudioStage; label: string; title: strin
 
 export const NAV_ITEMS: Array<{ id: Page; label: string; sub: string; icon: string }> = [
   { id: "home", label: "Home", sub: "Studies and progress", icon: "home" },
+  { id: "learn", label: "Learn", sub: "Lessons and practice", icon: "learn" },
   { id: "flow", label: "NeuroFlow", sub: "Recordings: import, clean", icon: "flow" },
   { id: "studio", label: "NeuroStudio", sub: "Datasets, models, export", icon: "studio" },
 ];

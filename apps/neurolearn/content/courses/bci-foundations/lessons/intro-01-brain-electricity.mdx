@@ -1,0 +1,86 @@
+---
+id: intro-01-brain-electricity
+title: The brain's electrical currents
+unit: intro-01
+objective: Explain how neurons generate electrical signals and why scalp EEG only sees summed, synchronized population activity after it passes through the head.
+estMinutes: 12
+---
+
+<Hook>
+One neuron’s electrical field is tiny. So how can a headset on your scalp measure “brain activity” at all?
+</Hook>
+
+## Neurons store electrical energy
+
+Neurons use **sodium–potassium pumps** to push sodium ions out of the cell and pull potassium ions in. Because potassium can leak back out through open channels, the inside of the cell ends up about **−70 mV** relative to the outside. That charge separation is called **polarization**, and it is stored electrical potential energy.
+
+When enough input arrives, **sodium channels open** and the inside swings briefly positive. That ~1 ms spike, the **action potential**, travels down the **axon** to the **synapse**, where neurotransmitters cross the gap and nudge the next cell’s voltage up or down.
+
+<Callout kind="tip">
+Think of a neuron like a charged battery that can fire a fast electrical pulse, then reset.
+</Callout>
+
+## What EEG actually picks up
+
+You might expect EEG to record those spikes. Mostly, it doesn’t.
+
+Action potentials are very brief, and nearby cells rarely fire at exactly the same moment, so their fields largely **cancel out**. Scalp EEG mainly reflects **postsynaptic potentials**: slower currents (tens of milliseconds) that flow in a neuron’s dendrites after neurotransmitters arrive.
+
+The key players are **pyramidal neurons** in the cortex. They stand side by side like trees in a forest, all pointing toward the surface. When thousands of them receive **synchronized** input, their small currents line up and add into one field big enough to reach the scalp.
+
+## Tissue dims and blurs the message
+
+Even that summed field is weakened on the way out:
+
+- **Cerebrospinal fluid** conducts well, so current spreads out sideways instead of heading straight to the scalp
+- **Skull bone** conducts poorly, which weakens the signal and smears it across a wide patch of scalp
+- **Skin and hair** add more distance between the source and the electrode
+
+By the time activity reaches the scalp, it is only **microvolts** (millionths of a volt), and each electrode hears a blend of many centimetres of cortex.
+
+<Callout kind="limit">
+Real heads vary in skull thickness and tissue properties, so the same brain activity can look different on two people. The key idea: the physics between cortex and electrode is lossy and blurry.
+</Callout>
+
+<Callout kind="myth">
+EEG does not cleanly “see” one thought from one neuron. It sees blurred, weakened echoes of many cells receiving input together.
+</Callout>
+
+<Check passScore={0.7}>
+  <MCQ
+    id="q1"
+    prompt="What do sodium–potassium pumps help create in a neuron?"
+    explain="The pumps build up ion concentration differences. With potassium leaking out, the inside sits around −70 mV: a polarized membrane storing potential energy."
+  >
+    <Choice correct>Ion differences that leave the inside of the cell negative at rest</Choice>
+    <Choice>The neurotransmitters released at the synapse</Choice>
+    <Choice>A steady current that scalp electrodes record directly</Choice>
+  </MCQ>
+  <MCQ
+    id="q2"
+    prompt="Which activity contributes most to the scalp EEG signal?"
+    explain="Synchronized postsynaptic currents in aligned pyramidal neurons add up. Brief, scattered action potentials mostly cancel out."
+  >
+    <Choice correct>Synchronized postsynaptic currents in aligned pyramidal neurons</Choice>
+    <Choice>Individual action potentials travelling down axons</Choice>
+    <Choice>Changes in blood oxygen in active brain regions</Choice>
+  </MCQ>
+  <MCQ
+    id="q3"
+    prompt="Why can’t scalp electrodes pick up a single neuron?"
+    explain="One neuron’s field is far too weak. Only thousands of aligned neurons receiving input together produce a field large enough to reach the scalp."
+  >
+    <Choice correct>Its field is too weak; thousands of aligned, synchronized cells are needed</Choice>
+    <Choice>Neurons only use chemical signals, not electrical ones</Choice>
+    <Choice>The skull blocks electrical signals completely</Choice>
+  </MCQ>
+  <MCQ
+    id="q4"
+    prompt="What happens to brain signals as they pass through fluid, skull, skin, and hair?"
+    explain="The layers weaken and spread the signal, so scalp EEG is microvolt-sized and each electrode sees a broad area of cortex."
+  >
+    <Choice correct>They get weaker and spread out, so each electrode sees a broad area</Choice>
+    <Choice>They get weaker, but each electrode still sees only the cells directly under it</Choice>
+    <Choice>They pass through unchanged because body tissue conducts perfectly</Choice>
+  </MCQ>
+</Check>

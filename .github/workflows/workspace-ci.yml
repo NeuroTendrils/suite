@@ -1,0 +1,70 @@
+name: Workspace checks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  web-and-content:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: |
+            apps/desktop/package-lock.json
+            apps/neurolearn/studio/package-lock.json
+            apps/neurolearn/tools/content-compiler/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: npm --prefix apps/desktop ci
+      - run: npm --prefix apps/neurolearn/studio ci
+      - run: npm --prefix apps/neurolearn/tools/content-compiler ci
+      - run: npm run check:theme
+      - run: npm run check:content
+      - run: npm --prefix apps/desktop run lint
+      - run: npm --prefix apps/desktop run typecheck
+      - run: npm run test:suite
+      - run: npm run build:suite
+      - run: npm run check:learn
+      - run: npm run build:authoring
+
+  learner:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/neurolearn/app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: flutter analyze
+      - run: flutter test
+      - run: flutter build web --release
+
+  learning-api:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/neurolearn/server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e '.[dev]'
+      - run: pytest -q

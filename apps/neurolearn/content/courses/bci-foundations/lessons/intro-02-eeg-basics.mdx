@@ -1,0 +1,100 @@
+---
+id: intro-02-eeg-basics
+title: Introduction to EEGs
+unit: intro-02
+objective: Define EEG as a non-invasive BCI measurement of scalp potential differences, and describe electrodes, amplification, and 10–20 placement basics.
+estMinutes: 14
+---
+
+<Hook>
+If EEG only measures tiny voltages on the scalp, how do we turn that into a usable brain–computer signal?
+</Hook>
+
+## BCIs and where EEG fits
+
+**Brain–computer interfaces (BCIs)** let the brain communicate with an external device. That requires measuring neural activity and a machine that can **filter, amplify, and translate** those signals—often so a person can control something with brain-derived commands.
+
+**EEG** is a common **non-invasive** approach: electrodes on the scalp, no surgery. Non-invasive signals are usually **much weaker** than invasive recordings closer to neurons.
+
+## What EEG actually measures
+
+EEG measures the **difference in electrical potential between scalp sites**. It has **poor spatial localization**, so pinpointing an exact cortical source is hard compared with some other methods.
+
+Electrodes are often **silver / silver chloride (Ag/AgCl)** discs. They help convert **ionic currents** (from the biology of Na/K activity) into **electronic current** the amplifier can read.
+
+**Electrolytic gel** is commonly used to lower **impedance** so more of the tiny signal reaches the electronics.
+
+## Passive and active electrodes
+
+- **Passive electrodes** send relatively raw signals toward a remote amplifier
+- **Active electrodes** amplify near the scalp with a tiny built-in circuit, which can improve robustness to noise and cable effects
+
+Systems also use **differential amplification** to reject noise that appears on both inputs (shared environmental interference).
+
+## The 10–20 placement system
+
+Electrode positions are planned with the **10–20 system**: spacing based on **10% or 20%** of skull distances, anchored by landmarks like the **nasion** (nose bridge) and **inion** (bump at the back of the skull).
+
+Letter codes (common teaching set):
+
+- **F** frontal · **C** central · **T** temporal · **P** parietal · **O** occipital
+
+**Odd numbers** mark the **left** hemisphere, **even numbers** the **right**, and **z** (for “zero”) marks the **midline**, as in **Cz** at the top of the head. Common reference sites include the **mastoids** (the bones behind the ears) and **Cz**.
+
+## Amplification matters
+
+Raw EEG is tiny—often about **5–100 µV**—so systems need **large, careful amplification** before digitization and analysis.
+
+<Figure
+  src="bci-loop.svg"
+  alt="Sense, decode, actuate, feedback loop for a BCI"
+  caption="EEG is the sensing step. A full BCI still needs decoding, action, and feedback."
+/>
+
+<Callout kind="myth">
+More electrodes alone does not equal mind-reading. Coverage helps sampling; it does not invent information the scalp signal never contained.
+</Callout>
+
+<Callout kind="limit">
+NeuroLearn is education software, not clinical training. Real labs follow safety, hygiene, and validation procedures beyond this intro.
+</Callout>
+
+<Check passScore={0.7}>
+  <MCQ
+    id="q1"
+    prompt="What does EEG primarily measure?"
+    explain="EEG measures potential differences between scalp electrode sites."
+  >
+    <Choice correct>Electrical potential differences between scalp sites</Choice>
+    <Choice>Spikes from the individual neurons under each electrode</Choice>
+    <Choice>Changes in blood oxygen in the cortex</Choice>
+    <Choice>Magnetic fields produced by the brain</Choice>
+  </MCQ>
+  <MCQ
+    id="q2"
+    prompt="Why is electrolytic gel often used?"
+    explain="Gel lowers impedance so weak ionic/electronic coupling into the electrode is more reliable. It does not boost the brain signal itself."
+  >
+    <Choice correct>To lower impedance and improve signal pickup</Choice>
+    <Choice>To chemically strengthen the brain’s signal</Choice>
+    <Choice>To insulate the electrode from the skin</Choice>
+  </MCQ>
+  <MCQ
+    id="q3"
+    prompt="In the 10–20 system, what do odd electrode numbers indicate?"
+    explain="Odd numbers mark left-hemisphere sites, even numbers the right, and z marks the midline."
+  >
+    <Choice correct>Left hemisphere sites</Choice>
+    <Choice>Right hemisphere sites</Choice>
+    <Choice>Midline sites</Choice>
+  </MCQ>
+  <MCQ
+    id="q4"
+    prompt="Why do EEG systems need substantial amplification?"
+    explain="Scalp signals are only microvolts (often ~5–100 µV) and must be boosted carefully for recording."
+  >
+    <Choice correct>Raw scalp signals are only microvolts and must be boosted</Choice>
+    <Choice>Amplifiers add spatial detail the scalp signal is missing</Choice>
+    <Choice>Amplification removes the need for a reference electrode</Choice>
+  </MCQ>
+</Check>

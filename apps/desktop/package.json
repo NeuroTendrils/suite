@@ -4,6 +4,9 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "predev": "npm run build:learn",
+    "prebuild": "npm run build:learn",
+    "build:learn": "node ../../scripts/build_learn.mjs",
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",

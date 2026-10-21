@@ -67,6 +67,7 @@ export function NavRail({
 }
 
 export function TopBar({
+  learning = false,
   session,
   busy,
   pendingCount,
@@ -75,6 +76,7 @@ export function TopBar({
   onSelectStudy,
   onShowRecording,
 }: {
+  learning?: boolean;
   session: StudySession;
   busy: Busy | null;
   /** Unapplied rejection marks on the active recording. */
@@ -87,7 +89,9 @@ export function TopBar({
   const { studies, studiesLoaded, selectedId, selectedRow, conn, refresh } = session;
   return (
     <header className="topbar">
-      {studies.length ? (
+      {learning ? (
+        <span className="topbar-study"><Icon name="learn" /> NeuroLearn</span>
+      ) : studies.length ? (
         <label className="topbar-study" title="The active study. NeuroFlow and NeuroStudio work on this study.">
           <span className="topbar-key">Study</span>
           <select value={selectedId ?? ""} onChange={(e) => onSelectStudy(e.target.value)} aria-label="Active study">
@@ -105,7 +109,7 @@ export function TopBar({
           {studiesLoaded ? "None yet" : "—"}
         </span>
       )}
-      {selectedRow && (
+      {!learning && selectedRow && (
         <button
           type="button"
           className="topbar-rec"
@@ -123,8 +127,8 @@ export function TopBar({
       )}
       <div className="topbar-right">
         <BusyIndicator busy={busy} />
-        <ConnectionStatus conn={conn} onRetry={() => void refresh()} />
-        <button
+        {!learning && <ConnectionStatus conn={conn} onRetry={() => void refresh()} />}
+        {!learning && <button
           type="button"
           className="btn-icon"
           title="Reload studies and status from the backend"
@@ -133,7 +137,7 @@ export function TopBar({
           disabled={!!busy}
         >
           <Icon name="refresh" size={17} />
-        </button>
+        </button>}
         <button
           type="button"
           className="btn-icon"

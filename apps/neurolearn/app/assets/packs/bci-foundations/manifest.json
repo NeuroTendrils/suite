@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "courseId": "bci-foundations",
+  "title": "Introduction to EEG",
+  "version": "0.3.0",
+  "units": [
+    {
+      "id": "intro-01",
+      "title": "The brain's electrical currents",
+      "section": "spark",
+      "lessonIds": [
+        "intro-01-brain-electricity"
+      ]
+    },
+    {
+      "id": "intro-02",
+      "title": "Introduction to EEGs",
+      "section": "signal",
+      "lessonIds": [
+        "intro-02-eeg-basics"
+      ]
+    },
+    {
+      "id": "intro-03",
+      "title": "What isn't brain? Artifacts",
+      "section": "signal",
+      "lessonIds": [
+        "intro-03-artifacts"
+      ]
+    }
+  ]
+}

@@ -48,7 +48,7 @@ export async function click(el: Element) {
   await settle();
 }
 
-export async function nav(label: "Home" | "NeuroFlow" | "NeuroStudio") {
+export async function nav(label: "Home" | "Learn" | "NeuroFlow" | "NeuroStudio") {
   const rail = screen.getByRole("navigation", { name: "Main" });
   await click(within(rail).getByText(label).closest("button")!);
 }

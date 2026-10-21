@@ -14,6 +14,12 @@ const ICON_PATHS: Record<string, ReactNode> = {
     </>
   ),
   flow: <path d="M2.5 12h3l2-5 3 10 3-12 3 9 2-2h3" />,
+  learn: (
+    <>
+      <path d="M12 5.5C9 3.5 5.5 3.5 3 4.5v15c2.5-1 6-1 9 1 3-2 6.5-2 9-1v-15c-2.5-1-6-1-9 1Z" />
+      <path d="M12 5.5v15" />
+    </>
+  ),
   studio: (
     <>
       <rect x="3.5" y="3.5" width="7" height="7" rx="1.2" />

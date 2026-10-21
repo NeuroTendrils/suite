@@ -1,0 +1,25 @@
+# Flutter
+app/.dart_tool/
+app/.flutter-plugins
+app/.flutter-plugins-dependencies
+app/.packages
+app/build/
+app/.pub-cache/
+app/.pub/
+app/**/Generated.xcconfig
+app/**/flutter_export_environment.sh
+
+# Node
+tools/content-compiler/node_modules/
+npm-debug.log*
+
+# OS / IDE
+.DS_Store
+.idea/
+.vscode/
+*.iml
+
+# Misc
+*.log
+.env
+.env.*

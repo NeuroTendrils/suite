@@ -1,0 +1,21 @@
+{
+  "name": "neurotendrils",
+  "private": true,
+  "scripts": {
+    "dev": "npm run dev:suite",
+    "build": "npm run build:suite",
+    "dev:suite": "npm --prefix apps/desktop run tauri:dev",
+    "dev:learn": "cd apps/neurolearn/app && flutter run -d chrome",
+    "dev:authoring": "npm --prefix apps/neurolearn/studio run dev",
+    "build:suite": "npm --prefix apps/desktop run build",
+    "build:learn": "node scripts/build_learn.mjs",
+    "check:learn": "node scripts/build_learn.mjs --check",
+    "build:authoring": "npm --prefix apps/neurolearn/studio run build",
+    "compile:content": "npm --prefix apps/neurolearn run compile:content",
+    "check:content": "npm --prefix apps/neurolearn run check:content",
+    "sync:theme": "python3 scripts/sync_theme.py",
+    "check:theme": "python3 scripts/sync_theme.py --check",
+    "test:suite": "npm --prefix apps/desktop test",
+    "test:learn": "cd apps/neurolearn/app && flutter test"
+  }
+}

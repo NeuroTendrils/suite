@@ -1,0 +1,8 @@
+{
+  "name": "neurolearn",
+  "private": true,
+  "scripts": {
+    "compile:content": "npm --prefix tools/content-compiler run compile",
+    "check:content": "npm --prefix tools/content-compiler run check"
+  }
+}

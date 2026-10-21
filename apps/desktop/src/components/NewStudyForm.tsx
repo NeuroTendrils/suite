@@ -26,7 +26,7 @@ export function NewStudyForm({
     closeNewStudy,
   } = forms;
   return (
-    <form
+    <form noValidate
       className="form-grid new-study"
       onSubmit={(e) => {
         e.preventDefault();

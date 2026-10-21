@@ -1,0 +1,169 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://neurotendrils.com/schemas/neurolearn-content-pack.json",
+  "title": "NeuroLearn Content Pack",
+  "type": "object",
+  "required": ["schemaVersion", "course"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "type": "integer", "const": 1 },
+    "course": { "$ref": "#/$defs/course" }
+  },
+  "$defs": {
+    "course": {
+      "type": "object",
+      "required": ["id", "title", "version", "units", "lessons"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z0-9-]+$" },
+        "title": { "type": "string", "minLength": 1 },
+        "version": { "type": "string", "minLength": 1 },
+        "units": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/unit" }
+        },
+        "lessons": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": { "$ref": "#/$defs/lesson" }
+        }
+      }
+    },
+    "unit": {
+      "type": "object",
+      "required": ["id", "title", "section", "lessonIds"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "section": {
+          "type": "string",
+          "enum": ["spark", "signal", "pipeline", "world"]
+        },
+        "lessonIds": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "lesson": {
+      "type": "object",
+      "required": ["id", "title", "unit", "objective", "estMinutes", "blocks"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "unit": { "type": "string" },
+        "objective": { "type": "string" },
+        "estMinutes": { "type": "integer", "minimum": 1, "maximum": 30 },
+        "blocks": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/block" }
+        }
+      }
+    },
+    "block": {
+      "oneOf": [
+        { "$ref": "#/$defs/hookBlock" },
+        { "$ref": "#/$defs/markdownBlock" },
+        { "$ref": "#/$defs/figureBlock" },
+        { "$ref": "#/$defs/calloutBlock" },
+        { "$ref": "#/$defs/simBlock" },
+        { "$ref": "#/$defs/checkBlock" }
+      ]
+    },
+    "hookBlock": {
+      "type": "object",
+      "required": ["type", "text"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "const": "hook" },
+        "text": { "type": "string" }
+      }
+    },
+    "markdownBlock": {
+      "type": "object",
+      "required": ["type", "markdown"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "const": "markdown" },
+        "markdown": { "type": "string" }
+      }
+    },
+    "figureBlock": {
+      "type": "object",
+      "required": ["type", "src", "alt"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "const": "figure" },
+        "src": { "type": "string" },
+        "alt": { "type": "string" },
+        "caption": { "type": "string" }
+      }
+    },
+    "calloutBlock": {
+      "type": "object",
+      "required": ["type", "kind", "text"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "const": "callout" },
+        "kind": {
+          "type": "string",
+          "enum": ["myth", "limit", "glossary", "tip"]
+        },
+        "text": { "type": "string" }
+      }
+    },
+    "simBlock": {
+      "type": "object",
+      "required": ["type", "id", "goal"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "const": "sim" },
+        "id": { "type": "string" },
+        "goal": { "type": "string" }
+      }
+    },
+    "checkBlock": {
+      "type": "object",
+      "required": ["type", "passScore", "items"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "const": "check" },
+        "passScore": { "type": "number", "minimum": 0, "maximum": 1 },
+        "items": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/checkItem" }
+        }
+      }
+    },
+    "checkItem": {
+      "type": "object",
+      "required": ["type", "id", "prompt", "choices"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "const": "mcq" },
+        "id": { "type": "string" },
+        "prompt": { "type": "string" },
+        "explain": { "type": "string" },
+        "choices": {
+          "type": "array",
+          "minItems": 2,
+          "items": {
+            "type": "object",
+            "required": ["text", "correct"],
+            "additionalProperties": false,
+            "properties": {
+              "text": { "type": "string" },
+              "correct": { "type": "boolean" }
+            }
+          }
+        }
+      }
+    }
+  }
+}

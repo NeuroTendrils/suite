@@ -23,6 +23,7 @@ import { ActivityLog, NoticeBar } from "./components/ui";
 import { ModuleHeader, NavRail, StageFooter, TopBar } from "./components/layout";
 import { NewStudyForm } from "./components/NewStudyForm";
 import { HomePage } from "./pages/home/HomePage";
+import { LearnPage } from "./pages/learn/LearnPage";
 import { NoStudy } from "./pages/NoStudy";
 import { RecordingPicker } from "./pages/flow/RecordingPicker";
 import { ImportStage } from "./pages/flow/ImportStage";
@@ -41,6 +42,7 @@ function App() {
   const ops = useOperations();
   const session = useStudySession(ops);
   const [page, setPage] = useState<Page>("home");
+  const [learnOpened, setLearnOpened] = useState(false);
   const [flowStage, setFlowStage] = useState<FlowStage>("recording");
   const [studioStage, setStudioStage] = useState<StudioStage>("data");
   const lists = useStudyLists(ops, session, page);
@@ -60,6 +62,7 @@ function App() {
 
   // A new screen starts at the top, and a confirmation about one screen doesn't linger on the next.
   useEffect(() => {
+    document.title = `${page === "learn" ? "Learn" : page === "flow" ? "NeuroFlow" : page === "studio" ? "NeuroStudio" : "Home"} · NeuroTendrils Suite`;
     document.getElementById("main")?.scrollTo({ top: 0 });
     setNotice((n) => (n && (n.kind === "success" || n.kind === "info") ? null : n));
   }, [page, flowStage, studioStage, setNotice]);
@@ -72,6 +75,7 @@ function App() {
   }
 
   function goPage(p: Page) {
+    if (p === "learn") setLearnOpened(true);
     if (p === "flow" && page !== "flow" && selectedRecId && flowStage === "recording") setFlowStage("inspect");
     setPage(p);
   }
@@ -140,6 +144,7 @@ function App() {
 
       <div className="shell">
         <TopBar
+          learning={page === "learn"}
           session={session}
           busy={busy}
           pendingCount={insp.pendingCount}
@@ -149,7 +154,7 @@ function App() {
           onShowRecording={() => openFlow(flowStage === "recording" ? "inspect" : flowStage)}
         />
 
-        <NoticeBar notice={ops.notice} onDismiss={() => setNotice(null)} />
+        {page !== "learn" && <NoticeBar notice={ops.notice} onDismiss={() => setNotice(null)} />}
 
         {inModule && (
           <ModuleHeader
@@ -168,8 +173,9 @@ function App() {
         <main
           id="main"
           tabIndex={-1}
-          className={`content ${page === "flow" && flowStage === "inspect" && selectedId ? "content-wide" : ""}`}
+          className={`content ${page === "learn" ? "content-learn" : ""} ${page === "flow" && flowStage === "inspect" && selectedId ? "content-wide" : ""}`}
         >
+          {learnOpened && <LearnPage active={page === "learn"} />}
           {page === "home" && (
             <HomePage
               ops={ops}
@@ -183,6 +189,7 @@ function App() {
               openImport={() => openFlow("recording")}
               startNewStudy={startNewStudy}
               openStudio={openStudio}
+              openLearn={() => goPage("learn")}
             />
           )}
           {inModule && !selectedId && (
