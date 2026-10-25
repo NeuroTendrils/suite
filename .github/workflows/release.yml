@@ -69,9 +69,7 @@ jobs:
 
       - name: Build
         working-directory: apps/desktop
-        # tauri:build runs the sidecar script first, which is bash. Windows
-        # runners have Git Bash on PATH, so this works there too.
-        shell: bash
+        # The build scripts are Node, so each runner's default shell works.
         run: npm run tauri:build
 
       - uses: actions/upload-artifact@v4

@@ -4,7 +4,6 @@ import errno
 import json
 import logging
 import logging.handlers
-import os
 import socket
 import sys
 import time
@@ -14,6 +13,7 @@ from suite_backend.app_context import AppContext
 from suite_backend.ipc import handlers  # noqa: F401 — register commands
 from suite_backend.ipc.protocol import RpcRequest, RpcResponse
 from suite_backend.ipc.registry import REGISTRY
+from suite_backend.ipc.transport import Listener
 
 logger = logging.getLogger(__name__)
 
@@ -74,25 +74,17 @@ def configure_logging(workspace_root: str | Path) -> Path:
 
 
 def serve_ipc(ipc_path: str, workspace_root: str) -> None:
-    """Serve allowlisted JSON-RPC lines over a Unix domain socket."""
-    path = Path(ipc_path)
-    if path.exists():
-        path.unlink()
-    path.parent.mkdir(parents=True, exist_ok=True)
-
+    """Serve allowlisted JSON-RPC lines over a Unix domain socket (Windows: named pipe)."""
     ctx = AppContext(workspace_root)
     configure_logging(ctx.workspace.root)
-    server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    server.bind(str(path))
-    os.chmod(path, 0o600)
-    server.listen(8)
-    logger.info("backend listening on %s (workspace %s)", path, ctx.workspace.root)
-    print(json.dumps({"event": "ready", "ipc": str(path), "commands": REGISTRY.allowlist()}), flush=True)
+    server = Listener(ipc_path)
+    logger.info("backend listening on %s (workspace %s)", ipc_path, ctx.workspace.root)
+    print(json.dumps({"event": "ready", "ipc": ipc_path, "commands": REGISTRY.allowlist()}), flush=True)
 
     try:
         while True:
             try:
-                conn, _ = server.accept()
+                conn = server.accept()
             except OSError as exc:
                 if exc.errno not in _TRANSIENT_ACCEPT_ERRNOS:
                     raise
@@ -110,8 +102,6 @@ def serve_ipc(ipc_path: str, workspace_root: str) -> None:
     finally:
         logger.info("backend shutting down")
         server.close()
-        if path.exists():
-            path.unlink()
 
 
 def _serve_connection(conn: socket.socket, ctx: AppContext) -> None:

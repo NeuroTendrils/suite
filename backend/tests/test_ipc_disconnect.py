@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import socket
 import subprocess
 import sys
@@ -25,13 +26,14 @@ import pytest
 import suite_backend
 from suite_backend.app_context import AppContext
 from suite_backend.ipc.server import _handle_connection
+from suite_backend.ipc.transport import IS_WINDOWS, connect, default_address
 
 TESTS_DIR = Path(__file__).resolve().parent
 SRC_DIR = Path(suite_backend.__file__).resolve().parents[1]
 
 
 class Backend:
-    def __init__(self, proc: subprocess.Popen, ipc: Path, workspace: Path) -> None:
+    def __init__(self, proc: subprocess.Popen, ipc: str, workspace: Path) -> None:
         self.proc = proc
         self.ipc = ipc
         self.workspace = workspace
@@ -45,13 +47,11 @@ class Backend:
 
     def assert_alive(self) -> None:
         assert self.proc.poll() is None, f"backend exited with {self.proc.returncode}"
-        assert self.ipc.exists(), "backend socket was removed"
+        # A named pipe is not a file; probing it would open a connection.
+        assert IS_WINDOWS or Path(self.ipc).exists(), "backend socket was removed"
 
     def connect(self, timeout: float = 10.0) -> socket.socket:
-        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        sock.settimeout(timeout)
-        sock.connect(str(self.ipc))
-        return sock
+        return connect(self.ipc, timeout)
 
     def call(self, command: str, params: dict | None = None, timeout: float = 10.0) -> dict:
         """One request per connection, like the Rust bridge's call_python_ipc."""
@@ -104,8 +104,7 @@ def _wait_for(predicate, timeout: float = 10.0, interval: float = 0.02) -> None:
 
 @pytest.fixture
 def backend(tmp_path: Path) -> Iterator[Backend]:
-    # AF_UNIX paths have a low length limit; keep the socket under /tmp.
-    ipc = Path(f"/tmp/suite-ipc-{uuid.uuid4().hex[:12]}.sock")
+    ipc = default_address(f"suite-ipc-{uuid.uuid4().hex[:12]}")
     workspace = tmp_path / "workspace"
     stdout = (tmp_path / "stdout.txt").open("wb")
     stderr = (tmp_path / "stderr.txt").open("wb")
@@ -114,13 +113,14 @@ def backend(tmp_path: Path) -> Iterator[Backend]:
             sys.executable,
             str(TESTS_DIR / "_ipc_test_server.py"),
             "--ipc",
-            str(ipc),
+            ipc,
             "--workspace",
             str(workspace),
         ],
         stdout=stdout,
         stderr=stderr,
-        env={"PYTHONPATH": str(SRC_DIR), "PATH": "/usr/bin:/bin"},
+        # Windows needs SYSTEMROOT and friends to start Python at all.
+        env={**os.environ, "PYTHONPATH": str(SRC_DIR)},
     )
     try:
         _wait_for(lambda: b'"event": "ready"' in (tmp_path / "stdout.txt").read_bytes())
@@ -134,8 +134,8 @@ def backend(tmp_path: Path) -> Iterator[Backend]:
             proc.wait()
         stdout.close()
         stderr.close()
-        if ipc.exists():
-            ipc.unlink()
+        if not IS_WINDOWS and Path(ipc).exists():
+            Path(ipc).unlink()
 
 
 # --- Integration: real server process -------------------------------------------------

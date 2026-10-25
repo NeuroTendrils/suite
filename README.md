@@ -24,8 +24,10 @@ Start at [docs/README.md](docs/README.md) (architecture, phases 1–25, IPC, use
 ## Architecture
 
 ```text
-React UI → Tauri allowlisted invoke → Unix socket IPC → Backend sidecar
+React UI → Tauri allowlisted invoke → local IPC → Backend sidecar
 ```
+
+Local IPC is a private Unix domain socket on macOS/Linux and a named pipe on Windows.
 
 Backend launch order (no hardcoded machine paths):
 
@@ -37,19 +39,22 @@ No localhost TCP API. Python never evaluates UI-supplied code.
 
 ## Develop
 
-Install Flutter on PATH as well as the existing Node, Rust, and Python tools.
+Works the same on macOS, Windows, and Linux. Install Flutter on PATH as well as
+Node, Rust ([rustup](https://rustup.rs)), and Python 3.11+. On Windows, also install
+the Visual Studio C++ Build Tools (Tauri needs them) and tick “Add python.exe to PATH”
+in the Python installer.
 Desktop dev/build commands automatically build and embed Learn when its sources
 change. End users need only the desktop app, with no Flutter installation.
 
 ```bash
-# Once (or anytime): creates .venv and installs backend
-./scripts/ensure_dev.sh
-
-# Desktop — setup runs automatically
+# Desktop — setup (creates .venv and installs the backend) runs automatically
 cd apps/desktop
 npm install
 npm run tauri:dev
 ```
+
+All scripts are Node, so they run from Terminal, PowerShell, or Command Prompt alike.
+`npm run setup` alone (re)creates the venv.
 
 Use the **NeuroTendrils Suite desktop window**, not a browser tab on `localhost:5173`.
 Vite only serves the UI into that window; if you only see “Local: http://localhost:5173/”, wait for the Rust build — or free a stuck port with `npm run free-port` and retry.
@@ -57,12 +62,13 @@ Vite only serves the UI into that window; if you only see “Local: http://local
 ## Ship backend without requiring a system Python
 
 ```bash
-./scripts/build_sidecar.sh
-# writes apps/desktop/src-tauri/binaries/suite-backend-$(rustc host)
-
 cd apps/desktop
-npm run tauri:build
+npm run tauri:build   # runs `npm run sidecar` first
 ```
+
+`npm run sidecar` writes `apps/desktop/src-tauri/binaries/suite-backend-<rustc host>`
+(`.exe` on Windows). A sidecar is built for the OS it runs on: build on Windows for a
+Windows installer, on a Mac for a Mac app.
 
 Tauri bundles `binaries/suite-backend` as `externalBin`. The app prefers that sidecar at runtime.
 

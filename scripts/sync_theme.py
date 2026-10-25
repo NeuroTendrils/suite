@@ -11,7 +11,7 @@ OUTPUT = ROOT / "packages/theme/neurolearn.css"
 
 
 def render() -> str:
-    palette = SOURCE.read_text().split("class NeuroColors {", 1)[1].split("\n}", 1)[0]
+    palette = SOURCE.read_text(encoding="utf-8").split("class NeuroColors {", 1)[1].split("\n}", 1)[0]
     colors = re.findall(r"static const (\w+) = Color\(0xFF([A-Fa-f0-9]{6})\);", palette)
     if not colors:
         raise ValueError("NeuroColors has no exportable colors")
@@ -34,12 +34,12 @@ def main() -> None:
     args = parser.parse_args()
     expected = render()
     if args.check:
-        if not OUTPUT.exists() or OUTPUT.read_text() != expected:
-            parser.exit(1, "Shared theme is stale. Run python3 scripts/sync_theme.py\n")
+        if not OUTPUT.exists() or OUTPUT.read_text(encoding="utf-8") != expected:
+            parser.exit(1, "Shared theme is stale. Run npm run sync:theme\n")
         print("Shared theme matches NeuroColors.")
     else:
         OUTPUT.parent.mkdir(parents=True, exist_ok=True)
-        OUTPUT.write_text(expected)
+        OUTPUT.write_text(expected, encoding="utf-8", newline="\n")
         print(f"Generated {OUTPUT.relative_to(ROOT)}")
 
 

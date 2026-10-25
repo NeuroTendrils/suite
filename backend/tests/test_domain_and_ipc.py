@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import threading
 import time
+import uuid
 from pathlib import Path
 
 from suite_backend.app_context import AppContext
@@ -11,6 +12,7 @@ from suite_backend.ipc.protocol import RpcRequest
 from suite_backend.ipc.registry import REGISTRY
 from suite_backend.ipc import handlers  # noqa: F401
 from suite_backend.ipc.server import serve_ipc
+from suite_backend.ipc.transport import IS_WINDOWS, default_address
 from suite_backend.neurostudio.templates import catalog
 from suite_backend.storage.local import LocalStudyRepository, LocalWorkspace
 
@@ -63,29 +65,27 @@ def test_templates_include_eegnet() -> None:
 
 
 def test_uds_roundtrip(tmp_path: Path) -> None:
-    # AF_UNIX paths have a low length limit; keep socket under /tmp.
-    ipc = Path(f"/tmp/suite-test-{tmp_path.name}.sock")
-    if ipc.exists():
-        ipc.unlink()
+    ipc = default_address(f"suite-test-{uuid.uuid4().hex[:12]}")
     workspace = tmp_path / "workspace"
     thread = threading.Thread(
         target=serve_ipc,
-        kwargs={"ipc_path": str(ipc), "workspace_root": str(workspace)},
+        kwargs={"ipc_path": ipc, "workspace_root": str(workspace)},
         daemon=True,
     )
     thread.start()
-    for _ in range(50):
-        if ipc.exists():
+    client = IpcClient(ipc)
+    health = None
+    for _ in range(100):
+        try:
+            health = client.call("health")
             break
-        time.sleep(0.05)
-    assert ipc.exists()
+        except OSError:  # not listening yet
+            time.sleep(0.05)
     try:
-        client = IpcClient(str(ipc))
-        health = client.call("health")
-        assert health.ok
+        assert health is not None and health.ok
         created = client.call("studies.create", {"name": "Demo"})
         assert created.ok
         assert created.result["name"] == "Demo"
     finally:
-        if ipc.exists():
-            ipc.unlink()
+        if not IS_WINDOWS and Path(ipc).exists():
+            Path(ipc).unlink()

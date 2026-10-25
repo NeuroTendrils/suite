@@ -74,7 +74,7 @@ export function describeError(e: unknown): FriendlyError {
   ) {
     return {
       title: "The analysis backend is not running",
-      hint: "Restart the app. If it persists, run ./scripts/ensure_dev.sh and check the terminal output.",
+      hint: "Restart the app. If it persists, run npm run setup in apps/desktop and check the terminal output.",
       detail,
     };
   }

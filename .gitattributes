@@ -1,0 +1,6 @@
+# One line ending on every OS. Git for Windows defaults to CRLF checkouts, which change
+# lesson content, generated files and build hashes between a Mac and a Windows PC.
+* text=auto eol=lf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf

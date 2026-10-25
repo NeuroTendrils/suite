@@ -14,12 +14,12 @@
     "test:ui": "vitest run",
     "typecheck": "tsc -b && tsc -p tsconfig.test.json --noEmit",
     "preview": "vite preview",
-    "setup": "PATH=\"$HOME/.cargo/bin:$PATH\" bash ../../scripts/ensure_dev.sh && PATH=\"$HOME/.cargo/bin:$PATH\" bash ../../scripts/ensure_sidecar_stub.sh",
-    "free-port": "bash ../../scripts/free_vite_port.sh 5173",
-    "sidecar": "PATH=\"$HOME/.cargo/bin:$PATH\" bash ../../scripts/build_sidecar.sh",
-    "tauri": "PATH=\"$HOME/.cargo/bin:$PATH\" tauri",
-    "tauri:dev": "npm run setup && npm run free-port && PATH=\"$HOME/.cargo/bin:$PATH\" tauri dev",
-    "tauri:build": "npm run sidecar && PATH=\"$HOME/.cargo/bin:$PATH\" tauri build"
+    "setup": "node ../../scripts/ensure_dev.mjs && node ../../scripts/ensure_sidecar_stub.mjs",
+    "free-port": "node ../../scripts/free_vite_port.mjs 5173",
+    "sidecar": "node ../../scripts/build_sidecar.mjs",
+    "tauri": "node ../../scripts/with_cargo.mjs tauri",
+    "tauri:dev": "npm run setup && npm run free-port && node ../../scripts/with_cargo.mjs tauri dev",
+    "tauri:build": "npm run sidecar && node ../../scripts/with_cargo.mjs tauri build"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.11.1",

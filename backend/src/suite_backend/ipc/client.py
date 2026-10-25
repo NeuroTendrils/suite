@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import json
-import socket
 from typing import Any
 from uuid import uuid4
 
 from suite_backend.ipc.protocol import RpcResponse
+from suite_backend.ipc.transport import connect
 
 
 class IpcClient:
@@ -18,8 +18,7 @@ class IpcClient:
             "command": command,
             "params": params or {},
         }
-        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
-            sock.connect(self.ipc_path)
+        with connect(self.ipc_path) as sock:
             sock.sendall((json.dumps(request) + "\n").encode("utf-8"))
             data = b""
             while b"\n" not in data:

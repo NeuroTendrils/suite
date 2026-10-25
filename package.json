@@ -13,8 +13,8 @@
     "build:authoring": "npm --prefix apps/neurolearn/studio run build",
     "compile:content": "npm --prefix apps/neurolearn run compile:content",
     "check:content": "npm --prefix apps/neurolearn run check:content",
-    "sync:theme": "python3 scripts/sync_theme.py",
-    "check:theme": "python3 scripts/sync_theme.py --check",
+    "sync:theme": "node scripts/python.mjs scripts/sync_theme.py",
+    "check:theme": "node scripts/python.mjs scripts/sync_theme.py --check",
     "test:suite": "npm --prefix apps/desktop test",
     "test:learn": "cd apps/neurolearn/app && flutter test"
   }

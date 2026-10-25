@@ -77,7 +77,7 @@ For the optional learning API, use its own environment:
 ```bash
 cd apps/neurolearn/server
 python3 -m venv .venv
-source .venv/bin/activate
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -e '.[dev]'
 uvicorn neurolearn_api.main:app --reload
 ```

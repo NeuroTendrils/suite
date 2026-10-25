@@ -14,7 +14,7 @@ Study → Subject → Session → Run → Recording → DataStream(s)
 | **React (TypeScript)** | Utilitarian UI — no scientific logic in the renderer |
 | **Python `suite_backend`** | Domain, NeuroFlow, NeuroStudio, MNE / sklearn I/O |
 
-IPC is a private Unix domain socket (named pipes planned for Windows). JSON request/response lines with Pydantic schemas. No free-form code execution from the UI.
+IPC is a private Unix domain socket (a named pipe on Windows). JSON request/response lines with Pydantic schemas. No free-form code execution from the UI.
 
 ## Product modules
 
