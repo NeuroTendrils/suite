@@ -30,6 +30,11 @@ function rawMessage(e: unknown): string {
   }
 }
 
+/** The raw message of a thrown value (Tauri commands reject with plain strings). */
+export function errorText(e: unknown): string {
+  return rawMessage(e);
+}
+
 export function describeError(e: unknown): FriendlyError {
   const detail = rawMessage(e);
   const m = detail.toLowerCase();
@@ -40,6 +45,19 @@ export function describeError(e: unknown): FriendlyError {
       hint: "Open the NeuroTendrils Suite desktop window (npm run tauri:dev), not a browser tab.",
       detail,
     };
+  }
+  if (m.includes("emotiv") || m.includes("cortex") || m.includes("insight")) {
+    return {
+      title: "Insight capture needs attention",
+      hint: detail.replace(/^ValueError:\s*/, ""),
+      detail,
+    };
+  }
+  if (m.includes("feature extraction method") || m.includes("feature names/order") || m.includes("feature dim mismatch")) {
+    return { title: "The dataset does not match this model", hint: "Use the same feature extraction and channel order as the training dataset.", detail };
+  }
+  if (m.includes("split is empty")) {
+    return { title: "No samples in the selected split", hint: "Create a split with held-out samples, then train and evaluate that experiment.", detail };
   }
   if (m.includes("command not allowlisted")) {
     return {

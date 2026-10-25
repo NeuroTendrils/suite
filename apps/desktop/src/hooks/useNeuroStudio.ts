@@ -22,6 +22,7 @@ export function useNeuroStudio(ops: Operations, session: StudySession, lists: St
   const [splitTest, setSplitTest] = useState("0.2");
   const [splitSeed, setSplitSeed] = useState("0");
   const [includeSamples, setIncludeSamples] = useState(false);
+  const [deidentify, setDeidentify] = useState(true);
 
   // Per-study selections.
   useEffect(() => {
@@ -29,6 +30,8 @@ export function useNeuroStudio(ops: Operations, session: StudySession, lists: St
     setSelSplitId("");
     setSelExperimentId("");
     setBuildEpochsetId("");
+    setIncludeSamples(false);
+    setDeidentify(true);
   }, [selectedId]);
 
   // Default selections follow the newest item unless the user picked one that still exists.
@@ -114,7 +117,7 @@ export function useNeuroStudio(ops: Operations, session: StudySession, lists: St
       () =>
         exec<any>("neurostudio.experiments.create", {
           study_id: selectedId,
-          template_id: "eegnet",
+          template_id: "research_auto",
           input_artifact_id: effDatasetId,
           split_definition: { split_id: effSplitId },
         }),
@@ -146,6 +149,8 @@ export function useNeuroStudio(ops: Operations, session: StudySession, lists: St
     setSplitSeed,
     includeSamples,
     setIncludeSamples,
+    deidentify,
+    setDeidentify,
     effDatasetId,
     datasetSplits,
     effSplitId,

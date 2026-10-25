@@ -312,6 +312,13 @@ export class FakeBackend {
       const sub = this.addSubject(s, p.label, p.metadata ?? {});
       return { study_id: s.id, subject: { id: sub.id, label: sub.label }, session_id: sub.sessions[0].id, run_id: sub.sessions[0].runs[0].id };
     },
+    "insight.capture": (p) => {
+      if (!p.consent_to_record) return { status: "error", message: "Consent required" };
+      const path = `/workspace/${p.study_id}/captures/insight.csv`;
+      this.inspect[path] = { format: "emotiv_insight", status: "needs_config", self_describing: false, required_config: ["sfreq"], sfreq: 128, warnings: [] };
+      return { status: "ok", path, warnings: [], n_samples: p.seconds * 128 };
+    },
+    "study.export": (p) => ({ status: "ok", path: "/workspace/exports/study.zip", bytes: 1024, deidentified: p.deidentify, include_samples: p.include_samples }),
     "import.inspect": (p) => this.inspect[p.path] ?? { format: "fif", status: "ok", self_describing: true, sfreq: 250, warnings: [] },
     "import.stream.inspect": (p) => this.inspect[p.path] ?? { format: "csv", status: "ok", suggested_modality: "gyroscope", sfreq: 100 },
     "import.recording": (p) => {
@@ -430,6 +437,23 @@ export class FakeBackend {
       if (!x) throw `experiment not found: ${p.experiment_id}`;
       x.model = { model_id: `model_${x.id}` };
       return { status: "ok", n_train: 8, classes: ["A", "B"] };
+    },
+    "neurostudio.infer.run": (p) => {
+      const x = this.study(p.study_id).experiments.find((e) => e.id === p.experiment_id);
+      if (!x?.model?.model_id) return { status: "error", message: "no model" };
+      return {
+        status: "ok",
+        labels: ["A", "B", "A"],
+        proba: [[0.92, 0.08], [0.35, 0.65], [0.97, 0.03]],
+        confidence: [0.92, 0.65, 0.97],
+        classes: ["A", "B"],
+        true_labels: ["A", "A", "A"],
+        indices: [9, 10, 11],
+        split: p.split ?? "all",
+        model_kind: "sklearn",
+        template_id: "sklearn_logreg",
+        runs_locally: true,
+      };
     },
     "neurostudio.eval.run": (p) => {
       const x = this.study(p.study_id).experiments.find((e) => e.id === p.experiment_id);

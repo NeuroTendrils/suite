@@ -1,11 +1,12 @@
-/** jsdom setup for UI tests. Only the two native boundaries are replaced:
- *  the Tauri IPC bridge (→ FakeBackend) and the dialog plugin (→ scripted answers). */
+/** jsdom setup for UI tests. Only the native boundaries are replaced:
+ *  the Tauri IPC bridge (→ FakeBackend, FakeRobot) and the dialog plugin (→ scripted answers). */
 import { afterEach, vi } from "vitest";
 import { cleanup } from "@testing-library/react";
 import { harness } from "./harness";
 
 vi.mock("../../src/ipc", () => ({
   suiteCall: (command: string, params: Record<string, unknown> = {}) => harness.backend.call(command, params),
+  robotCall: (command: string, args: Record<string, unknown> = {}) => harness.robot.call(command, args),
   waitForSuiteRuntime: async () => {},
 }));
 

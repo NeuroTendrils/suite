@@ -78,6 +78,24 @@ export function ImportStage({ session, imp, idle }: {
 
   return (
     <>
+      <Card title="EMOTIV Insight" description="Five EEG channels: AF3, T7, Pz, T8, AF4 · 128 Hz · microvolts">
+        <p className="help">Connect your Insight in EMOTIV Launcher, approve this app and activate a raw EEG license.
+          Capture uses the local Cortex service. Configure the client credentials in the backend environment as described in the Insight setup guide.</p>
+        <div className="form-row">
+          <Field label="Capture duration (seconds)" hint="2–30 seconds. Capture and setup can take up to 110 seconds.">
+            <input inputMode="numeric" value={imp.captureSeconds} onChange={(e) => imp.setCaptureSeconds(e.target.value)} />
+          </Field>
+          <label className="check">
+            <input type="checkbox" checked={imp.captureConsent} onChange={(e) => imp.setCaptureConsent(e.target.checked)} disabled={!idle} />
+            I consent to local EEG storage and activating one licensed Cortex session.
+          </label>
+          <button type="button" className="btn" disabled={!idle || !imp.captureConsent || !Number.isInteger(Number(imp.captureSeconds)) || Number(imp.captureSeconds) < 2 || Number(imp.captureSeconds) > 30}
+            onClick={() => void imp.captureInsight()}>Capture Insight EEG</button>
+        </div>
+        <p className="help">You can also import an EMOTIV CSV below. Captures remain in this study’s captures folder until removed from disk.
+          EMOTIV software has its own account and data handling. This app does not upload captures for training.
+          Insight has no C3/C4 electrodes; performance of the simulated motor-imagery demo does not establish Insight accuracy.</p>
+      </Card>
       <Card
         title="Import EEG recording"
         description="Choose a file, review what was detected, provide any settings the format can’t supply, then import."
@@ -134,7 +152,7 @@ export function ImportStage({ session, imp, idle }: {
                   <Field
                     label="Sampling rate (Hz)"
                     error={sfreq && sfreqCheck && !sfreqCheck.ok ? sfreqCheck.error : null}
-                    hint="Required: this format doesn’t record it."
+                    hint={inspect.format === "emotiv_insight" ? "Confirm the Insight export was recorded at 128 Hz." : "Required: this format doesn’t record it."}
                   >
                     <input value={sfreq} onChange={(e) => setSfreq(e.target.value)} inputMode="decimal" placeholder="e.g. 250" />
                   </Field>
@@ -151,13 +169,13 @@ export function ImportStage({ session, imp, idle }: {
                     </select>
                   </Field>
                 )}
-                <Field label="Montage (optional)" hint="e.g. standard_1020">
+                {inspect.format !== "emotiv_insight" && <><Field label="Montage (optional)" hint="e.g. standard_1020">
                   <input value={montage} onChange={(e) => setMontage(e.target.value)} />
                 </Field>
                 <label className="check">
                   <input type="checkbox" checked={transpose} onChange={(e) => setTranspose(e.target.checked)} />
-                  Transpose (data is samples × channels)
-                </label>
+                  Transpose (data is channels × samples)
+                </label></>}
               </div>
             )}
             {columns.length > 0 && (

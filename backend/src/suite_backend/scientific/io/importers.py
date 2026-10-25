@@ -337,6 +337,7 @@ class ImporterRegistry:
 
 
 def get_default_registry() -> ImporterRegistry:
+    from suite_backend.scientific.io.insight import InsightImporter
     return ImporterRegistry(
         [
             MneImporter("fif", (".fif",)),
@@ -347,6 +348,7 @@ def get_default_registry() -> ImporterRegistry:
             MneImporter("eeglab", (".set",)),
             MneImporter("neuroscan_cnt", (".cnt",)),
             MatImporter(),
+            InsightImporter(),
             TextMatrixImporter(),
         ]
     )

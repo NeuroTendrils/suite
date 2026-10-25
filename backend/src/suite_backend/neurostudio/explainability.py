@@ -8,6 +8,7 @@ import numpy as np
 
 from suite_backend.app_context import AppContext
 from suite_backend.domain.models import Result
+from suite_backend.neurostudio.contracts import validate_features, validate_split
 from suite_backend.scientific.algorithms.ml_dataset import load_xy
 
 
@@ -37,7 +38,21 @@ def explain_model(
         study_id, exp.input_artifact_id or model.metadata.get("dataset_id")
     )
     X, y = load_xy(dataset)
-    y_enc = le.transform(y.astype(str))
+    validate_features(dataset, feature_names, bundle.get("feature_method"))
+    split_id = (exp.split_definition or {}).get("split_id")
+    if not split_id:
+        return {"status": "error", "message": "explanations require an explicit held-out split"}
+    split = ctx.studies.get_split(study_id, split_id)
+    validate_split(split, dataset, len(X))
+    part = "val" if split.val_indices else "test"
+    indices = split.val_indices or split.test_indices
+    if not indices:
+        return {"status": "error", "message": "no held-out samples available for explanation"}
+    if set(indices).intersection(model.metadata.get("train_indices", split.train_indices)):
+        raise ValueError("explanation samples overlap training samples")
+    X, y = X[indices], y[indices].astype(str)
+    def score(estimator, features, truth):
+        return float(np.mean(le.inverse_transform(estimator.predict(features)) == truth))
 
     coef_imp: list[dict[str, Any]] = []
     try:
@@ -54,10 +69,10 @@ def explain_model(
     perm = permutation_importance(
         clf,
         X,
-        y_enc,
+        y,
         n_repeats=n_repeats,
         random_state=exp.random_seed or 0,
-        scoring="accuracy",
+        scoring=score,
     )
     perm_imp = [
         {
@@ -71,6 +86,9 @@ def explain_model(
 
     payload = {
         "model_id": model_id,
+        "split": part,
+        "n": len(indices),
+        "warnings": ["Test samples were inspected; do not tune the model using these explanations"] if part == "test" else [],
         "coefficients": coef_imp[:40],
         "permutation": perm_imp[:40],
         "method": "coef+permutation_importance",

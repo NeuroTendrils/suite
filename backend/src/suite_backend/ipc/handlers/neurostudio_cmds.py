@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 from suite_backend.app_context import AppContext
@@ -61,6 +63,7 @@ class InferParams(BaseModel):
     study_id: str
     experiment_id: str
     dataset_id: str | None = None
+    split: Literal["all", "train", "val", "test"] = "all"
 
 
 class ExplainParams(BaseModel):
@@ -76,6 +79,7 @@ class SplitCheckParams(BaseModel):
 class ExportStudyParams(BaseModel):
     study_id: str
     include_samples: bool = False
+    deidentify: bool = True
 
 
 class ReportParams(BaseModel):
@@ -204,6 +208,7 @@ def infer_run(params: InferParams, ctx: AppContext) -> dict:
         experiment_id=params.experiment_id,
         ctx=ctx,
         dataset_id=params.dataset_id,
+        split=params.split,
     )
 
 
@@ -237,4 +242,5 @@ def study_export(params: ExportStudyParams, ctx: AppContext) -> dict:
         study_id=params.study_id,
         ctx=ctx,
         include_samples=params.include_samples,
+        deidentify=params.deidentify,
     )

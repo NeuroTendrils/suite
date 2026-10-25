@@ -10,6 +10,15 @@ from suite_backend.domain.models import DataSplit, MLDataset
 from suite_backend.neurostudio.generalization import detect_leakage
 
 
+def _validate_fractions(dataset: MLDataset, val_frac: float, test_frac: float) -> None:
+    if not (np.isfinite(val_frac) and np.isfinite(test_frac) and 0 <= val_frac < 1 and 0 <= test_frac < 1 and val_frac + test_frac < 1):
+        raise ValueError("split fractions must be finite, non-negative and leave training samples")
+    if len(dataset.subject_ids) != len(dataset.labels):
+        raise ValueError("subject ids must match dataset labels")
+    if not dataset.labels:
+        raise ValueError("cannot split an empty dataset")
+
+
 def make_subject_split(
     dataset: MLDataset,
     *,
@@ -18,6 +27,7 @@ def make_subject_split(
     test_frac: float = 0.2,
     seed: int = 0,
 ) -> DataSplit:
+    _validate_fractions(dataset, val_frac, test_frac)
     rng = np.random.default_rng(seed)
     subjects = sorted(set(dataset.subject_ids))
     if len(subjects) < 2:
@@ -34,7 +44,7 @@ def make_subject_split(
     order = list(subjects)
     rng.shuffle(order)
     n = len(order)
-    n_test = max(1, int(round(n * test_frac)))
+    n_test = max(1, int(round(n * test_frac))) if test_frac > 0 else 0
     n_val = max(0, int(round(n * val_frac)))
     if n_test + n_val >= n:
         n_val = 0
@@ -82,6 +92,7 @@ def make_stratified_trial_split(
     seed: int = 0,
     note: str | None = None,
 ) -> DataSplit:
+    _validate_fractions(dataset, val_frac, test_frac)
     rng = np.random.default_rng(seed)
     labels = np.asarray(dataset.labels)
     n = len(labels)
@@ -91,7 +102,7 @@ def make_stratified_trial_split(
     for lab in sorted(set(labels.tolist())):
         idxs = np.where(labels == lab)[0]
         rng.shuffle(idxs)
-        nt = max(1, int(round(len(idxs) * test_frac))) if len(idxs) > 2 else 0
+        nt = max(1, int(round(len(idxs) * test_frac))) if len(idxs) > 2 and test_frac > 0 else 0
         nv = max(0, int(round(len(idxs) * val_frac))) if len(idxs) > 3 else 0
         if nt + nv >= len(idxs):
             nv = 0

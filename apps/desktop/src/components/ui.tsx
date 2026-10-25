@@ -64,6 +64,14 @@ const ICON_PATHS: Record<string, ReactNode> = {
     </>
   ),
   plus: <path d="M12 5v14M5 12h14" />,
+  lab: (
+    <>
+      <path d="M5 20.5h9M7.5 20.5v-3h4v3" />
+      <path d="m9.5 17.5 2-8 6 -3" />
+      <circle cx="11.5" cy="9.5" r="1.4" />
+      <path d="m17.5 6.5 2.5 1.5M17.5 6.5l1-2.5" />
+    </>
+  ),
   close: <path d="m6 6 12 12M18 6 6 18" />,
 };
 

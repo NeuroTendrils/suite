@@ -14,6 +14,8 @@ export function useImport(ops: Operations, session: StudySession) {
   const { task, setNotice, log } = ops;
   const { selectedId, manager, selectedRecId, setSelectedRecId, refreshManager } = session;
   const [importPath, setImportPath] = useState("");
+  const [captureSeconds, setCaptureSeconds] = useState("10");
+  const [captureConsent, setCaptureConsent] = useState(false);
   const [inspect, setInspect] = useState<InspectInfo | null>(null);
   const [inspectedPath, setInspectedPath] = useState("");
   const [sfreq, setSfreq] = useState("");
@@ -70,6 +72,20 @@ export function useImport(ops: Operations, session: StudySession) {
         info.columns.map((c) => ({ index: Number(c.index), name: String(c.name), role: String(c.role ?? "eeg") })),
       );
     }
+  }
+
+  async function captureInsight() {
+    const seconds = Number(captureSeconds);
+    if (!selectedId || !captureConsent || !Number.isInteger(seconds) || seconds < 2 || seconds > 30) return;
+    const result = await task("Capturing Insight EEG", () => exec<{ path: string; warnings: string[] }>("insight.capture", {
+      study_id: selectedId, seconds, consent_to_record: captureConsent,
+    }));
+    if (!result) return;
+    setCaptureConsent(false);
+    setImportPath(result.path);
+    await inspectImport(result.path);
+    setNotice({ kind: result.warnings.length ? "warn" : "success", title: "Insight capture saved locally",
+      hint: [...result.warnings, "Review the settings and choose Import recording to add it to the study."].join(" · ") });
   }
 
   async function browseImport() {
@@ -222,6 +238,7 @@ export function useImport(ops: Operations, session: StudySession) {
   }
 
   return {
+    captureSeconds, setCaptureSeconds, captureConsent, setCaptureConsent, captureInsight,
     importPath,
     setImportPath,
     inspect,

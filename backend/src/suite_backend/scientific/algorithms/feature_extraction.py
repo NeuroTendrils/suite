@@ -21,20 +21,20 @@ DEFAULT_BANDS = {
 
 
 def _bandpower_1d(x: np.ndarray, sfreq: float, fmin: float, fmax: float) -> float:
-    """Welch-ish band power via rFFT (no scipy dependency)."""
+    """Integrate a correctly scaled, one-sided Welch PSD (signal units squared)."""
+    from scipy.signal import welch
+
     x = np.asarray(x, dtype=np.float64)
+    if x.ndim != 1 or not np.isfinite(x).all():
+        raise ValueError("band power requires a finite one-dimensional signal")
+    if not np.isfinite(sfreq) or sfreq <= 0 or not 0 <= fmin < fmax <= sfreq/2:
+        raise ValueError("band limits must be within the Nyquist frequency")
     if x.size < 8:
-        return 0.0
-    x = x - np.mean(x)
-    n = int(2 ** np.ceil(np.log2(x.size)))
-    spec = np.fft.rfft(x, n=n)
-    psd = (np.abs(spec) ** 2) / (sfreq * x.size)
-    freqs = np.fft.rfftfreq(n, d=1.0 / sfreq)
+        raise ValueError("band power requires at least eight samples")
+    freqs, psd = welch(x, fs=sfreq, window="hann", nperseg=min(len(x), int(2*sfreq)), scaling="density")
     mask = (freqs >= fmin) & (freqs < fmax)
-    if not np.any(mask):
-        return 0.0
-    trapz = getattr(np, "trapezoid", None) or np.trapz
-    return float(trapz(psd[mask], freqs[mask]))
+    # Sum bin energy so narrow, single-bin bands do not integrate to zero.
+    return float(np.sum(psd[mask]) * (freqs[1]-freqs[0]))
 
 
 def extract_band_power(
@@ -77,7 +77,7 @@ def extract_band_power(
         values=[row],
         parameters={"bands": {k: list(v) for k, v in bands.items()}, "sfreq": sfreq},
         provenance={
-            "method": "rfft_trapz_bandpower",
+            "method": "welch_bandpower_v2",
             "n_channels": len(names),
             "placeholder_connectivity": False,
         },

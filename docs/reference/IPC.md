@@ -72,7 +72,7 @@ Request shape: `{ "id": "...", "command": "namespace.action", "params": { ... } 
 | `neurostudio.eval.run` | Accuracy / F1 / confusion |
 | `neurostudio.generalization.run` | Test-split eval proxy |
 | `neurostudio.explain.run` | Coef + permutation importance |
-| `neurostudio.infer.run` | Predict + Prediction record |
+| `neurostudio.infer.run` | Predict + Prediction record; `split`: `all` (default) / `train` / `val` / `test`; returns labels, proba, confidence, true_labels, indices |
 | `neurostudio.report.build` | Markdown reports |
 | `neurostudio.model.export` | Model zip bundle |
 | `neurostudio.leakage.check` | Subject overlap check |

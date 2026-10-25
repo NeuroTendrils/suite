@@ -55,8 +55,8 @@ def build_experiment_report(
             "## Provenance notes",
             "",
             "- Raw recordings are never mutated.",
-            "- Training uses sklearn LogisticRegression unless a Braindecode path is wired.",
-            "- EEGNet remains the placeholder **recommended** template.",
+            "- New experiments compare regularized logistic regression and shrinkage LDA with training-only CV.",
+            "- EEGNet remains a catalog placeholder. Inspect held-out metrics and leakage warnings before interpreting results.",
             "",
         ]
     )

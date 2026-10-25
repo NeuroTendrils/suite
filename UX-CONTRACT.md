@@ -57,3 +57,7 @@ The current change shares source, visual tokens, and desktop navigation through
 the Learn route. It does not redesign CRUD, add auth or introduce data handoff. The static audit
 checks maintained frontend source roots and excludes dependency environments.
 Runtime verification uses the project-owned Suite, learner, content, and API tests.
+
+## Insight and privacy
+
+NeuroFlow Import owns bounded, consent-gated Insight capture and the existing reviewed file import. Backend Cortex credentials remain in process environment; no browser credential persistence is added. NeuroStudio Report & export owns redacted-summary defaults and explicit data inclusion. Busy operations prevent study changes. Privacy choices reset per study; data inclusion resets when redaction is selected. Hardware capture is verified using protocol fakes until a real headset is available.

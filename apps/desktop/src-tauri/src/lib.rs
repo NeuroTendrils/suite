@@ -11,6 +11,8 @@ use std::time::{Duration, Instant};
 use tauri::Manager;
 use uuid::Uuid;
 
+mod robot;
+
 struct BackendState {
     child: Child,
     ipc_path: PathBuf,
@@ -47,6 +49,7 @@ fn allowlisted_commands() -> HashSet<&'static str> {
         "streams.list",
         "streams.get",
         "import.inspect",
+        "insight.capture",
         "import.recording",
         "import.stream.inspect",
         "import.stream",
@@ -158,7 +161,9 @@ fn call_python_ipc(ipc_path: &PathBuf, command: &str, params: Value) -> Result<V
     }
 }
 
-#[tauri::command]
+// `async`: a backend call can take minutes, and a sync command would block the main
+// (UI) thread for that long.
+#[tauri::command(async)]
 fn suite_call(
     state: tauri::State<'_, AppState>,
     command: String,
@@ -167,9 +172,12 @@ fn suite_call(
     if !allowlisted_commands().contains(command.as_str()) {
         return Err(format!("command not allowlisted: {command}"));
     }
-    let guard = state.backend.lock().map_err(|_| "backend lock poisoned")?;
-    let backend = guard.as_ref().ok_or("python backend not running")?;
-    call_python_ipc(&backend.ipc_path, &command, params.unwrap_or(json!({})))
+    // Release the lock before the round-trip so one slow call does not hold it.
+    let ipc_path = {
+        let guard = state.backend.lock().map_err(|_| "backend lock poisoned")?;
+        guard.as_ref().ok_or("python backend not running")?.ipc_path.clone()
+    };
+    call_python_ipc(&ipc_path, &command, params.unwrap_or(json!({})))
 }
 
 fn host_target_triple() -> String {
@@ -351,6 +359,9 @@ pub fn run() {
         .manage(AppState {
             backend: Mutex::new(None),
         })
+        .manage(robot::RobotState(std::sync::Arc::new(robot::controller::Robot::new(
+            robot::controller::Config::default(),
+        ))))
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(
@@ -373,7 +384,19 @@ pub fn run() {
             *guard = Some(backend);
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![suite_call])
+        .invoke_handler(tauri::generate_handler![
+            suite_call,
+            robot::robot_list_ports,
+            robot::robot_connect,
+            robot::robot_disconnect,
+            robot::robot_status,
+            robot::robot_arm,
+            robot::robot_disarm,
+            robot::robot_preset,
+            robot::robot_decoder_command,
+            robot::robot_estop,
+            robot::robot_clear_estop
+        ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app_handle, event| {

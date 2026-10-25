@@ -48,9 +48,9 @@ export function TrainStage({ lists, res, studio, idle }: {
         description="An experiment fixes a dataset and split so training and evaluation are reproducible."
       >
         <div className="note">
-          The template recommender is a placeholder that always suggests EEGNet. Training currently fits a scikit-learn
-          logistic regression (standardized features) on the training split; Braindecode/EEGNet training is not wired
-          yet.
+          New experiments compare regularized logistic regression and shrinkage LDA using training-only cross-validation
+          with balanced accuracy. Scaling is fitted inside each fold. Independent subject/session folds are used when possible.
+          Test data stays held out. Prediction probabilities are uncalibrated scores, not guarantees. EEGNet is a catalog placeholder. Accuracy on simulated EEG does not validate Insight recordings.
         </div>
         <div className="form-row">
           <Field label="Dataset">
@@ -83,7 +83,7 @@ export function TrainStage({ lists, res, studio, idle }: {
         <Reason text={expBlock} />
         {!!(results.recommend as any)?.recommendations?.length && (
           <p className="help">
-            Recommended: {(results.recommend as any).recommendations.map((r: any) => r.template_id).join(", ")} (placeholder)
+            Recommended: {(results.recommend as any).recommendations.map((r: any) => r.template_id).join(", ")}
           </p>
         )}
       </Card>
@@ -186,7 +186,7 @@ export function TrainStage({ lists, res, studio, idle }: {
                 className="btn"
                 disabled={!idle || !!modelBlock}
                 onClick={() =>
-                  void studioRun("infer", "Running inference", "neurostudio.infer.run", { experiment_id: selExperiment.id }, (r) => `Predicted ${r.labels?.length ?? 0} samples`)
+                  void studioRun("infer", "Running inference on the test split", "neurostudio.infer.run", { experiment_id: selExperiment.id, split: "test" }, (r) => `Predicted ${r.labels?.length ?? 0} held-out test samples`)
                 }
               >
                 Infer
@@ -211,6 +211,10 @@ export function TrainStage({ lists, res, studio, idle }: {
                   <dd className="num">{evalMetrics.n}</dd>
                 </div>
               </dl>
+              <p className="help">Balanced accuracy: {fmtMetric(evalMetrics.balanced_accuracy)} · Cohen’s κ: {fmtMetric(evalMetrics.cohen_kappa)}.
+                {Array.isArray(evalMetrics.accuracy_ci95_wilson) && ` Accuracy 95% interval: ${evalMetrics.accuracy_ci95_wilson.map((v: number) => fmtMetric(v)).join(" – ")}.`}
+                {" "}{evalMetrics.uncertainty_note}</p>
+              {!!evalMetrics.warnings?.length && <ul className="issues warn">{evalMetrics.warnings.map((w: string, i: number) => <li key={i}>{w}</li>)}</ul>}
               {Array.isArray(evalMetrics.confusion_matrix) && (
                 <table className="table confusion">
                   <caption>Confusion matrix (rows: true, columns: predicted)</caption>

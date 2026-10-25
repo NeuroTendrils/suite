@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import tempfile
 from pathlib import Path
 
 from suite_backend.domain.migrate import migrate_study_dict, needs_migration
@@ -26,10 +28,12 @@ class LocalWorkspace:
     def __init__(self, root: str | Path) -> None:
         self.root = Path(root).expanduser().resolve()
         self.studies_dir = self.root / "studies"
-        self.studies_dir.mkdir(parents=True, exist_ok=True)
+        self.studies_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
 
     def study_dir(self, study_id: str) -> Path:
-        path = self.studies_dir / study_id
+        if not study_id or Path(study_id).name != study_id or study_id in {".", ".."}:
+            raise ValueError("invalid study id")
+        path = self.ensure_inside(self.studies_dir / study_id)
         path.mkdir(parents=True, exist_ok=True)
         for sub in (
             "subjects",
@@ -51,14 +55,23 @@ class LocalWorkspace:
 
     def ensure_inside(self, path: Path) -> Path:
         resolved = path.expanduser().resolve()
-        if not str(resolved).startswith(str(self.root)):
+        if not resolved.is_relative_to(self.root):
             raise ValueError("path escapes workspace root")
         return resolved
 
 
 def _write_json(path: Path, payload: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
+    # Atomic replacement prevents a crash from truncating existing study metadata.
+    fd, temporary = tempfile.mkstemp(dir=path.parent, prefix=".write-", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle, indent=2, default=str)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    finally:
+        Path(temporary).unlink(missing_ok=True)
 
 
 def _read_json(path: Path) -> dict:

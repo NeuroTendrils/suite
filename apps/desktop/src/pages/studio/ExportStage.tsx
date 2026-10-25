@@ -9,7 +9,7 @@ export function ExportStage({ res, studio, idle }: {
   idle: boolean;
 }) {
   const { results, studioRun } = res;
-  const { includeSamples, setIncludeSamples, selExperiment, modelBlock } = studio;
+  const { includeSamples, setIncludeSamples, deidentify, setDeidentify, selExperiment, modelBlock } = studio;
   const report = results.report as { markdown?: string; path?: string } | undefined;
   return (
     <>
@@ -50,17 +50,23 @@ export function ExportStage({ res, studio, idle }: {
       </Card>
 
       <Card title="Export" description="Exports are zip files written to the study’s exports folder.">
+        <p className="help">Redacted export is on by default: only aggregate counts and selected numeric metrics are included.
+          Turning it off includes identifying metadata and local paths. Full exports can contain sensitive EEG, models and reports. Review files before sharing.</p>
         <div className="form-row">
           <label className="check">
-            <input type="checkbox" checked={includeSamples} onChange={(e) => setIncludeSamples(e.target.checked)} />
-            Include sample data (FIF/NPY) — larger file
+            <input type="checkbox" checked={deidentify} onChange={(e) => { setDeidentify(e.target.checked); setIncludeSamples(false); }} />
+            Redact identifying metadata (summary only)
+          </label>
+          <label className="check">
+            <input type="checkbox" checked={includeSamples} disabled={deidentify} onChange={(e) => setIncludeSamples(e.target.checked)} />
+            Include data and binaries — EEG, models and reports
           </label>
           <button
             type="button"
             className="btn btn-primary"
             disabled={!idle}
             onClick={() =>
-              void studioRun("exportStudy", "Exporting study package", "study.export", { include_samples: includeSamples }, (r) =>
+              void studioRun("exportStudy", "Exporting study package", "study.export", { include_samples: includeSamples, deidentify }, (r) =>
                 `Study exported (${(r.bytes / 1024 / 1024).toFixed(1)} MB)`,
               )
             }
@@ -79,6 +85,8 @@ export function ExportStage({ res, studio, idle }: {
             Export model bundle
           </button>
         </div>
+        <p className="help">Model bundles are separate from redacted exports. They include fitted model parameters, class labels,
+          experiment metadata and local paths. Treat them as sensitive.</p>
         <Reason text={modelBlock ? `Model bundle: ${modelBlock}` : null} />
         {(["exportStudy", "exportModel"] as const).map((k) => {
           const r = results[k] as { path?: string; note?: string } | undefined;

@@ -158,9 +158,9 @@ def test_migrate_v1_recording_to_eeg_stream(tmp_path: Path) -> None:
     assert len(ipc_streams["streams"]) == 1
 
 
-def test_recommend_templates_always_eegnet() -> None:
+def test_recommend_templates_returns_implemented_baselines() -> None:
     rec = recommend_templates()
     assert rec["recommendations"]
-    assert rec["recommendations"][0]["template_id"] == "eegnet"
-    assert rec["recommendations"][0].get("status") == "placeholder"
-    assert "EEGNet" in (rec.get("explanation") or "")
+    assert rec["recommendations"][0]["template_id"] == "research_auto"
+    assert rec["recommendations"][0].get("status") == "ready"
+    assert "small labeled EEG" in (rec.get("explanation") or "")

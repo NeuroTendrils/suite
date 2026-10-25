@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-import shutil
+import uuid
 import zipfile
 from pathlib import Path
 from typing import Any
@@ -37,7 +37,7 @@ def export_model_bundle(
     out_dir.mkdir(parents=True, exist_ok=True)
     zip_path = out_dir / f"{model.id}_bundle.zip"
     with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-        for key, p in (model.paths or {}).items():
+        for p in (model.paths or {}).values():
             path = Path(p)
             if path.exists():
                 zf.write(path, arcname=f"model/{path.name}")
@@ -73,30 +73,78 @@ def export_study_package(
     study_id: str,
     ctx: AppContext,
     include_samples: bool = False,
+    deidentify: bool = True,
 ) -> dict[str, Any]:
     """Zip study JSON artifacts (optionally samples)."""
     root = ctx.workspace.study_dir(study_id)
     out_dir = root / "exports"
     out_dir.mkdir(parents=True, exist_ok=True)
-    zip_path = out_dir / f"{study_id}_study_export.zip"
-    skip = {"exports"}
+    zip_path = out_dir / f"{study_id}_{uuid.uuid4().hex[:10]}_study_export.zip"
+    # An allowlist makes metadata-only mean JSON only: never bundles classifiers,
+    # raw CSV captures, reports, logs, archives or unrecognized binary formats.
+    study = ctx.studies.get_study(study_id)
+    # Build a minimal schema instead of trying to blacklist arbitrary PII in JSON.
+    # Free-text keys, paths, labels and unknown extension fields never leave here.
+    summary = {
+        "schema": "neurotendrils.redacted-summary.v1",
+        "subjects": len(study.subjects),
+        "recordings": sum(
+            len(run.recordings)
+            for sub in study.subjects
+            for ses in sub.sessions
+            for run in ses.runs
+        ),
+        "experiments": [],
+    }
+    for i, exp in enumerate(ctx.studies.list_experiments(study_id), 1):
+        allowed_metrics = {
+            f"{part}_{metric}"
+            for part in ("train", "val", "test")
+            for metric in ("accuracy", "f1_macro")
+        }
+        summary["experiments"].append(
+            {
+                "experiment": i,
+                "metrics": {
+                    key: value
+                    for key, value in (exp.metrics or {}).items()
+                    if key in allowed_metrics and isinstance(value, (float, int))
+                },
+            }
+        )
+
     with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-        for path in root.rglob("*"):
-            if not path.is_file():
+        for path in sorted(root.rglob("*")):
+            if not path.is_file() or path.is_symlink():
                 continue
             rel = path.relative_to(root)
-            if rel.parts and rel.parts[0] in skip:
+            if any(part in {"exports", "logs"} for part in rel.parts):
                 continue
-            if not include_samples and (
-                path.suffix in {".fif", ".npy", ".fif.gz"} or "samples" in rel.parts
-            ):
-                # still include small json metadata
+            if not include_samples and path.suffix != ".json":
+                continue
+            if deidentify:
                 if path.suffix != ".json":
                     continue
-            zf.write(path, arcname=str(rel))
+                continue
+            else:
+                zf.write(path, arcname=str(rel))
+        if deidentify:
+            zf.writestr("summary.json", json.dumps(summary, indent=2))
+        zf.writestr(
+            "privacy.json",
+            json.dumps(
+                {
+                    "deidentified": deidentify,
+                    "include_samples": include_samples and not deidentify,
+                    "note": "Redacted exports contain aggregate counts and selected numeric metrics only. Review before sharing; counts and metrics may still be sensitive.",
+                },
+                indent=2,
+            ),
+        )
     return {
         "status": "ok",
         "path": str(zip_path),
-        "include_samples": include_samples,
+        "include_samples": include_samples and not deidentify,
+        "deidentified": deidentify,
         "bytes": zip_path.stat().st_size,
     }

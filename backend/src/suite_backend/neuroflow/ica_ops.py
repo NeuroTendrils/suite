@@ -44,7 +44,19 @@ def _fit_ica(raw, n_components: int | None):
             "ICA requires scikit-learn (FastICA). Install with: pip install scikit-learn"
         ) from exc
 
-    n = n_components or min(20, len(raw.ch_names))
+    import mne
+    import numpy as np
+
+    picks = mne.pick_types(raw.info, eeg=True, exclude="bads")
+    if len(picks) < 2:
+        raise ValueError("ICA requires at least two usable EEG channels")
+    eeg = raw.copy().pick(picks)
+    rank = int(np.linalg.matrix_rank(eeg.get_data() - eeg.get_data().mean(axis=1, keepdims=True)))
+    if rank < 2:
+        raise ValueError("ICA requires EEG rank of at least two; check flat channels")
+    if n_components is not None and n_components < 1:
+        raise ValueError("n_components must be positive")
+    n = min(n_components or 20, len(picks), rank)
     ica = ICA(n_components=n, method="fastica", random_state=97, max_iter="auto")
     ica.fit(raw, verbose=False)
     return ica

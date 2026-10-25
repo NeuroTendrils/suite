@@ -2,3 +2,8 @@
 identifier = "allow-suite-call"
 description = "Allow the UI to call the allowlisted Python IPC bridge command."
 commands.allow = ["suite_call", "batch.preview", "batch.execute", "recipe.export", "recipe.import", "lineage.chain", "lineage.signal_window"]
+
+[[permission]]
+identifier = "allow-robot"
+description = "Allow the UI to discover, connect to, and command the RoArm-M2-S through the safety-checked robot driver."
+commands.allow = ["robot_list_ports", "robot_connect", "robot_disconnect", "robot_status", "robot_arm", "robot_disarm", "robot_preset", "robot_decoder_command", "robot_estop", "robot_clear_estop"]

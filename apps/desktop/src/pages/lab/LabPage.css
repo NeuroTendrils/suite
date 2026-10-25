@@ -1,0 +1,116 @@
+/* BCI Lab: EEG → AI → safety gate → robot arm. */
+
+.lab { display: flex; flex-direction: column; gap: var(--sp-4); }
+.lab-head h1 { margin: var(--sp-1) 0 var(--sp-2); font-size: var(--fs-xl); }
+.lab-sub { margin: var(--sp-3) 0 var(--sp-2); font-size: var(--fs-sm); color: var(--dim); text-transform: uppercase; letter-spacing: 0.04em; }
+
+/* The data source is always on screen so simulation is never mistaken for a measurement. */
+.lab-source {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1) var(--sp-3);
+  margin-top: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--line);
+  border-left-width: 4px;
+  border-radius: var(--r);
+  background: var(--panel);
+  font-size: var(--fs-sm);
+}
+.lab-source-simulated { border-left-color: var(--warn); background: var(--warn-bg); }
+.lab-source-prerecorded { border-left-color: var(--accent); background: var(--accent-soft); }
+.lab-source-live { border-left-color: var(--ok); background: var(--ok-bg); }
+
+.lab-science p { margin: 0 0 var(--sp-3); line-height: 1.55; max-width: 72ch; }
+.lab-pipeline {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: var(--sp-2);
+  margin: 0 0 var(--sp-3);
+  padding: 0;
+  list-style: none;
+  counter-reset: stage;
+}
+.lab-pipeline li {
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--panel-hi);
+  font-size: var(--fs-sm);
+  color: var(--dim);
+}
+.lab-pipeline strong { display: block; color: var(--text); }
+
+.lab-sources { display: flex; flex-wrap: wrap; gap: var(--sp-2) var(--sp-5); margin: 0 0 var(--sp-3); padding: 0; border: 0; }
+.lab-sources label { display: grid; grid-template-columns: auto 1fr; align-items: center; column-gap: var(--sp-2); font-weight: 600; }
+.lab-sources label .help { grid-column: 2; font-weight: 400; margin: 0; }
+.lab-disabled { opacity: 0.6; }
+
+.lab-trace { margin: var(--sp-3) 0; }
+.lab-trace-row { display: grid; grid-template-columns: 36px 1fr; align-items: center; gap: var(--sp-2); }
+.lab-trace-row svg { width: 100%; height: 64px; background: var(--ink); border-radius: var(--r-sm); }
+.lab-trace-label { font-family: var(--mono, monospace); font-size: var(--fs-sm); color: var(--dim); }
+.lab-line { stroke-width: 1.2; vector-effect: non-scaling-stroke; }
+.lab-line-c3 { stroke: var(--trace); }
+.lab-line-c4 { stroke: var(--trace-deep); }
+.lab-trace figcaption { margin-top: var(--sp-1); font-size: var(--fs-xs); color: var(--dim); }
+
+.lab-bars { display: flex; flex-direction: column; gap: var(--sp-1); margin: 0 0 var(--sp-2); padding: 0; list-style: none; max-width: 520px; }
+.lab-bars li { display: grid; grid-template-columns: 150px 1fr 72px; align-items: center; gap: var(--sp-2); font-size: var(--fs-sm); }
+.lab-bar-track { height: 10px; border-radius: 5px; background: var(--panel-hi); overflow: hidden; }
+.lab-bar-fill { display: block; height: 100%; background: var(--dim); }
+.lab-bar-hi .lab-bar-fill { background: var(--accent); }
+.lab-bar-hi .lab-bar-label { font-weight: 600; }
+.lab-bar-value { text-align: right; }
+
+.lab-pred-main { margin: 0 0 var(--sp-2); }
+.lab-replay { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-3); margin-top: var(--sp-3); }
+
+.lab-map { max-width: 520px; margin: var(--sp-3) 0; }
+.lab-gate { margin: var(--sp-3) 0; }
+.lab-gate .check-mark { font-size: 11px; font-weight: 700; }
+.lab-gate li.lab-fail .check-mark { border: 1.5px solid var(--danger); background: var(--danger-bg); color: var(--danger); }
+.lab-gate li.lab-fail .check-detail { color: var(--danger); }
+.lab-verdict { margin: 0; padding: var(--sp-2) var(--sp-3); border-radius: var(--r); font-weight: 600; }
+.lab-ok { background: var(--ok-bg); color: var(--ok); }
+.lab-no { background: var(--danger-bg); color: var(--danger); }
+
+.lab-send { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-3); margin-bottom: var(--sp-4); }
+.lab-send .help { margin: 0; }
+
+.robot-estop-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-3); margin-bottom: var(--sp-3); }
+.robot-estop-row .help { flex: 1 1 280px; margin: 0; }
+/* Doubled class so the generic .btn rules (loaded later) cannot repaint the stop button. */
+.btn.robot-estop {
+  min-height: 48px;
+  padding: 0 var(--sp-5);
+  border-color: var(--danger);
+  background: var(--danger);
+  color: #fff;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+.btn.robot-estop:hover:not(:disabled) { filter: brightness(1.1); background: var(--danger); border-color: var(--danger); color: #fff; }
+.btn.robot-estop:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+.btn.robot-estop.robot-estop-top { min-height: 28px; padding: 0 var(--sp-3); }
+
+.robot-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: var(--sp-5); }
+.robot-safety { display: flex; flex-direction: column; gap: var(--sp-2); margin: var(--sp-3) 0; padding: var(--sp-3); border: 1px solid var(--warn); border-radius: var(--r); background: var(--warn-bg); }
+.robot-safety legend { padding: 0 var(--sp-1); font-weight: 600; }
+.robot-safety label { font-size: var(--fs-sm); line-height: 1.4; }
+/* Doubled class: App.css's equally specific .facts rules load later. */
+.facts.robot-facts { display: flex; flex-direction: column; align-items: stretch; gap: var(--sp-2); }
+.facts.robot-facts div { display: block; text-align: left; }
+.facts.robot-facts dt { color: var(--dim); font-size: var(--fs-xs); }
+.facts.robot-facts dd { margin: 0; }
+.robot-presets { flex-wrap: wrap; }
+.robot-message { margin: 0 0 var(--sp-2); color: var(--ok); }
+.robot-physical { margin: 0 0 var(--sp-3); font-size: var(--fs-sm); }
+.robot-log { margin-top: var(--sp-4); font-size: var(--fs-sm); }
+.robot-log ol { max-height: 220px; overflow: auto; margin: var(--sp-2) 0 0; padding-left: var(--sp-5); }
+.robot-ev-warn { color: var(--warn); }
+.robot-ev-error { color: var(--danger); }
+
+@media (max-width: 640px) {
+  .lab-bars li { grid-template-columns: 110px 1fr 60px; }
+}

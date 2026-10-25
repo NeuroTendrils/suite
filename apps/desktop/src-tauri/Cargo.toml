@@ -25,3 +25,4 @@ tauri = { version = "2.11.3", features = [] }
 tauri-plugin-log = "2"
 uuid = { version = "1", features = ["v4"] }
 tauri-plugin-dialog = "2"
+serialport = { version = "4", default-features = false }

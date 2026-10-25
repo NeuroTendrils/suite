@@ -2,6 +2,7 @@ import { FLOW_STAGES, NAV_ITEMS, STUDIO_STAGES, type FlowStage, type Page, type 
 import { recordingLabel } from "../lib/study";
 import type { ThemeName } from "../lib/storage";
 import type { StudySession } from "../hooks/useStudySession";
+import type { RobotSession } from "../hooks/useRobot";
 import { Badge, BusyIndicator, ConnectionStatus, Icon, Stepper, type Busy, type StepDef } from "./ui";
 
 /* Application chrome: navigation rail, top bar, module header with the step indicator, and the step footer. */
@@ -75,6 +76,7 @@ export function TopBar({
   onToggleTheme,
   onSelectStudy,
   onShowRecording,
+  robot,
 }: {
   learning?: boolean;
   session: StudySession;
@@ -85,6 +87,8 @@ export function TopBar({
   onToggleTheme: () => void;
   onSelectStudy: (id: string) => void;
   onShowRecording: () => void;
+  /** Shows an emergency stop on every page while an arm is connected. */
+  robot?: RobotSession;
 }) {
   const { studies, studiesLoaded, selectedId, selectedRow, conn, refresh } = session;
   return (
@@ -94,7 +98,7 @@ export function TopBar({
       ) : studies.length ? (
         <label className="topbar-study" title="The active study. NeuroFlow and NeuroStudio work on this study.">
           <span className="topbar-key">Study</span>
-          <select value={selectedId ?? ""} onChange={(e) => onSelectStudy(e.target.value)} aria-label="Active study">
+          <select value={selectedId ?? ""} disabled={!!busy} onChange={(e) => onSelectStudy(e.target.value)} aria-label="Active study">
             {!selectedId && <option value="">Choose a study…</option>}
             {studies.map((s) => (
               <option key={s.id} value={s.id}>
@@ -126,6 +130,11 @@ export function TopBar({
         </span>
       )}
       <div className="topbar-right">
+        {robot?.status?.state === "connected" && (
+          <button type="button" className="btn btn-sm robot-estop robot-estop-top" onClick={() => void robot.estop()}>
+            E-STOP arm
+          </button>
+        )}
         <BusyIndicator busy={busy} />
         {!learning && <ConnectionStatus conn={conn} onRetry={() => void refresh()} />}
         {!learning && <button

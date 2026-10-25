@@ -9,6 +9,7 @@ import { useNeuroStudio } from "./hooks/useNeuroStudio";
 import { useImport } from "./hooks/useImport";
 import { useStudyForms } from "./hooks/useStudyForms";
 import { usePreferences } from "./hooks/usePreferences";
+import { useRobot } from "./hooks/useRobot";
 import { confirmDiscardMarks } from "./lib/dialogs";
 import {
   flowStepStates,
@@ -24,6 +25,7 @@ import { ModuleHeader, NavRail, StageFooter, TopBar } from "./components/layout"
 import { NewStudyForm } from "./components/NewStudyForm";
 import { HomePage } from "./pages/home/HomePage";
 import { LearnPage } from "./pages/learn/LearnPage";
+import { LabPage } from "./pages/lab/LabPage";
 import { NoStudy } from "./pages/NoStudy";
 import { RecordingPicker } from "./pages/flow/RecordingPicker";
 import { ImportStage } from "./pages/flow/ImportStage";
@@ -54,6 +56,7 @@ function App() {
   const confirmDiscardPending = () => confirmDiscardMarks(insp.pendingCount);
   const forms = useStudyForms(ops, session, confirmDiscardPending);
   const prefs = usePreferences();
+  const robotSession = useRobot(page === "lab");
   const [logOpen, setLogOpen] = useState(false);
 
   const { busy, setNotice } = ops;
@@ -62,7 +65,7 @@ function App() {
 
   // A new screen starts at the top, and a confirmation about one screen doesn't linger on the next.
   useEffect(() => {
-    document.title = `${page === "learn" ? "Learn" : page === "flow" ? "NeuroFlow" : page === "studio" ? "NeuroStudio" : "Home"} · NeuroTendrils Suite`;
+    document.title = `${page === "learn" ? "Learn" : page === "lab" ? "BCI Lab" : page === "flow" ? "NeuroFlow" : page === "studio" ? "NeuroStudio" : "Home"} · NeuroTendrils Suite`;
     document.getElementById("main")?.scrollTo({ top: 0 });
     setNotice((n) => (n && (n.kind === "success" || n.kind === "info") ? null : n));
   }, [page, flowStage, studioStage, setNotice]);
@@ -97,7 +100,7 @@ function App() {
 
   // Switching study or recording discards unapplied marks, so ask first.
   async function selectStudy(id: string) {
-    if (!id || id === selectedId) return;
+    if (busy || !id || id === selectedId) return;
     if (!(await confirmDiscardPending())) return;
     await session.switchStudy(id);
   }
@@ -152,6 +155,7 @@ function App() {
           onToggleTheme={prefs.toggleTheme}
           onSelectStudy={(id) => void selectStudy(id)}
           onShowRecording={() => openFlow(flowStage === "recording" ? "inspect" : flowStage)}
+          robot={robotSession}
         />
 
         {page !== "learn" && <NoticeBar notice={ops.notice} onDismiss={() => setNotice(null)} />}
@@ -176,6 +180,7 @@ function App() {
           className={`content ${page === "learn" ? "content-learn" : ""} ${page === "flow" && flowStage === "inspect" && selectedId ? "content-wide" : ""}`}
         >
           {learnOpened && <LearnPage active={page === "learn"} />}
+          {page === "lab" && <LabPage r={robotSession} session={session} openLearn={() => goPage("learn")} />}
           {page === "home" && (
             <HomePage
               ops={ops}
@@ -190,6 +195,7 @@ function App() {
               startNewStudy={startNewStudy}
               openStudio={openStudio}
               openLearn={() => goPage("learn")}
+              openLab={() => goPage("lab")}
             />
           )}
           {inModule && !selectedId && (

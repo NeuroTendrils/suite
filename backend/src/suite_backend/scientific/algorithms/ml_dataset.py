@@ -34,8 +34,13 @@ def build_from_epochs(
         epochs = epochs[keep_mask]
         trials = [t for t in trials if not t.rejected]
     else:
-        trials = trials[: len(epochs)]
+        raise ValueError("epoch/trial alignment mismatch; recreate the epoch set")
 
+    if not trials:
+        raise ValueError("no accepted epochs remain; review trial rejections")
+    epochs.pick("eeg", exclude="bads")
+    if not len(epochs.ch_names):
+        raise ValueError("no usable EEG channels remain")
     data = epochs.get_data()  # n_ep, n_ch, n_t
     sfreq = float(epochs.info["sfreq"])
     ch_names = list(epochs.ch_names)
@@ -79,7 +84,7 @@ def build_from_epochs(
         trial_ids=trial_ids,
         labels=labels,
         modalities=["eeg"],
-        provenance={"epochset_id": epochset.id, "method": "per_trial_bandpower"},
+        provenance={"epochset_id": epochset.id, "method": "welch_bandpower_v2"},
     )
     x_path = out_dir / f"{ds.id}_X.npy"
     y_path = out_dir / f"{ds.id}_y.npy"
@@ -194,5 +199,11 @@ def build_multimodal(
 
 def load_xy(dataset: MLDataset) -> tuple[np.ndarray, np.ndarray]:
     X = np.load(dataset.paths["X"])
-    y = np.load(dataset.paths["y"], allow_pickle=True)
+    y = np.load(dataset.paths["y"], allow_pickle=False)
+    if X.ndim != 2 or y.ndim != 1 or len(X) != len(y):
+        raise ValueError("dataset requires a 2D feature matrix and one label per row")
+    if X.shape[1] != len(dataset.feature_names) or len(set(dataset.feature_names)) != X.shape[1]:
+        raise ValueError("dataset feature names must be unique and match the matrix")
+    if not np.isfinite(X).all():
+        raise ValueError("dataset contains non-finite features; review preprocessing")
     return X, y

@@ -10,8 +10,10 @@ This repo also includes mobile source, content, authoring tools, and the learnin
 
 **Learn** — offline EEG lessons, quizzes, simulations, and local progress; no study or backend required.
 
+**BCI Lab** — EEG → AI prediction → safety gate → Waveshare RoArm-M2-S arm, with simulated or prerecorded EEG (no live EEG yet). See [docs/guides/ROBOT_ARM.md](docs/guides/ROBOT_ARM.md).
+
 1. **NeuroFlow** — import, visualize, reject, plans, ICA/ERP, epochs, features, analysis
-2. **NeuroStudio** — datasets/splits, EEGNet recommend placeholder, sklearn train/eval/infer/explain, reports, export
+2. **NeuroStudio** — datasets/splits, training-only selection of regularized EEG baselines, held-out eval/infer/explain, reports, export
 3. **Hub** — future cloud sharing (interfaces only)
 4. **Teams** — future paid private org sharing (interfaces only)
 
@@ -65,3 +67,5 @@ npm run tauri:build
 Tauri bundles `binaries/suite-backend` as `externalBin`. The app prefers that sidecar at runtime.
 
 Workspace data lives under the OS app data directory (`…/workspace/studies/...`).
+
+EMOTIV Insight capture, CSV import, model validation and privacy defaults: [setup guide](docs/guides/EMOTIV_INSIGHT.md).

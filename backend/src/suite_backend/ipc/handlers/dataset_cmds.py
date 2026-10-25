@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pydantic import BaseModel, Field
+from typing import Literal
 
 from suite_backend.app_context import AppContext
 from suite_backend.domain.queries import find_recording
@@ -40,7 +41,7 @@ class DatasetGetParams(BaseModel):
 class SplitCreateParams(BaseModel):
     study_id: str
     dataset_id: str
-    method: str = "subject"  # subject | stratified_trial
+    method: Literal["subject", "stratified_trial"] = "subject"  # subject | stratified_trial
     val_frac: float = 0.15
     test_frac: float = 0.2
     seed: int = 0

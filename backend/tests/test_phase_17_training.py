@@ -19,10 +19,10 @@ from suite_backend.ipc.handlers.neurostudio_cmds import (
 from tests._ml_helpers import seed_two_class_recording
 
 
-def test_recommend_eegnet_and_train_sklearn(tmp_path: Path) -> None:
+def test_recommend_baselines_and_train_legacy_sklearn(tmp_path: Path) -> None:
     ctx, study_id, rid, eid = seed_two_class_recording(tmp_path)
     rec = templates_recommend(RecommendTemplatesParams(study_id=study_id), ctx)
-    assert rec["recommendations"][0]["template_id"] == "eegnet"
+    assert rec["recommendations"][0]["template_id"] == "research_auto"
 
     ds = datasets_build(
         DatasetBuildParams(

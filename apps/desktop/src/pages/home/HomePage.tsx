@@ -23,6 +23,7 @@ export function HomePage({
   startNewStudy,
   openStudio,
   openLearn,
+  openLab,
 }: {
   ops: Operations;
   session: StudySession;
@@ -36,6 +37,7 @@ export function HomePage({
   startNewStudy: () => void;
   openStudio: (stage: StudioStage) => void;
   openLearn: () => void;
+  openLab: () => void;
 }) {
   const { busy } = ops;
   const {
@@ -120,6 +122,14 @@ export function HomePage({
             <strong>Learn — understand EEG</strong>
             <span>Explore lessons, practice, and simulations. No study or EEG hardware needed.</span>
             <button type="button" className="btn-link" onClick={openLearn}>Open Learn</button>
+          </div>
+        </li>
+        <li className="mod-home">
+          <span className="welcome-icon"><Icon name="lab" size={18} /></span>
+          <div>
+            <strong>BCI Lab — EEG to robot arm</strong>
+            <span>See how a decoded brain signal passes a safety gate and moves a robot arm. Simulated EEG works without hardware.</span>
+            <button type="button" className="btn-link" onClick={openLab}>Open BCI Lab</button>
           </div>
         </li>
         <li className="mod-home">

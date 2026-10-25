@@ -6,6 +6,7 @@
   "permissions": [
     "core:default",
     "allow-suite-call",
+    "allow-robot",
     "dialog:default"
   ]
 }

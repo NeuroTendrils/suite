@@ -105,3 +105,7 @@ in forced-colors mode. Reduced motion continues to use each app's existing polic
 - Keep labels, workflow state, scientific results, and learner progress intact.
 - Keep blue actions legible on white and pink surfaces.
 - Do not use decorative pinks as text or replace status labels with color alone.
+
+## Acquisition and export controls
+
+Insight acquisition uses the existing Card, Field, checkbox, task/busy and notice primitives in NeuroFlow Import. Recording consent starts unchecked and resets after successful capture. Privacy export defaults to a redacted summary; raw-data selection resets when redaction is enabled or the study changes. Native selects retain platform popup behavior. Study switching is disabled while a backend operation runs to preserve result ownership. No new visual tokens are introduced.

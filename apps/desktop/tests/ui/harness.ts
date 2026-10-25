@@ -2,10 +2,12 @@ import { act, render, screen, waitFor, within, fireEvent } from "@testing-librar
 import { createElement } from "react";
 import App from "../../src/App";
 import { FakeBackend } from "./fakeBackend";
+import { FakeRobot } from "./fakeRobot";
 
 /** Shared mutable state read by the mocks in setup.ts. Reset by `start()`. */
 export const harness = {
   backend: new FakeBackend(),
+  robot: new FakeRobot(),
   dialogs: [] as string[],
   dialogAnswer: true,
   openPath: null as string | null,
@@ -13,6 +15,7 @@ export const harness = {
 
 export function freshBackend(): FakeBackend {
   harness.backend = new FakeBackend();
+  harness.robot = new FakeRobot();
   harness.dialogs = [];
   harness.dialogAnswer = true;
   harness.openPath = null;
@@ -48,7 +51,7 @@ export async function click(el: Element) {
   await settle();
 }
 
-export async function nav(label: "Home" | "Learn" | "NeuroFlow" | "NeuroStudio") {
+export async function nav(label: "Home" | "Learn" | "BCI Lab" | "NeuroFlow" | "NeuroStudio") {
   const rail = screen.getByRole("navigation", { name: "Main" });
   await click(within(rail).getByText(label).closest("button")!);
 }

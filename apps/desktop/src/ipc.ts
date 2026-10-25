@@ -29,3 +29,11 @@ export async function suiteCall<T = unknown>(
   }
   return invoke<T>("suite_call", { command, params });
 }
+
+/** Call one of the Rust robot-driver commands (`robot_*`, see src-tauri/src/robot). */
+export async function robotCall<T = unknown>(command: string, args: Record<string, unknown> = {}): Promise<T> {
+  if (!hasTauriInternals()) {
+    await waitForSuiteRuntime();
+  }
+  return invoke<T>(command, args);
+}

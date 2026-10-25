@@ -4,6 +4,9 @@ from typing import Any
 
 
 TEMPLATES: list[dict[str, Any]] = [
+    {"id": "research_auto", "name": "Regularized EEG baselines", "task_types": ["classification"],
+     "input_requirements": {"kind": "features"}, "default_hparams": {}, "search_space": {},
+     "status": "ready", "braindecode_ref": None},
     {
         "id": "eegnet",
         "name": "EEGNet",
